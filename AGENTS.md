@@ -17,7 +17,7 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 ## Git / PR Workflow
 
-- Branch from the repo's default branch (commonly `main`; this repo may be `master` locally).
+- Branch from the repo's default branch (`master`).
 - Before committing/opening a PR, run: `npm run typecheck`, `npm run lint`, `npm test`, `npm run format:check`.
 - Pre-commit hook (`.husky/pre-commit`) runs **all three** automatically:
   1. `npx lint-staged` — runs `prettier --write` + `eslint --fix` on staged `*.ts` files
