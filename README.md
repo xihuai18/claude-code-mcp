@@ -76,38 +76,38 @@ npm start
 
 Start a Claude Code agent that can read/write files, run commands, and more.
 
-| Parameter                    | Type               | Required | Description                                                                                                                |
-| ---------------------------- | ------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `prompt`                     | string             | Yes      | Task or question for Claude Code                                                                                           |
-| `cwd`                        | string             | No       | Working directory (defaults to server cwd)                                                                                 |
-| `allowedTools`               | string[]           | No       | Auto-approved tools (skips permission prompts). In `"dontAsk"` mode this effectively acts as a whitelist                   |
-| `disallowedTools`            | string[]           | No       | Tool blacklist                                                                                                             |
-| `tools`                      | string[] \| object | No       | Base set of available tools (array of names, or `{ type: "preset", preset: "claude_code" }`)                               |
-| `persistSession`             | boolean            | No       | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                          |
-| `permissionMode`             | string             | No       | Defaults to `"dontAsk"`. Options: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, `"plan"`, `"delegate"`, `"dontAsk"` |
-| `maxTurns`                   | number             | No       | Maximum agentic turns                                                                                                      |
-| `model`                      | string             | No       | Model to use (e.g. `"claude-sonnet-4-5-20250929"`)                                                                         |
-| `systemPrompt`               | string \| object   | No       | Custom system prompt (string or `{ type: "preset", preset: "claude_code", append?: "..." }`)                               |
-| `agents`                     | object             | No       | Custom subagent definitions                                                                                                |
-| `maxBudgetUsd`               | number             | No       | Maximum budget in USD                                                                                                      |
-| `timeout`                    | number             | No       | Timeout in milliseconds for this session                                                                                   |
-| `effort`                     | string             | No       | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`                                                                       |
-| `betas`                      | string[]           | No       | Beta features (e.g. `["context-1m-2025-08-07"]`)                                                                           |
-| `additionalDirectories`      | string[]           | No       | Additional directories the agent can access beyond cwd                                                                     |
-| `outputFormat`               | object             | No       | Structured output: `{ type: "json_schema", schema: {...} }`. Omit for plain text                                           |
-| `thinking`                   | object             | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`                   |
-| `pathToClaudeCodeExecutable` | string             | No       | Path to a custom Claude Code executable                                                                                    |
-| `agent`                      | string             | No       | Main-thread agent name to apply custom agent system prompt, tool restrictions, and model                                   |
-| `mcpServers`                 | object             | No       | MCP server configurations (key: server name, value: server config)                                                         |
-| `sandbox`                    | object             | No       | Sandbox settings for command execution isolation                                                                           |
-| `fallbackModel`              | string             | No       | Fallback model if the primary model fails or is unavailable                                                                |
-| `enableFileCheckpointing`    | boolean            | No       | Enable file checkpointing to track file changes during the session                                                         |
-| `includePartialMessages`     | boolean            | No       | Include partial/streaming message events in output                                                                         |
-| `strictMcpConfig`            | boolean            | No       | Enforce strict validation of MCP server configurations                                                                     |
+| Parameter                    | Type               | Required | Description                                                                                                                                        |
+| ---------------------------- | ------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`                     | string             | Yes      | Task or question for Claude Code                                                                                                                   |
+| `cwd`                        | string             | No       | Working directory (defaults to server cwd)                                                                                                         |
+| `allowedTools`               | string[]           | No       | Auto-approved tools (skips permission prompts). In `"dontAsk"` mode this effectively acts as a whitelist                                           |
+| `disallowedTools`            | string[]           | No       | Tool blacklist                                                                                                                                     |
+| `tools`                      | string[] \| object | No       | Base set of available tools (array of names, or `{ type: "preset", preset: "claude_code" }`)                                                       |
+| `persistSession`             | boolean            | No       | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                  |
+| `permissionMode`             | string             | No       | Defaults to `"dontAsk"`. Options: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, `"plan"`, `"delegate"`, `"dontAsk"`                         |
+| `maxTurns`                   | number             | No       | Maximum agentic turns                                                                                                                              |
+| `model`                      | string             | No       | Model to use (e.g. `"claude-sonnet-4-5-20250929"`)                                                                                                 |
+| `systemPrompt`               | string \| object   | No       | Custom system prompt (string or `{ type: "preset", preset: "claude_code", append?: "..." }`)                                                       |
+| `agents`                     | object             | No       | Custom subagent definitions                                                                                                                        |
+| `maxBudgetUsd`               | number             | No       | Maximum budget in USD                                                                                                                              |
+| `timeout`                    | number             | No       | Timeout in milliseconds for this session                                                                                                           |
+| `effort`                     | string             | No       | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`                                                                                               |
+| `betas`                      | string[]           | No       | Beta features (e.g. `["context-1m-2025-08-07"]`)                                                                                                   |
+| `additionalDirectories`      | string[]           | No       | Additional directories the agent can access beyond cwd                                                                                             |
+| `outputFormat`               | object             | No       | Structured output: `{ type: "json_schema", schema: {...} }`. Omit for plain text                                                                   |
+| `thinking`                   | object             | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`                                           |
+| `pathToClaudeCodeExecutable` | string             | No       | Path to a custom Claude Code executable                                                                                                            |
+| `agent`                      | string             | No       | Main-thread agent name to apply custom agent system prompt, tool restrictions, and model                                                           |
+| `mcpServers`                 | object             | No       | MCP server configurations (key: server name, value: server config)                                                                                 |
+| `sandbox`                    | object             | No       | Sandbox settings for command execution isolation                                                                                                   |
+| `fallbackModel`              | string             | No       | Fallback model if the primary model fails or is unavailable                                                                                        |
+| `enableFileCheckpointing`    | boolean            | No       | Enable file checkpointing to track file changes during the session                                                                                 |
+| `includePartialMessages`     | boolean            | No       | Include partial/streaming message events in output                                                                                                 |
+| `strictMcpConfig`            | boolean            | No       | Enforce strict validation of MCP server configurations                                                                                             |
 | `settingSources`             | string[]           | No       | Which filesystem settings to load. Defaults to `["user", "project", "local"]` (loads all settings and CLAUDE.md). Pass `[]` for SDK isolation mode |
-| `debug`                      | boolean            | No       | Enable debug mode for verbose logging                                                                                      |
-| `debugFile`                  | string             | No       | Write debug logs to a specific file path (implicitly enables debug mode)                                                   |
-| `env`                        | object             | No       | Environment variables passed to the Claude Code process                                                                    |
+| `debug`                      | boolean            | No       | Enable debug mode for verbose logging                                                                                                              |
+| `debugFile`                  | string             | No       | Write debug logs to a specific file path (implicitly enables debug mode)                                                                           |
+| `env`                        | object             | No       | Environment variables passed to the Claude Code process                                                                                            |
 
 **Returns:** `{ sessionId, result, isError, durationMs, durationApiMs?, numTurns, totalCostUsd, sessionTotalTurns?, sessionTotalCostUsd?, structuredOutput?, stopReason?, errorSubtype?, usage?, modelUsage?, permissionDenials? }`
 
@@ -125,37 +125,37 @@ Continue an existing session with full context preserved.
 <details>
 <summary>Disk resume parameters (used when <code>CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1</code> and in-memory session is missing)</summary>
 
-| Parameter                    | Type               | Description                          |
-| ---------------------------- | ------------------ | ------------------------------------ |
-| `cwd`                        | string             | Working directory                    |
-| `allowedTools`               | string[]           | Auto-approved tools                  |
-| `disallowedTools`            | string[]           | Tool blacklist                       |
-| `tools`                      | string[] \| object | Base set of available tools          |
-| `persistSession`             | boolean            | Persist session history to disk      |
-| `permissionMode`             | string             | Permission mode                      |
-| `maxTurns`                   | number             | Maximum agentic turns                |
-| `model`                      | string             | Model to use                         |
-| `systemPrompt`               | string \| object   | Custom system prompt                 |
-| `agents`                     | object             | Custom subagent definitions          |
-| `maxBudgetUsd`               | number             | Maximum budget in USD                |
-| `effort`                     | string             | Effort level                         |
-| `betas`                      | string[]           | Beta features                        |
-| `additionalDirectories`      | string[]           | Additional directories               |
-| `outputFormat`               | object             | Structured output format             |
-| `thinking`                   | object             | Thinking mode                        |
-| `resumeSessionAt`            | string             | Resume up to a specific message UUID |
-| `pathToClaudeCodeExecutable` | string             | Path to Claude Code executable       |
-| `agent`                      | string             | Main-thread agent name               |
-| `mcpServers`                 | object             | MCP server configurations            |
-| `sandbox`                    | object             | Sandbox settings                     |
-| `fallbackModel`              | string             | Fallback model                       |
-| `enableFileCheckpointing`    | boolean            | Enable file checkpointing            |
-| `includePartialMessages`     | boolean            | Include partial message events       |
-| `strictMcpConfig`            | boolean            | Strict MCP config validation         |
+| Parameter                    | Type               | Description                                         |
+| ---------------------------- | ------------------ | --------------------------------------------------- |
+| `cwd`                        | string             | Working directory                                   |
+| `allowedTools`               | string[]           | Auto-approved tools                                 |
+| `disallowedTools`            | string[]           | Tool blacklist                                      |
+| `tools`                      | string[] \| object | Base set of available tools                         |
+| `persistSession`             | boolean            | Persist session history to disk                     |
+| `permissionMode`             | string             | Permission mode                                     |
+| `maxTurns`                   | number             | Maximum agentic turns                               |
+| `model`                      | string             | Model to use                                        |
+| `systemPrompt`               | string \| object   | Custom system prompt                                |
+| `agents`                     | object             | Custom subagent definitions                         |
+| `maxBudgetUsd`               | number             | Maximum budget in USD                               |
+| `effort`                     | string             | Effort level                                        |
+| `betas`                      | string[]           | Beta features                                       |
+| `additionalDirectories`      | string[]           | Additional directories                              |
+| `outputFormat`               | object             | Structured output format                            |
+| `thinking`                   | object             | Thinking mode                                       |
+| `resumeSessionAt`            | string             | Resume up to a specific message UUID                |
+| `pathToClaudeCodeExecutable` | string             | Path to Claude Code executable                      |
+| `agent`                      | string             | Main-thread agent name                              |
+| `mcpServers`                 | object             | MCP server configurations                           |
+| `sandbox`                    | object             | Sandbox settings                                    |
+| `fallbackModel`              | string             | Fallback model                                      |
+| `enableFileCheckpointing`    | boolean            | Enable file checkpointing                           |
+| `includePartialMessages`     | boolean            | Include partial message events                      |
+| `strictMcpConfig`            | boolean            | Strict MCP config validation                        |
 | `settingSources`             | string[]           | Which filesystem settings to load (defaults to all) |
-| `debug`                      | boolean            | Debug mode                           |
-| `debugFile`                  | string             | Debug log file path                  |
-| `env`                        | object             | Environment variables                |
+| `debug`                      | boolean            | Debug mode                                          |
+| `debugFile`                  | string             | Debug log file path                                 |
+| `env`                        | object             | Environment variables                               |
 
 </details>
 
@@ -213,6 +213,57 @@ result = await mcp.call_tool("claude_code_session", {
     "action": "cancel",
     "sessionId": session_id
 })
+```
+
+## Windows Support
+
+The Claude Code CLI bundled in the SDK requires **Git for Windows** (which includes `bash.exe`). If you run this MCP server on Windows and see:
+
+```
+Claude Code on Windows requires git-bash (https://git-scm.com/downloads/win).
+```
+
+This means the spawned CLI process cannot locate `bash.exe`. Your locally installed `claude` command may work fine — the issue is that the MCP server's child process may not inherit your shell environment.
+
+**Fix: set `CLAUDE_CODE_GIT_BASH_PATH` in your MCP server config.**
+
+For JSON-based MCP clients (Claude Desktop, Cursor, etc.):
+
+```json
+{
+  "mcpServers": {
+    "claude-code": {
+      "command": "npx",
+      "args": ["@leo000001/claude-code-mcp"],
+      "env": {
+        "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\bin\\bash.exe"
+      }
+    }
+  }
+}
+```
+
+For OpenAI Codex CLI (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.claude-code]
+command = "npx"
+args = ["-y", "@leo000001/claude-code-mcp"]
+
+[mcp_servers.claude-code.env]
+CLAUDE_CODE_GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe"
+```
+
+> Replace the path with your actual `bash.exe` location. Common paths:
+> - `C:\Program Files\Git\bin\bash.exe` (default installer)
+>
+> To find yours: `where git` in CMD/PowerShell, then look for `bash.exe` under the same Git root's `bin\` folder.
+
+Alternatively, set the environment variable system-wide so all processes inherit it:
+
+```powershell
+# PowerShell (permanent, requires new terminal)
+setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
 ```
 
 ## Security

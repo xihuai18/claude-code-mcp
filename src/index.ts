@@ -6,6 +6,7 @@
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "./server.js";
+import { checkWindowsBashAvailability } from "./utils/windows.js";
 
 async function main(): Promise<void> {
   const serverCwd = process.cwd();
@@ -30,6 +31,9 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
 
   await server.connect(transport);
+
+  // Check Windows bash.exe availability and warn early
+  checkWindowsBashAvailability();
 
   // Log to stderr (stdout is used for MCP communication)
   console.error(`claude-code-mcp server started (cwd: ${serverCwd})`);

@@ -18,6 +18,7 @@ import type {
   ToolsConfig,
 } from "../types.js";
 import { ErrorCode, DEFAULT_SETTING_SOURCES } from "../types.js";
+import { enhanceWindowsError } from "../utils/windows.js";
 
 export interface ClaudeCodeReplyInput {
   sessionId: string;
@@ -305,7 +306,7 @@ export async function executeClaudeCodeReply(
         ? `Error [${ErrorCode.TIMEOUT}]: Session timed out after ${input.timeout}ms.`
         : `Error [${ErrorCode.CANCELLED}]: Session was cancelled.`;
     } else {
-      resultText = err instanceof Error ? err.message : String(err);
+      resultText = enhanceWindowsError(err instanceof Error ? err.message : String(err));
     }
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
@@ -684,7 +685,7 @@ async function executeClaudeCodeReplyDiskResume(
         ? `Error [${ErrorCode.TIMEOUT}]: Session timed out after ${input.timeout}ms.`
         : `Error [${ErrorCode.CANCELLED}]: Session was cancelled.`;
     } else {
-      resultText = err instanceof Error ? err.message : String(err);
+      resultText = enhanceWindowsError(err instanceof Error ? err.message : String(err));
     }
   } finally {
     if (timeoutId) clearTimeout(timeoutId);

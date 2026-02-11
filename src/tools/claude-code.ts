@@ -14,6 +14,7 @@ import type {
   SettingSource,
 } from "../types.js";
 import { ErrorCode, DEFAULT_SETTING_SOURCES } from "../types.js";
+import { enhanceWindowsError } from "../utils/windows.js";
 
 export interface ClaudeCodeInput {
   prompt: string;
@@ -241,7 +242,7 @@ export async function executeClaudeCode(
         ? `Error [${ErrorCode.TIMEOUT}]: Session timed out after ${input.timeout}ms.`
         : `Error [${ErrorCode.CANCELLED}]: Session was cancelled.`;
     } else {
-      resultText = err instanceof Error ? err.message : String(err);
+      resultText = enhanceWindowsError(err instanceof Error ? err.message : String(err));
     }
     if (sessionId) {
       const current = sessionManager.get(sessionId);
