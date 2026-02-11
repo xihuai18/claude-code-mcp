@@ -136,7 +136,7 @@ These are set on the MCP server process (not the child Claude Code process):
 
 - `npm run prepublishOnly` triggers a build automatically.
 - `publishConfig.access` is `"public"` (scoped package published publicly).
-- `files` array limits the published package to: `dist/`, `LICENSE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `DESIGN.md`, `README.md`, `SECURITY.md`, `CHANGELOG.md`.
+- `files` array limits the published package to: `dist/`, `LICENSE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `README.md`, `SECURITY.md`, `CHANGELOG.md`.
 
 ## Shell Notes (Windows)
 

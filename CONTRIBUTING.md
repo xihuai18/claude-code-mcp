@@ -12,7 +12,7 @@ npm install
 
 ## Development Workflow
 
-1. Create a feature branch from `main`
+1. Create a feature branch from the default branch
 2. Make your changes
 3. Ensure all checks pass:
    ```bash
@@ -22,7 +22,7 @@ npm install
    npm run format:check # Prettier
    ```
 4. Commit your changes (pre-commit hooks will run lint-staged + typecheck + test)
-5. Open a Pull Request against `main`
+5. Open a Pull Request against the default branch
 
 ## Code Style
 

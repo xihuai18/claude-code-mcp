@@ -1,7 +1,7 @@
 # claude-code-mcp
 
 [![npm version](https://img.shields.io/npm/v/@leo000001/claude-code-mcp.svg)](https://www.npmjs.com/package/@leo000001/claude-code-mcp)
-[![license](https://img.shields.io/npm/l/@leo000001/claude-code-mcp.svg)](https://github.com/xihuai18/claude-code-mcp/blob/main/LICENSE)
+[![license](https://img.shields.io/npm/l/@leo000001/claude-code-mcp.svg)](https://github.com/xihuai18/claude-code-mcp/blob/HEAD/LICENSE)
 [![node](https://img.shields.io/node/v/@leo000001/claude-code-mcp.svg)](https://nodejs.org)
 
 MCP server that wraps [Claude Code (Claude Agent SDK)](https://docs.anthropic.com/en/docs/claude-code/overview) as tools, enabling any MCP client to invoke Claude Code for autonomous coding tasks.
@@ -122,6 +122,11 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `env`                        | object             | No       | Environment variables passed to the Claude Code process                                                                                            |
 
 **Returns:** `{ sessionId, result, isError, durationMs, durationApiMs?, numTurns, totalCostUsd, sessionTotalTurns?, sessionTotalCostUsd?, structuredOutput?, stopReason?, errorSubtype?, usage?, modelUsage?, permissionDenials? }`
+
+> Notes:
+> - **Subagents require the `Task` tool** to be available to the primary agent. If you use `allowedTools`, include `"Task"` or the agent will be unable to invoke subagents.
+> - If you configure `mcpServers` and want the agent to call tools from those servers, you must also allow them via `allowedTools` (e.g. `"mcp__my_server__*"` or specific tool names), especially in `permissionMode="dontAsk"`.
+> - `includePartialMessages` affects the underlying SDK event stream, but **this MCP server returns a single final JSON result** (it does not stream intermediate events over MCP responses).
 
 ### `claude_code_reply` — Continue a session
 

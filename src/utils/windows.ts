@@ -3,7 +3,7 @@
  */
 import { existsSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join, dirname, normalize } from "node:path";
 
 export function isWindows(): boolean {
   return process.platform === "win32";
@@ -17,23 +17,60 @@ export function isWindows(): boolean {
  * Returns the resolved path, or null if not found.
  */
 export function findGitBash(): string | null {
-  if (process.env.CLAUDE_CODE_GIT_BASH_PATH) {
-    if (existsSync(process.env.CLAUDE_CODE_GIT_BASH_PATH)) {
-      return process.env.CLAUDE_CODE_GIT_BASH_PATH;
-    }
+  const envPathRaw = process.env.CLAUDE_CODE_GIT_BASH_PATH;
+  if (envPathRaw && envPathRaw.trim() !== "") {
+    // Users sometimes include quotes in JSON/env config.
+    const envPath = normalize(envPathRaw.trim().replace(/^"|"$/g, ""));
+    if (existsSync(envPath)) return envPath;
     return null; // env var set but path doesn't exist
   }
 
   try {
-    const gitPath = execSync("where git", { encoding: "utf8" }).trim().split(/\r?\n/)[0];
-    if (gitPath) {
-      // git is typically at <root>/cmd/git.exe or <root>/mingw64/bin/git.exe
-      // bash.exe is at <root>/bin/bash.exe
-      const bashPath = join(dirname(gitPath), "..", "..", "bin", "bash.exe");
-      if (existsSync(bashPath)) return bashPath;
-      // Also try: git at <root>/bin/git.exe → same dir
-      const bashPath2 = join(dirname(gitPath), "bash.exe");
-      if (existsSync(bashPath2)) return bashPath2;
+    const output = execSync("where git", { encoding: "utf8" });
+    const gitCandidates = output
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    for (const gitPathRaw of gitCandidates) {
+      const gitPath = normalize(gitPathRaw.replace(/^"|"$/g, ""));
+      if (!gitPath) continue;
+
+      const gitDir = dirname(gitPath);
+      const gitDirLower = gitDir.toLowerCase();
+
+      // Determine plausible Git roots from common layouts.
+      // Layouts seen in the wild:
+      //   <root>\cmd\git.exe           -> bash at <root>\bin\bash.exe
+      //   <root>\bin\git.exe           -> bash at <root>\bin\bash.exe
+      //   <root>\mingw64\bin\git.exe   -> bash at <root>\usr\bin\bash.exe (or <root>\bin\bash.exe)
+      const roots = new Set<string>();
+      roots.add(gitDir);
+      roots.add(join(gitDir, ".."));
+      roots.add(join(gitDir, "..", ".."));
+
+      if (gitDirLower.endsWith("\\cmd") || gitDirLower.endsWith("\\bin")) {
+        roots.add(join(gitDir, ".."));
+      }
+      if (gitDirLower.endsWith("\\mingw64\\bin")) {
+        roots.add(join(gitDir, "..", ".."));
+      }
+
+      const bashCandidates: string[] = [];
+      for (const root of roots) {
+        // Common Git for Windows locations
+        bashCandidates.push(join(root, "bin", "bash.exe"));
+        bashCandidates.push(join(root, "usr", "bin", "bash.exe"));
+        // Some layouts may place bash.exe adjacent
+        bashCandidates.push(join(root, "bash.exe"));
+        // Some portable installs
+        bashCandidates.push(join(root, "mingw64", "bin", "bash.exe"));
+      }
+
+      for (const bashPath of bashCandidates) {
+        const normalized = normalize(bashPath);
+        if (existsSync(normalized)) return normalized;
+      }
     }
   } catch {
     // `where git` failed — git not in PATH

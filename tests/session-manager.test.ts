@@ -263,4 +263,41 @@ describe("SessionManager", () => {
 
     mgr.destroy();
   });
+
+  it("should include controlled sensitive fields in toSensitiveJSON but exclude secrets", () => {
+    const mgr = new SessionManager();
+    mgr.create({
+      sessionId: "sens-test",
+      cwd: "/secret/path",
+      systemPrompt: "secret prompt",
+      agents: { reviewer: { description: "test", prompt: "test" } },
+      additionalDirectories: ["/extra"],
+      mcpServers: { server1: { command: "test" } },
+      sandbox: { enabled: true },
+      env: { SECRET_KEY: "abc" },
+      pathToClaudeCodeExecutable: "/usr/local/bin/claude",
+      debugFile: "/tmp/debug.log",
+    });
+    mgr.update("sens-test", { status: "idle" });
+
+    const session = mgr.get("sens-test")!;
+    const sens = mgr.toSensitiveJSON(session);
+
+    // Should include the documented sensitive fields
+    expect(sens.sessionId).toBe("sens-test");
+    expect(sens.cwd).toBe("/secret/path");
+    expect(sens.systemPrompt).toBe("secret prompt");
+    expect(sens.agents).toEqual({ reviewer: { description: "test", prompt: "test" } });
+    expect(sens.additionalDirectories).toEqual(["/extra"]);
+
+    // Should still exclude secrets
+    expect("env" in sens).toBe(false);
+    expect("mcpServers" in sens).toBe(false);
+    expect("sandbox" in sens).toBe(false);
+    expect("pathToClaudeCodeExecutable" in sens).toBe(false);
+    expect("debugFile" in sens).toBe(false);
+    expect("abortController" in sens).toBe(false);
+
+    mgr.destroy();
+  });
 });

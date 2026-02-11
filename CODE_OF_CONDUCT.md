@@ -28,10 +28,10 @@ Examples of unacceptable behavior:
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported privately via [GitHub Security Advisories](https://github.com/xihuai18/claude-code-mcp/security/advisories/new)
-(preferred for sensitive reports), or publicly via
-[GitHub Issues](https://github.com/xihuai18/claude-code-mcp/issues) for non-sensitive matters.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported:
+
+- Privately via [GitHub Security Advisories](https://github.com/xihuai18/claude-code-mcp/security/advisories/new) (preferred for sensitive reports)
+- Publicly via [GitHub Issues](https://github.com/xihuai18/claude-code-mcp/issues) for non-sensitive matters
 
 For security vulnerabilities, please follow [SECURITY.md](SECURITY.md).
 

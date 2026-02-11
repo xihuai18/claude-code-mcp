@@ -46,7 +46,7 @@ export type ThinkingConfig =
 
 export type ToolsConfig = string[] | { type: "preset"; preset: "claude_code" };
 
-/** Subagent definition */
+/** Subagent definition (mirrors the Zod schema in server.ts) */
 export interface AgentDefinition {
   description: string;
   prompt: string;
@@ -147,6 +147,14 @@ export interface PublicSessionInfo {
   includePartialMessages?: boolean;
   strictMcpConfig?: boolean;
   debug?: boolean;
+}
+
+/** Session metadata returned when includeSensitive=true (still excludes secrets like env) */
+export interface SensitiveSessionInfo extends PublicSessionInfo {
+  cwd: string;
+  systemPrompt?: SystemPrompt;
+  agents?: Record<string, AgentDefinition>;
+  additionalDirectories?: string[];
 }
 
 /** Result returned from a claude_code or claude_code_reply call */

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { executeClaudeCodeConfigure } from "../src/tools/claude-code-configure.js";
+import type { ConfigureAction } from "../src/types.js";
 
 describe("claude_code_configure tool", () => {
   let allowBypass: boolean;
@@ -65,7 +66,10 @@ describe("claude_code_configure tool", () => {
 
   describe("invalid action", () => {
     it("should return error for unknown action", () => {
-      const result = executeClaudeCodeConfigure({ action: "unknown" as any }, config);
+      const result = executeClaudeCodeConfigure(
+        { action: "unknown" as unknown as ConfigureAction },
+        config
+      );
       expect(result.isError).toBe(true);
       expect(result.message).toContain("INVALID_ARGUMENT");
     });

@@ -1,7 +1,13 @@
 /**
  * Session Manager - tracks and manages Claude Code agent sessions
  */
-import type { PublicSessionInfo, SessionInfo, PermissionMode, SessionStatus } from "../types.js";
+import type {
+  PublicSessionInfo,
+  SensitiveSessionInfo,
+  SessionInfo,
+  PermissionMode,
+  SessionStatus,
+} from "../types.js";
 
 const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 const DEFAULT_RUNNING_SESSION_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours max for running sessions
@@ -184,11 +190,25 @@ export class SessionManager {
     }
   }
 
-  /** Serialize session info for external consumption (strip internal fields) */
-  toJSON(info: SessionInfo): Omit<SessionInfo, "abortController"> {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { abortController: _, ...rest } = info;
-    return rest;
+  /**
+   * Serialize session info for external consumption.
+   * Prefer explicit serializers below. This method is kept for backward compatibility
+   * but returns the redacted public shape.
+   */
+  toJSON(info: SessionInfo): PublicSessionInfo {
+    return this.toPublicJSON(info);
+  }
+
+  /** Serialize session info when includeSensitive=true (still excludes secrets like env) */
+  toSensitiveJSON(info: SessionInfo): SensitiveSessionInfo {
+    const base = this.toPublicJSON(info);
+    return {
+      ...base,
+      cwd: info.cwd,
+      systemPrompt: info.systemPrompt,
+      agents: info.agents,
+      additionalDirectories: info.additionalDirectories,
+    };
   }
 
   /** Serialize session info for listing/inspection (redacts sensitive fields) */

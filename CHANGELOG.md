@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.0 (2026-02-12)
+
+### Bug Fixes
+- Windows: fixed Git Bash auto-detection path derivation and improved candidate search
+- Server: internal exceptions in `claude_code`/`claude_code_reply` now return JSON-shaped error results (consistent parsing)
+- Server: tightened input validation for `prompt`, `sessionId`, and `cwd` (trim + non-empty)
+
+### Security
+- `claude_code_session includeSensitive=true` no longer leaks extra fields (e.g. `env`, `debugFile`, `mcpServers`, `sandbox`) beyond the documented sensitive set
+
+### Documentation
+- README: clarify `Task` is required for subagent invocation and how `allowedTools` interacts with `mcpServers`
+- README: clarify `includePartialMessages` is not streamed over MCP responses
+
 ## 1.4.0 (2026-02-11)
 
 ### Features

@@ -1,6 +1,6 @@
 {
   "name": "@leo000001/claude-code-mcp",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "MCP server that wraps Claude Code (Claude Agent SDK) as tools for any MCP client",
   "type": "module",
   "main": "dist/index.js",
@@ -48,12 +48,14 @@
   "bugs": {
     "url": "https://github.com/xihuai18/claude-code-mcp/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "LICENSE",
     "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md",
-    "DESIGN.md",
     "README.md",
     "SECURITY.md",
     "CHANGELOG.md"

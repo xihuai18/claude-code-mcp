@@ -2,7 +2,12 @@
  * claude_code_session tool - Manage sessions (list, get, cancel)
  */
 import type { SessionManager } from "../session/manager.js";
-import type { PublicSessionInfo, SessionInfo, SessionAction } from "../types.js";
+import type {
+  PublicSessionInfo,
+  SensitiveSessionInfo,
+  SessionInfo,
+  SessionAction,
+} from "../types.js";
 import { ErrorCode } from "../types.js";
 
 export interface ClaudeCodeSessionInput {
@@ -12,7 +17,7 @@ export interface ClaudeCodeSessionInput {
 }
 
 export interface SessionResult {
-  sessions: Array<PublicSessionInfo | Omit<SessionInfo, "abortController">>;
+  sessions: Array<PublicSessionInfo | SensitiveSessionInfo>;
   message?: string;
   isError?: boolean;
 }
@@ -22,7 +27,7 @@ export function executeClaudeCodeSession(
   sessionManager: SessionManager
 ): SessionResult {
   const toSessionJson = (s: SessionInfo) =>
-    input.includeSensitive ? sessionManager.toJSON(s) : sessionManager.toPublicJSON(s);
+    input.includeSensitive ? sessionManager.toSensitiveJSON(s) : sessionManager.toPublicJSON(s);
 
   switch (input.action) {
     case "list": {

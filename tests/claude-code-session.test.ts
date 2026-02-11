@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { SessionManager } from "../src/session/manager.js";
 import { executeClaudeCodeSession } from "../src/tools/claude-code-session.js";
+import type { SessionAction } from "../src/types.js";
 
 describe("claude_code_session tool", () => {
   let manager: SessionManager;
@@ -80,6 +81,29 @@ describe("claude_code_session tool", () => {
       expect(result.sessions[0]).toHaveProperty("systemPrompt", "secret");
       expect(result.sessions[0]).toHaveProperty("additionalDirectories");
     });
+
+    it("should not leak secrets even with includeSensitive", () => {
+      manager.create({
+        sessionId: "s-no-leak",
+        cwd: "/tmp",
+        env: { SECRET: "password" },
+        mcpServers: { srv: { command: "test" } },
+        sandbox: { enabled: true },
+        debugFile: "/tmp/debug.log",
+        pathToClaudeCodeExecutable: "/usr/bin/claude",
+      });
+      const result = executeClaudeCodeSession(
+        { action: "get", sessionId: "s-no-leak", includeSensitive: true },
+        manager
+      );
+      expect(result.sessions).toHaveLength(1);
+      expect(result.sessions[0]).toHaveProperty("cwd", "/tmp");
+      expect(result.sessions[0]).not.toHaveProperty("env");
+      expect(result.sessions[0]).not.toHaveProperty("mcpServers");
+      expect(result.sessions[0]).not.toHaveProperty("sandbox");
+      expect(result.sessions[0]).not.toHaveProperty("debugFile");
+      expect(result.sessions[0]).not.toHaveProperty("pathToClaudeCodeExecutable");
+    });
   });
 
   describe("cancel action", () => {
@@ -110,7 +134,10 @@ describe("claude_code_session tool", () => {
 
   describe("invalid action", () => {
     it("should return error for unknown action", () => {
-      const result = executeClaudeCodeSession({ action: "invalid" as any }, manager);
+      const result = executeClaudeCodeSession(
+        { action: "invalid" as unknown as SessionAction },
+        manager
+      );
       expect(result.isError).toBe(true);
       expect(result.message).toContain("INVALID_ARGUMENT");
     });
