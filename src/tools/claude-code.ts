@@ -13,7 +13,7 @@ import type {
   SandboxSettings,
   SettingSource,
 } from "../types.js";
-import { ErrorCode } from "../types.js";
+import { ErrorCode, DEFAULT_SETTING_SOURCES } from "../types.js";
 
 export interface ClaudeCodeInput {
   prompt: string;
@@ -148,9 +148,10 @@ export async function executeClaudeCode(
       options.includePartialMessages = input.includePartialMessages;
     if (input.strictMcpConfig !== undefined) options.strictMcpConfig = input.strictMcpConfig;
     if (input.settingSources !== undefined) options.settingSources = input.settingSources;
+    else options.settingSources = DEFAULT_SETTING_SOURCES;
     if (input.debug !== undefined) options.debug = input.debug;
     if (input.debugFile !== undefined) options.debugFile = input.debugFile;
-    if (input.env !== undefined) options.env = input.env;
+    if (input.env !== undefined) options.env = { ...process.env, ...input.env };
 
     if (effectivePermissionMode === "bypassPermissions") {
       options.allowDangerouslySkipPermissions = true;
@@ -192,7 +193,7 @@ export async function executeClaudeCode(
           enableFileCheckpointing: input.enableFileCheckpointing,
           includePartialMessages: input.includePartialMessages,
           strictMcpConfig: input.strictMcpConfig,
-          settingSources: input.settingSources,
+          settingSources: input.settingSources ?? DEFAULT_SETTING_SOURCES,
           debug: input.debug,
           debugFile: input.debugFile,
           env: input.env,

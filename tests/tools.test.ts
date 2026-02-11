@@ -494,6 +494,126 @@ describe("executeClaudeCode", () => {
     );
   });
 
+  it("should default settingSources to ['user', 'project', 'local'] when not specified", async () => {
+    mockQuery.mockReturnValue(
+      fakeStream([
+        { type: "system", subtype: "init", session_id: "sess-ss-default", uuid: "u1" },
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-ss-default",
+        },
+      ]) as QueryReturn
+    );
+
+    await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          settingSources: ["user", "project", "local"],
+        }),
+      })
+    );
+
+    // Session should also store the resolved default
+    const session = manager.get("sess-ss-default");
+    expect(session!.settingSources).toEqual(["user", "project", "local"]);
+  });
+
+  it("should pass explicit settingSources (empty array) to query options", async () => {
+    mockQuery.mockReturnValue(
+      fakeStream([
+        { type: "system", subtype: "init", session_id: "sess-ss-empty", uuid: "u1" },
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-ss-empty",
+        },
+      ]) as QueryReturn
+    );
+
+    await executeClaudeCode({ prompt: "Test", settingSources: [] }, manager, "/tmp");
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ settingSources: [] }),
+      })
+    );
+  });
+
+  it("should merge env with process.env when env is provided", async () => {
+    mockQuery.mockReturnValue(
+      fakeStream([
+        { type: "system", subtype: "init", session_id: "sess-env-merge", uuid: "u1" },
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-env-merge",
+        },
+      ]) as QueryReturn
+    );
+
+    await executeClaudeCode(
+      { prompt: "Test", env: { CUSTOM_VAR: "custom_value" } },
+      manager,
+      "/tmp"
+    );
+
+    const callArgs = mockQuery.mock.calls[0]![0] as {
+      options: { env?: Record<string, string | undefined> };
+    };
+    const passedEnv = callArgs.options.env!;
+    // User-provided value should be present
+    expect(passedEnv.CUSTOM_VAR).toBe("custom_value");
+    // process.env values should also be present (PATH is always set)
+    expect(passedEnv.PATH).toBe(process.env.PATH);
+  });
+
+  it("should not set options.env when env is not provided", async () => {
+    mockQuery.mockReturnValue(
+      fakeStream([
+        { type: "system", subtype: "init", session_id: "sess-env-none", uuid: "u1" },
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-env-none",
+        },
+      ]) as QueryReturn
+    );
+
+    await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
+
+    const callArgs = mockQuery.mock.calls[0]![0] as {
+      options: { env?: Record<string, string | undefined> };
+    };
+    expect(callArgs.options.env).toBeUndefined();
+  });
+
   it("should clear abortController after completion", async () => {
     mockQuery.mockReturnValue(
       fakeStream([
@@ -824,6 +944,97 @@ describe("executeClaudeCodeReply", () => {
     );
   });
 
+  it("should default settingSources to ['user', 'project', 'local'] on reply", async () => {
+    // Create session without explicit settingSources (simulating old session or undefined)
+    manager.create({ sessionId: "ss-reply-default", cwd: "/tmp" });
+    manager.update("ss-reply-default", { status: "idle" });
+
+    mockQuery.mockReturnValue(
+      fakeStream([
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u1",
+          session_id: "ss-reply-default",
+        },
+      ]) as QueryReturn
+    );
+
+    await executeClaudeCodeReply({ sessionId: "ss-reply-default", prompt: "Continue" }, manager);
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          settingSources: ["user", "project", "local"],
+        }),
+      })
+    );
+  });
+
+  it("should inherit custom settingSources from session on reply", async () => {
+    manager.create({ sessionId: "ss-reply-custom", cwd: "/tmp", settingSources: ["user"] });
+    manager.update("ss-reply-custom", { status: "idle" });
+
+    mockQuery.mockReturnValue(
+      fakeStream([
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u1",
+          session_id: "ss-reply-custom",
+        },
+      ]) as QueryReturn
+    );
+
+    await executeClaudeCodeReply({ sessionId: "ss-reply-custom", prompt: "Continue" }, manager);
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ settingSources: ["user"] }),
+      })
+    );
+  });
+
+  it("should merge env with process.env on reply", async () => {
+    manager.create({ sessionId: "env-reply", cwd: "/tmp", env: { MY_VAR: "hello" } });
+    manager.update("env-reply", { status: "idle" });
+
+    mockQuery.mockReturnValue(
+      fakeStream([
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u1",
+          session_id: "env-reply",
+        },
+      ]) as QueryReturn
+    );
+
+    await executeClaudeCodeReply({ sessionId: "env-reply", prompt: "Continue" }, manager);
+
+    const callArgs = mockQuery.mock.calls[0]![0] as {
+      options: { env?: Record<string, string | undefined> };
+    };
+    const passedEnv = callArgs.options.env!;
+    expect(passedEnv.MY_VAR).toBe("hello");
+    expect(passedEnv.PATH).toBe(process.env.PATH);
+  });
+
   it("should handle fork correctly", async () => {
     manager.create({ sessionId: "orig", cwd: "/project" });
     manager.update("orig", {
@@ -1082,6 +1293,31 @@ describe("executeClaudeCodeReply", () => {
 
       expect(result.isError).toBe(true);
       expect(result.result).toContain("PERMISSION_DENIED");
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
+      else process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = prev;
+    }
+  });
+
+  it("should block disk-resume when input permissionMode is bypassPermissions and bypass is disabled", async () => {
+    const prev = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
+    process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1";
+    try {
+      const result = await executeClaudeCodeReply(
+        {
+          sessionId: "disk-bypass-input",
+          prompt: "Continue",
+          cwd: "/tmp",
+          permissionMode: "bypassPermissions",
+        },
+        manager,
+        false // allowBypass = false
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.result).toContain("PERMISSION_DENIED");
+      // query should not have been called at all
+      expect(mockQuery).not.toHaveBeenCalled();
     } finally {
       if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
       else process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = prev;

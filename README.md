@@ -8,6 +8,7 @@ Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sd
 
 - **4 tools** covering the full agent lifecycle: start, continue, manage, configure
 - **Session management** with resume and fork support
+- **Local settings loaded by default** — automatically reads `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`, and `CLAUDE.md` so the agent behaves like your local Claude Code CLI
 - **Fine-grained permissions** — tool whitelist/blacklist, permission modes
 - **Custom subagents** — define specialized agents per session
 - **Cost tracking** — per-session turn and cost accounting
@@ -21,6 +22,7 @@ This MCP server uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.co
 
 - The SDK's bundled CLI version is determined by the SDK package version (e.g. SDK 0.2.38 = Claude Code 2.1.38)
 - **Configuration is shared** — the bundled CLI reads API keys and settings from `~/.claude/`, same as the system-installed `claude`
+- **All local settings are loaded by default** — unlike the raw SDK (which defaults to isolation mode), this MCP server loads `user`, `project`, and `local` settings automatically, including `CLAUDE.md` project context. Pass `settingSources: []` to opt out
 - You must have Claude Code configured (API key set up) before using this MCP server: see [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code/overview)
 
 > **Note:** The bundled CLI version may differ from your system-installed `claude`. To check: `claude --version` (system) vs `npm ls @anthropic-ai/claude-agent-sdk` (SDK).
@@ -102,7 +104,7 @@ Start a Claude Code agent that can read/write files, run commands, and more.
 | `enableFileCheckpointing`    | boolean            | No       | Enable file checkpointing to track file changes during the session                                                         |
 | `includePartialMessages`     | boolean            | No       | Include partial/streaming message events in output                                                                         |
 | `strictMcpConfig`            | boolean            | No       | Enforce strict validation of MCP server configurations                                                                     |
-| `settingSources`             | string[]           | No       | Control which filesystem settings are loaded (`"user"`, `"project"`, `"local"`)                                            |
+| `settingSources`             | string[]           | No       | Which filesystem settings to load. Defaults to `["user", "project", "local"]` (loads all settings and CLAUDE.md). Pass `[]` for SDK isolation mode |
 | `debug`                      | boolean            | No       | Enable debug mode for verbose logging                                                                                      |
 | `debugFile`                  | string             | No       | Write debug logs to a specific file path (implicitly enables debug mode)                                                   |
 | `env`                        | object             | No       | Environment variables passed to the Claude Code process                                                                    |
@@ -150,7 +152,7 @@ Continue an existing session with full context preserved.
 | `enableFileCheckpointing`    | boolean            | Enable file checkpointing            |
 | `includePartialMessages`     | boolean            | Include partial message events       |
 | `strictMcpConfig`            | boolean            | Strict MCP config validation         |
-| `settingSources`             | string[]           | Filesystem settings sources          |
+| `settingSources`             | string[]           | Which filesystem settings to load (defaults to all) |
 | `debug`                      | boolean            | Debug mode                           |
 | `debugFile`                  | string             | Debug log file path                  |
 | `env`                        | object             | Environment variables                |
@@ -181,7 +183,7 @@ Enable or disable `bypassPermissions` mode at runtime without restarting the ser
 | --------- | ------ | -------- | -------------------------------------------------------- |
 | `action`  | string | Yes      | `"enable_bypass"`, `"disable_bypass"`, or `"get_config"` |
 
-**Returns:** `{ allowBypass, message }`
+**Returns:** `{ allowBypass, message, isError? }`
 
 ## Usage Example
 
@@ -217,6 +219,7 @@ result = await mcp.call_tool("claude_code_session", {
 
 - **`permissionMode` defaults to `"dontAsk"`** — the agent will deny any operation not pre-approved, avoiding interactive prompts that would hang in MCP context.
 - **`bypassPermissions` is disabled by default.** Use the `claude_code_configure` tool with action `enable_bypass` to enable it at runtime.
+- **Environment variables are inherited** — the spawned Claude Code process inherits all environment variables (including `ANTHROPIC_API_KEY`) from the parent process by default. The `env` parameter **merges** with `process.env` (user-provided values take precedence), so you can safely add or override individual variables without losing existing ones.
 - Use `tools` / `disallowedTools` to restrict the base set of tools the agent can use. Use `allowedTools` to auto-approve tools without prompting.
 - `maxTurns` and `maxBudgetUsd` prevent runaway execution.
 - Sessions auto-expire after 30 minutes of inactivity.

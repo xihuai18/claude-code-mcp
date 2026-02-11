@@ -58,7 +58,8 @@ export function createServer(serverCwd: string, opts?: ServerOptions): McpServer
     `Start a new Claude Code agent session to perform coding tasks autonomously.
 The agent can read/write files, run commands, search code, and more.
 Returns a sessionId for continuing the conversation later.
-Permission mode defaults to "dontAsk" (non-interactive, safe for MCP).`,
+Permission mode defaults to "dontAsk" (non-interactive, safe for MCP).
+By default, loads all local Claude settings (user, project, local) including CLAUDE.md for project context.`,
     {
       prompt: z.string().describe("The task or question for Claude Code"),
       cwd: z.string().optional().describe("Working directory (defaults to server cwd)"),
@@ -204,7 +205,9 @@ Permission mode defaults to "dontAsk" (non-interactive, safe for MCP).`,
       settingSources: z
         .array(z.enum(["user", "project", "local"]))
         .optional()
-        .describe("Control which filesystem settings are loaded"),
+        .describe(
+          'Control which filesystem settings are loaded. Defaults to ["user", "project", "local"] (loads all settings including ~/.claude/settings.json, .claude/settings.json, .claude/settings.local.json, and CLAUDE.md). Pass an empty array [] to disable all settings (SDK isolation mode).'
+        ),
       debug: z.boolean().optional().describe("Enable debug mode for verbose logging"),
       debugFile: z
         .string()
@@ -213,7 +216,9 @@ Permission mode defaults to "dontAsk" (non-interactive, safe for MCP).`,
       env: z
         .record(z.string(), z.string().optional())
         .optional()
-        .describe("Environment variables passed to the Claude Code process"),
+        .describe(
+          "Environment variables to merge with process.env and pass to the Claude Code process (user-provided values take precedence)"
+        ),
     },
     async (args) => {
       try {
@@ -405,7 +410,9 @@ Permission mode defaults to "dontAsk" (non-interactive, safe for MCP).`,
       settingSources: z
         .array(z.enum(["user", "project", "local"]))
         .optional()
-        .describe("Control which filesystem settings are loaded"),
+        .describe(
+          'Control which filesystem settings are loaded. Defaults to ["user", "project", "local"] (loads all settings including ~/.claude/settings.json, .claude/settings.json, .claude/settings.local.json, and CLAUDE.md). Pass an empty array [] to disable all settings (SDK isolation mode).'
+        ),
       debug: z.boolean().optional().describe("Enable debug mode for verbose logging"),
       debugFile: z
         .string()
@@ -414,7 +421,9 @@ Permission mode defaults to "dontAsk" (non-interactive, safe for MCP).`,
       env: z
         .record(z.string(), z.string().optional())
         .optional()
-        .describe("Environment variables passed to the Claude Code process"),
+        .describe(
+          "Environment variables to merge with process.env and pass to the Claude Code process (user-provided values take precedence)"
+        ),
     },
     async (args) => {
       try {

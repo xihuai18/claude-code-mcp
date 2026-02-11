@@ -68,6 +68,9 @@ export type SandboxSettings = Record<string, unknown>;
 /** Setting source for controlling which filesystem settings are loaded */
 export type SettingSource = "user" | "project" | "local";
 
+/** Default setting sources — load all filesystem settings for ease of use */
+export const DEFAULT_SETTING_SOURCES: SettingSource[] = ["user", "project", "local"];
+
 /** Session metadata stored by the session manager */
 export interface SessionInfo {
   sessionId: string;

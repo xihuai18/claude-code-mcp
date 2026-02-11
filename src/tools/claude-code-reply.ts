@@ -17,7 +17,7 @@ import type {
   ThinkingConfig,
   ToolsConfig,
 } from "../types.js";
-import { ErrorCode } from "../types.js";
+import { ErrorCode, DEFAULT_SETTING_SOURCES } from "../types.js";
 
 export interface ClaudeCodeReplyInput {
   sessionId: string;
@@ -206,9 +206,10 @@ export async function executeClaudeCodeReply(
       options.includePartialMessages = session.includePartialMessages;
     if (session.strictMcpConfig !== undefined) options.strictMcpConfig = session.strictMcpConfig;
     if (session.settingSources !== undefined) options.settingSources = session.settingSources;
+    else options.settingSources = DEFAULT_SETTING_SOURCES;
     if (session.debug !== undefined) options.debug = session.debug;
     if (session.debugFile !== undefined) options.debugFile = session.debugFile;
-    if (session.env !== undefined) options.env = session.env;
+    if (session.env !== undefined) options.env = { ...process.env, ...session.env };
 
     if (session.permissionMode === "bypassPermissions") {
       options.allowDangerouslySkipPermissions = true;
@@ -255,7 +256,7 @@ export async function executeClaudeCodeReply(
             enableFileCheckpointing: session.enableFileCheckpointing,
             includePartialMessages: session.includePartialMessages,
             strictMcpConfig: session.strictMcpConfig,
-            settingSources: session.settingSources,
+            settingSources: session.settingSources ?? DEFAULT_SETTING_SOURCES,
             debug: session.debug,
             debugFile: session.debugFile,
             env: session.env,
@@ -513,7 +514,7 @@ async function executeClaudeCodeReplyDiskResume(
           enableFileCheckpointing: input.enableFileCheckpointing,
           includePartialMessages: input.includePartialMessages,
           strictMcpConfig: input.strictMcpConfig,
-          settingSources: input.settingSources,
+          settingSources: input.settingSources ?? DEFAULT_SETTING_SOURCES,
           debug: input.debug,
           debugFile: input.debugFile,
           env: input.env,
@@ -563,9 +564,10 @@ async function executeClaudeCodeReplyDiskResume(
       options.includePartialMessages = input.includePartialMessages;
     if (input.strictMcpConfig !== undefined) options.strictMcpConfig = input.strictMcpConfig;
     if (input.settingSources !== undefined) options.settingSources = input.settingSources;
+    else options.settingSources = DEFAULT_SETTING_SOURCES;
     if (input.debug !== undefined) options.debug = input.debug;
     if (input.debugFile !== undefined) options.debugFile = input.debugFile;
-    if (input.env !== undefined) options.env = input.env;
+    if (input.env !== undefined) options.env = { ...process.env, ...input.env };
 
     if (effectivePermissionMode === "bypassPermissions") {
       options.allowDangerouslySkipPermissions = true;
@@ -618,7 +620,7 @@ async function executeClaudeCodeReplyDiskResume(
                 enableFileCheckpointing: input.enableFileCheckpointing,
                 includePartialMessages: input.includePartialMessages,
                 strictMcpConfig: input.strictMcpConfig,
-                settingSources: input.settingSources,
+                settingSources: input.settingSources ?? DEFAULT_SETTING_SOURCES,
                 debug: input.debug,
                 debugFile: input.debugFile,
                 env: input.env,

@@ -80,7 +80,7 @@ export class SessionManager {
       totalCostUsd: 0,
       cwd: params.cwd,
       model: params.model,
-      permissionMode: params.permissionMode ?? "default",
+      permissionMode: params.permissionMode ?? "dontAsk",
       allowedTools: params.allowedTools,
       disallowedTools: params.disallowedTools,
       tools: params.tools,
