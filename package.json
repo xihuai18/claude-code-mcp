@@ -42,7 +42,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xihuai18/claude-code-mcp.git"
+    "url": "git+https://github.com/xihuai18/claude-code-mcp.git"
   },
   "homepage": "https://github.com/xihuai18/claude-code-mcp#readme",
   "bugs": {
