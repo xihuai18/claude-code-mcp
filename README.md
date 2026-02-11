@@ -1,5 +1,9 @@
 # claude-code-mcp
 
+[![npm version](https://img.shields.io/npm/v/@leo000001/claude-code-mcp.svg)](https://www.npmjs.com/package/@leo000001/claude-code-mcp)
+[![license](https://img.shields.io/npm/l/@leo000001/claude-code-mcp.svg)](https://github.com/xihuai18/claude-code-mcp/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/@leo000001/claude-code-mcp.svg)](https://nodejs.org)
+
 MCP server that wraps [Claude Code (Claude Agent SDK)](https://docs.anthropic.com/en/docs/claude-code/overview) as tools, enabling any MCP client to invoke Claude Code for autonomous coding tasks.
 
 Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sdk/) design philosophy — minimum tools, maximum capability.
@@ -18,6 +22,8 @@ Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sd
 
 ## Prerequisites
 
+- **Node.js >= 18** is required.
+
 This MCP server uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) package, which **bundles its own Claude Code CLI** (`cli.js`). It does not use the `claude` binary from your system PATH.
 
 - The SDK's bundled CLI version is determined by the SDK package version (e.g. SDK 0.2.38 = Claude Code 2.1.38)
@@ -30,6 +36,12 @@ This MCP server uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.co
 ## Quick Start
 
 ### As an MCP server (recommended)
+
+Install globally or use `npx` (no install needed):
+
+```bash
+npm install -g @leo000001/claude-code-mcp
+```
 
 Add to your MCP client configuration (Claude Desktop, Cursor, etc.):
 
@@ -274,6 +286,60 @@ setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
 - Use `tools` / `disallowedTools` to restrict the base set of tools the agent can use. Use `allowedTools` to auto-approve tools without prompting.
 - `maxTurns` and `maxBudgetUsd` prevent runaway execution.
 - Sessions auto-expire after 30 minutes of inactivity.
+
+## Environment Variables
+
+All environment variables are optional. They are set on the MCP server process (not on the Claude Code child process — for that, use the `env` tool parameter).
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `CLAUDE_CODE_GIT_BASH_PATH` | Path to `bash.exe` on Windows (see [Windows Support](#windows-support)) | Auto-detected |
+| `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
+| `CLAUDE_CODE_MCP_ALLOW_SENSITIVE_SESSION_DETAILS` | Set to `1` to allow `claude_code_session` to return `cwd`, `systemPrompt`, `agents`, `additionalDirectories` | `0` (disabled) |
+| `CLAUDE_CODE_MCP_SESSION_TTL_MS` | Idle session time-to-live in milliseconds | `1800000` (30 min) |
+| `CLAUDE_CODE_MCP_RUNNING_SESSION_MAX_MS` | Maximum wall-clock time for a running session before forced cleanup | `14400000` (4 hr) |
+| `CLAUDE_CODE_MCP_CLEANUP_INTERVAL_MS` | How often the cleanup timer runs | `60000` (1 min) |
+
+### How to configure
+
+**JSON-based MCP clients** (Claude Desktop, Cursor, etc.) — add an `"env"` block:
+
+```json
+{
+  "mcpServers": {
+    "claude-code": {
+      "command": "npx",
+      "args": ["@leo000001/claude-code-mcp"],
+      "env": {
+        "CLAUDE_CODE_MCP_ALLOW_DISK_RESUME": "1",
+        "CLAUDE_CODE_MCP_SESSION_TTL_MS": "3600000"
+      }
+    }
+  }
+}
+```
+
+**OpenAI Codex CLI** — add an `[mcp_servers.claude-code.env]` section in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.claude-code]
+command = "npx"
+args = ["-y", "@leo000001/claude-code-mcp"]
+
+[mcp_servers.claude-code.env]
+CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1"
+CLAUDE_CODE_MCP_SESSION_TTL_MS = "3600000"
+```
+
+**System-wide** — set via your shell profile or OS settings so all processes inherit them:
+
+```bash
+# bash / zsh
+export CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1
+
+# PowerShell (permanent, requires new terminal)
+setx CLAUDE_CODE_MCP_ALLOW_DISK_RESUME 1
+```
 
 ## Development
 
