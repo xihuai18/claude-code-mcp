@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+*.log
+coverage/
+.env
+.env.*
+!.env.example
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.npmrc
+DESIGN.md
