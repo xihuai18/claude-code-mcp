@@ -62,7 +62,7 @@ export interface AgentDefinition {
 /** MCP server configuration for the SDK */
 export type McpServerConfig = Record<string, unknown>;
 
-/** Sandbox settings for command execution isolation */
+/** Sandbox configuration for isolating shell command execution */
 export type SandboxSettings = Record<string, unknown>;
 
 /** Setting source for controlling which filesystem settings are loaded */
@@ -96,17 +96,17 @@ export interface SessionInfo {
   outputFormat?: OutputFormat;
   thinking?: ThinkingConfig;
   persistSession?: boolean;
-  /** Main-thread agent name */
+  /** Primary agent name (from 'agents' definitions) */
   agent?: string;
-  /** MCP server configurations */
+  /** MCP server configurations (key: server name, value: server config) */
   mcpServers?: Record<string, McpServerConfig>;
-  /** Sandbox settings for command execution isolation */
+  /** Sandbox configuration for isolating shell command execution */
   sandbox?: SandboxSettings;
-  /** Fallback model if the primary model fails */
+  /** Fallback model if the primary model fails or is unavailable */
   fallbackModel?: string;
   /** Enable file checkpointing to track file changes */
   enableFileCheckpointing?: boolean;
-  /** Include partial/streaming message events */
+  /** When true, includes intermediate streaming messages in the response */
   includePartialMessages?: boolean;
   /** Enforce strict validation of MCP server configurations */
   strictMcpConfig?: boolean;

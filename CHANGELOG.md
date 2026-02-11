@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (2026-02-11)
+## 1.4.0 (2026-02-11)
 
 ### Features
 - New tool: `claude_code_configure` for runtime bypass mode management (enable/disable without restart)

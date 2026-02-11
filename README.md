@@ -13,7 +13,7 @@ Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sd
 - **4 tools** covering the full agent lifecycle: start, continue, manage, configure
 - **Session management** with resume and fork support
 - **Local settings loaded by default** — automatically reads `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`, and `CLAUDE.md` so the agent behaves like your local Claude Code CLI
-- **Fine-grained permissions** — tool whitelist/blacklist, permission modes
+- **Fine-grained permissions** — tool allow/deny lists, permission modes
 - **Custom subagents** — define specialized agents per session
 - **Cost tracking** — per-session turn and cost accounting
 - **Session cancellation** via AbortController
@@ -50,7 +50,7 @@ Add to your MCP client configuration (Claude Desktop, Cursor, etc.):
   "mcpServers": {
     "claude-code": {
       "command": "npx",
-      "args": ["@leo000001/claude-code-mcp"]
+      "args": ["-y", "@leo000001/claude-code-mcp"]
     }
   }
 }
@@ -86,21 +86,21 @@ npm start
 
 ### `claude_code` — Start a new session
 
-Start a Claude Code agent that can read/write files, run commands, and more.
+Start a new Claude Code session. The agent autonomously performs coding tasks: reading/writing files, running shell commands, searching code, managing git, and interacting with APIs.
 
 | Parameter                    | Type               | Required | Description                                                                                                                                        |
 | ---------------------------- | ------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `prompt`                     | string             | Yes      | Task or question for Claude Code                                                                                                                   |
 | `cwd`                        | string             | No       | Working directory (defaults to server cwd)                                                                                                         |
-| `allowedTools`               | string[]           | No       | Auto-approved tools (skips permission prompts). In `"dontAsk"` mode this effectively acts as a whitelist                                           |
-| `disallowedTools`            | string[]           | No       | Tool blacklist                                                                                                                                     |
-| `tools`                      | string[] \| object | No       | Base set of available tools (array of names, or `{ type: "preset", preset: "claude_code" }`)                                                       |
+| `allowedTools`               | string[]           | No       | List of tool names the agent can use without permission prompts. In `"dontAsk"` mode, only tools in this list are available. Example: `["Bash", "Read", "Write", "Edit"]` |
+| `disallowedTools`            | string[]           | No       | List of tool names the agent is forbidden from using. Takes precedence over `allowedTools`                                                         |
+| `tools`                      | string[] \| object | No       | Define the base tool set. Array of tool name strings, or `{ type: "preset", preset: "claude_code" }` for the default toolset. `allowedTools`/`disallowedTools` further filter on top of this |
 | `persistSession`             | boolean            | No       | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                  |
-| `permissionMode`             | string             | No       | Defaults to `"dontAsk"`. Options: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, `"plan"`, `"delegate"`, `"dontAsk"`                         |
-| `maxTurns`                   | number             | No       | Maximum agentic turns                                                                                                                              |
+| `permissionMode`             | string             | No       | Controls how the agent handles tool permissions. Defaults to `"dontAsk"`. Options: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, `"plan"`, `"delegate"`, `"dontAsk"` |
+| `maxTurns`                   | number             | No       | Maximum number of agent reasoning steps. Each step may involve one or more tool calls                                                              |
 | `model`                      | string             | No       | Model to use (e.g. `"claude-sonnet-4-5-20250929"`)                                                                                                 |
-| `systemPrompt`               | string \| object   | No       | Custom system prompt (string or `{ type: "preset", preset: "claude_code", append?: "..." }`)                                                       |
-| `agents`                     | object             | No       | Custom subagent definitions                                                                                                                        |
+| `systemPrompt`               | string \| object   | No       | Override the agent's system prompt. Pass a string for full replacement, or `{ type: "preset", preset: "claude_code", append?: "..." }` to extend the default prompt |
+| `agents`                     | object             | No       | Define custom sub-agents the main agent can delegate tasks to. Each key is the agent name; value specifies prompt, tools, model, etc.              |
 | `maxBudgetUsd`               | number             | No       | Maximum budget in USD                                                                                                                              |
 | `timeout`                    | number             | No       | Timeout in milliseconds for this session                                                                                                           |
 | `effort`                     | string             | No       | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`                                                                                               |
@@ -109,12 +109,12 @@ Start a Claude Code agent that can read/write files, run commands, and more.
 | `outputFormat`               | object             | No       | Structured output: `{ type: "json_schema", schema: {...} }`. Omit for plain text                                                                   |
 | `thinking`                   | object             | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`                                           |
 | `pathToClaudeCodeExecutable` | string             | No       | Path to a custom Claude Code executable                                                                                                            |
-| `agent`                      | string             | No       | Main-thread agent name to apply custom agent system prompt, tool restrictions, and model                                                           |
+| `agent`                      | string             | No       | Name of a custom agent (defined in `agents`) to use as the primary agent, applying its system prompt, tool restrictions, and model                  |
 | `mcpServers`                 | object             | No       | MCP server configurations (key: server name, value: server config)                                                                                 |
-| `sandbox`                    | object             | No       | Sandbox settings for command execution isolation                                                                                                   |
+| `sandbox`                    | object             | No       | Sandbox configuration for isolating shell command execution (e.g., Docker container settings)                                                      |
 | `fallbackModel`              | string             | No       | Fallback model if the primary model fails or is unavailable                                                                                        |
 | `enableFileCheckpointing`    | boolean            | No       | Enable file checkpointing to track file changes during the session                                                                                 |
-| `includePartialMessages`     | boolean            | No       | Include partial/streaming message events in output                                                                                                 |
+| `includePartialMessages`     | boolean            | No       | When true, includes intermediate streaming messages in the response. Useful for real-time progress monitoring. Default: false                       |
 | `strictMcpConfig`            | boolean            | No       | Enforce strict validation of MCP server configurations                                                                                             |
 | `settingSources`             | string[]           | No       | Which filesystem settings to load. Defaults to `["user", "project", "local"]` (loads all settings and CLAUDE.md). Pass `[]` for SDK isolation mode |
 | `debug`                      | boolean            | No       | Enable debug mode for verbose logging                                                                                                              |
@@ -125,13 +125,13 @@ Start a Claude Code agent that can read/write files, run commands, and more.
 
 ### `claude_code_reply` — Continue a session
 
-Continue an existing session with full context preserved.
+Continue an existing session by sending a follow-up message. The agent retains full context from previous turns including files read, code analysis, and conversation history.
 
 | Parameter     | Type    | Required | Description                                   |
 | ------------- | ------- | -------- | --------------------------------------------- |
 | `sessionId`   | string  | Yes      | Session ID from a previous `claude_code` call |
 | `prompt`      | string  | Yes      | Follow-up prompt                              |
-| `forkSession` | boolean | No       | Fork to a new session (preserves original)    |
+| `forkSession` | boolean | No       | Create a branched copy of this session. The original remains unchanged; the new session diverges from this point |
 | `timeout`     | number  | No       | Timeout in milliseconds for this reply        |
 
 <details>
@@ -140,15 +140,15 @@ Continue an existing session with full context preserved.
 | Parameter                    | Type               | Description                                         |
 | ---------------------------- | ------------------ | --------------------------------------------------- |
 | `cwd`                        | string             | Working directory                                   |
-| `allowedTools`               | string[]           | Auto-approved tools                                 |
-| `disallowedTools`            | string[]           | Tool blacklist                                      |
-| `tools`                      | string[] \| object | Base set of available tools                         |
+| `allowedTools`               | string[]           | Auto-approved tool names (see `claude_code` tool)   |
+| `disallowedTools`            | string[]           | Forbidden tool names (see `claude_code` tool)       |
+| `tools`                      | string[] \| object | Base tool set (see `claude_code` tool)              |
 | `persistSession`             | boolean            | Persist session history to disk                     |
 | `permissionMode`             | string             | Permission mode                                     |
-| `maxTurns`                   | number             | Maximum agentic turns                               |
+| `maxTurns`                   | number             | Maximum number of agent reasoning steps             |
 | `model`                      | string             | Model to use                                        |
-| `systemPrompt`               | string \| object   | Custom system prompt                                |
-| `agents`                     | object             | Custom subagent definitions                         |
+| `systemPrompt`               | string \| object   | Override the agent's system prompt                  |
+| `agents`                     | object             | Custom sub-agent definitions (see `claude_code`)    |
 | `maxBudgetUsd`               | number             | Maximum budget in USD                               |
 | `effort`                     | string             | Effort level                                        |
 | `betas`                      | string[]           | Beta features                                       |
@@ -157,12 +157,12 @@ Continue an existing session with full context preserved.
 | `thinking`                   | object             | Thinking mode                                       |
 | `resumeSessionAt`            | string             | Resume up to a specific message UUID                |
 | `pathToClaudeCodeExecutable` | string             | Path to Claude Code executable                      |
-| `agent`                      | string             | Main-thread agent name                              |
+| `agent`                      | string             | Primary agent name (see `claude_code` tool)         |
 | `mcpServers`                 | object             | MCP server configurations                           |
-| `sandbox`                    | object             | Sandbox settings                                    |
+| `sandbox`                    | object             | Sandbox config for command isolation                |
 | `fallbackModel`              | string             | Fallback model                                      |
 | `enableFileCheckpointing`    | boolean            | Enable file checkpointing                           |
-| `includePartialMessages`     | boolean            | Include partial message events                      |
+| `includePartialMessages`     | boolean            | Include intermediate streaming messages             |
 | `strictMcpConfig`            | boolean            | Strict MCP config validation                        |
 | `settingSources`             | string[]           | Which filesystem settings to load (defaults to all) |
 | `debug`                      | boolean            | Debug mode                                          |
@@ -246,7 +246,7 @@ For JSON-based MCP clients (Claude Desktop, Cursor, etc.):
   "mcpServers": {
     "claude-code": {
       "command": "npx",
-      "args": ["@leo000001/claude-code-mcp"],
+      "args": ["-y", "@leo000001/claude-code-mcp"],
       "env": {
         "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\bin\\bash.exe"
       }
@@ -283,7 +283,7 @@ setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
 - **`permissionMode` defaults to `"dontAsk"`** — the agent will deny any operation not pre-approved, avoiding interactive prompts that would hang in MCP context.
 - **`bypassPermissions` is disabled by default.** Use the `claude_code_configure` tool with action `enable_bypass` to enable it at runtime.
 - **Environment variables are inherited** — the spawned Claude Code process inherits all environment variables (including `ANTHROPIC_API_KEY`) from the parent process by default. The `env` parameter **merges** with `process.env` (user-provided values take precedence), so you can safely add or override individual variables without losing existing ones.
-- Use `tools` / `disallowedTools` to restrict the base set of tools the agent can use. Use `allowedTools` to auto-approve tools without prompting.
+- Use `tools` / `disallowedTools` to restrict the base set of tools the agent can use. Use `allowedTools` to specify which tools are auto-approved without prompting.
 - `maxTurns` and `maxBudgetUsd` prevent runaway execution.
 - Sessions auto-expire after 30 minutes of inactivity.
 
@@ -309,7 +309,7 @@ All environment variables are optional. They are set on the MCP server process (
   "mcpServers": {
     "claude-code": {
       "command": "npx",
-      "args": ["@leo000001/claude-code-mcp"],
+      "args": ["-y", "@leo000001/claude-code-mcp"],
       "env": {
         "CLAUDE_CODE_MCP_ALLOW_DISK_RESUME": "1",
         "CLAUDE_CODE_MCP_SESSION_TTL_MS": "3600000"
