@@ -203,4 +203,64 @@ describe("SessionManager", () => {
       vi.useRealTimers();
     }
   });
+
+  it("should abort and mark stuck running sessions as error after max time", () => {
+    vi.useFakeTimers();
+    try {
+      const mgr = new SessionManager({
+        runningSessionMaxMs: 5000,
+        cleanupIntervalMs: 1000,
+      });
+      const ac = new AbortController();
+      mgr.create({ sessionId: "stuck", cwd: "/tmp", abortController: ac });
+      // Session is "running" with abortController
+
+      // Advance past the running max time
+      vi.advanceTimersByTime(6000);
+
+      const session = mgr.get("stuck");
+      expect(session).toBeDefined();
+      expect(session!.status).toBe("error");
+      expect(ac.signal.aborted).toBe(true);
+
+      mgr.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should strip sensitive fields in toPublicJSON", () => {
+    const mgr = new SessionManager();
+    mgr.create({
+      sessionId: "pub-test",
+      cwd: "/secret/path",
+      systemPrompt: "secret prompt",
+      agents: { reviewer: { description: "test", prompt: "test" } },
+      additionalDirectories: ["/extra"],
+      mcpServers: { server1: { command: "test" } },
+      sandbox: { enabled: true },
+      env: { SECRET_KEY: "abc" },
+      pathToClaudeCodeExecutable: "/usr/local/bin/claude",
+      settingSources: ["user", "project"],
+      debugFile: "/tmp/debug.log",
+    });
+    mgr.update("pub-test", { status: "idle" });
+
+    const session = mgr.get("pub-test")!;
+    const pub = mgr.toPublicJSON(session);
+
+    expect(pub.sessionId).toBe("pub-test");
+    expect("cwd" in pub).toBe(false);
+    expect("systemPrompt" in pub).toBe(false);
+    expect("agents" in pub).toBe(false);
+    expect("additionalDirectories" in pub).toBe(false);
+    expect("mcpServers" in pub).toBe(false);
+    expect("sandbox" in pub).toBe(false);
+    expect("env" in pub).toBe(false);
+    expect("pathToClaudeCodeExecutable" in pub).toBe(false);
+    expect("settingSources" in pub).toBe(false);
+    expect("debugFile" in pub).toBe(false);
+
+    mgr.destroy();
+  });
 });

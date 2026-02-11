@@ -24,9 +24,10 @@ import { executeClaudeCode } from "../src/tools/claude-code.js";
 import { executeClaudeCodeReply } from "../src/tools/claude-code-reply.js";
 
 const mockQuery = vi.mocked(query);
+type QueryReturn = ReturnType<typeof query>;
 
 /** Helper to create an async generator from messages */
-async function* fakeStream(messages: any[]) {
+async function* fakeStream(messages: Record<string, unknown>[]) {
   for (const msg of messages) {
     yield msg;
   }
@@ -64,7 +65,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-123",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCode({ prompt: "Fix the bug" }, manager, "/tmp");
@@ -102,7 +103,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-err",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
@@ -132,7 +133,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-nonstr",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
@@ -153,7 +154,7 @@ describe("executeClaudeCode", () => {
           uuid: "u1",
         };
         throw new Error("Network failure");
-      })() as any
+      })() as QueryReturn
     );
 
     const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
@@ -163,7 +164,7 @@ describe("executeClaudeCode", () => {
   });
 
   it("should handle missing init message", async () => {
-    mockQuery.mockReturnValue(fakeStream([]) as any);
+    mockQuery.mockReturnValue(fakeStream([]) as QueryReturn);
 
     const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
 
@@ -182,30 +183,32 @@ describe("executeClaudeCode", () => {
   it("should timeout and abort query()", async () => {
     vi.useFakeTimers();
     try {
-      mockQuery.mockImplementation(({ options }: any) => {
-        const ac: AbortController = options.abortController;
-        return (async function* () {
-          const abortPromise = new Promise<void>((_resolve, reject) => {
-            ac.signal.addEventListener(
-              "abort",
-              () => {
-                const e = new Error("The operation was aborted");
-                e.name = "AbortError";
-                reject(e);
-              },
-              { once: true }
-            );
-          });
-          yield {
-            type: "system",
-            subtype: "init",
-            session_id: "sess-timeout",
-            uuid: "u1",
-          };
-          await abortPromise;
-          yield; // unreachable, satisfies require-yield
-        })();
-      });
+      mockQuery.mockImplementation(
+        ({ options }: { options: { abortController: AbortController } }) => {
+          const ac: AbortController = options.abortController;
+          return (async function* () {
+            const abortPromise = new Promise<void>((_resolve, reject) => {
+              ac.signal.addEventListener(
+                "abort",
+                () => {
+                  const e = new Error("The operation was aborted");
+                  e.name = "AbortError";
+                  reject(e);
+                },
+                { once: true }
+              );
+            });
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-timeout",
+              uuid: "u1",
+            };
+            await abortPromise;
+            yield; // unreachable, satisfies require-yield
+          })();
+        }
+      );
 
       const resultPromise = executeClaudeCode({ prompt: "Test", timeout: 10 }, manager, "/tmp");
       await vi.advanceTimersByTimeAsync(10);
@@ -228,7 +231,7 @@ describe("executeClaudeCode", () => {
           session_id: "sess-noresult",
           uuid: "u1",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
@@ -273,7 +276,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-bypass",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCode(
@@ -302,7 +305,7 @@ describe("executeClaudeCode", () => {
           uuid: "u1",
           session_id: "ghost",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
@@ -330,7 +333,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-dirs",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     await executeClaudeCode(
@@ -361,7 +364,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-persist",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     await executeClaudeCode({ prompt: "Test", persistSession: false }, manager, "/tmp");
@@ -388,7 +391,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-perm",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
@@ -418,7 +421,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-think",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     await executeClaudeCode(
@@ -451,7 +454,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-fmt",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const fmt = { type: "json_schema" as const, schema: { type: "object" } };
@@ -479,7 +482,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-max",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     await executeClaudeCode({ prompt: "Test", effort: "max" }, manager, "/tmp");
@@ -511,7 +514,7 @@ describe("executeClaudeCode", () => {
           uuid: "u2",
           session_id: "sess-ac",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
@@ -519,6 +522,31 @@ describe("executeClaudeCode", () => {
     const session = manager.get("sess-ac");
     expect(session).toBeDefined();
     expect(session!.abortController).toBeUndefined();
+  });
+
+  it("should extract structuredOutput from successful result", async () => {
+    mockQuery.mockReturnValue(
+      fakeStream([
+        { type: "system", subtype: "init", session_id: "sess-struct", uuid: "u1" },
+        {
+          type: "result",
+          subtype: "success",
+          result: "Done",
+          structured_output: { answer: 42 },
+          duration_ms: 100,
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-struct",
+        },
+      ]) as QueryReturn
+    );
+
+    const result = await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredOutput).toEqual({ answer: 42 });
   });
 });
 
@@ -575,7 +603,7 @@ describe("executeClaudeCodeReply", () => {
             uuid: "u2",
             session_id: "disk-sess",
           },
-        ]) as any
+        ]) as QueryReturn
       );
 
       const result = await executeClaudeCodeReply(
@@ -641,7 +669,7 @@ describe("executeClaudeCodeReply", () => {
             uuid: "u2",
             session_id: "disk-forked",
           },
-        ]) as any
+        ]) as QueryReturn
       );
 
       const result = await executeClaudeCodeReply(
@@ -719,7 +747,7 @@ describe("executeClaudeCodeReply", () => {
           uuid: "u1",
           session_id: "bypass-ok",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCodeReply(
@@ -752,7 +780,7 @@ describe("executeClaudeCodeReply", () => {
           uuid: "u2",
           session_id: "idle-sess",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCodeReply(
@@ -784,7 +812,7 @@ describe("executeClaudeCodeReply", () => {
           uuid: "u1",
           session_id: "persist-reply",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     await executeClaudeCodeReply({ sessionId: "persist-reply", prompt: "Continue" }, manager);
@@ -823,7 +851,7 @@ describe("executeClaudeCodeReply", () => {
           uuid: "u2",
           session_id: "forked-sess",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCodeReply(
@@ -864,7 +892,7 @@ describe("executeClaudeCodeReply", () => {
           uuid: "u1",
           session_id: "orig-nofork",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCodeReply(
@@ -894,7 +922,7 @@ describe("executeClaudeCodeReply", () => {
           uuid: "u1",
           session_id: "err-sess",
         },
-      ]) as any
+      ]) as QueryReturn
     );
 
     const result = await executeClaudeCodeReply(
@@ -912,24 +940,26 @@ describe("executeClaudeCodeReply", () => {
       manager.create({ sessionId: "reply-timeout", cwd: "/tmp" });
       manager.update("reply-timeout", { status: "idle" });
 
-      mockQuery.mockImplementation(({ options }: any) => {
-        const ac: AbortController = options.abortController;
-        return (async function* () {
-          const abortPromise = new Promise<void>((_resolve, reject) => {
-            ac.signal.addEventListener(
-              "abort",
-              () => {
-                const e = new Error("The operation was aborted");
-                e.name = "AbortError";
-                reject(e);
-              },
-              { once: true }
-            );
-          });
-          await abortPromise;
-          yield; // unreachable, satisfies require-yield
-        })();
-      });
+      mockQuery.mockImplementation(
+        ({ options }: { options: { abortController: AbortController } }) => {
+          const ac: AbortController = options.abortController;
+          return (async function* () {
+            const abortPromise = new Promise<void>((_resolve, reject) => {
+              ac.signal.addEventListener(
+                "abort",
+                () => {
+                  const e = new Error("The operation was aborted");
+                  e.name = "AbortError";
+                  reject(e);
+                },
+                { once: true }
+              );
+            });
+            await abortPromise;
+            yield; // unreachable, satisfies require-yield
+          })();
+        }
+      );
 
       const resultPromise = executeClaudeCodeReply(
         { sessionId: "reply-timeout", prompt: "Continue", timeout: 10 },
@@ -941,6 +971,42 @@ describe("executeClaudeCodeReply", () => {
       expect(result.isError).toBe(true);
       expect(result.result).toContain("TIMEOUT");
       expect(manager.get("reply-timeout")!.status).toBe("error");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should return TIMEOUT (not INTERNAL) when SDK ends stream silently after abort", async () => {
+    vi.useFakeTimers();
+    try {
+      manager.create({ sessionId: "silent-abort", cwd: "/tmp" });
+      manager.update("silent-abort", { status: "idle" });
+
+      mockQuery.mockImplementation(
+        ({ options }: { options: { abortController: AbortController } }) => {
+          const ac: AbortController = options.abortController;
+          // eslint-disable-next-line require-yield
+          return (async function* () {
+            // Wait for abort, then end stream silently (no throw, no result)
+            await new Promise<void>((resolve) => {
+              ac.signal.addEventListener("abort", () => resolve(), { once: true });
+            });
+            // Stream ends without yielding a result or throwing
+          })();
+        }
+      );
+
+      const resultPromise = executeClaudeCodeReply(
+        { sessionId: "silent-abort", prompt: "Continue", timeout: 10 },
+        manager
+      );
+      await vi.advanceTimersByTimeAsync(10);
+      const result = await resultPromise;
+
+      expect(result.isError).toBe(true);
+      expect(result.result).toContain("TIMEOUT");
+      // Should NOT contain INTERNAL
+      expect(result.result).not.toContain("INTERNAL");
     } finally {
       vi.useRealTimers();
     }
@@ -968,7 +1034,7 @@ describe("executeClaudeCodeReply", () => {
         manager.cancel("reply-cancel");
         throw new Error("AbortError: The operation was aborted");
         yield; // unreachable, satisfies require-yield
-      })() as any
+      })() as QueryReturn
     );
 
     await executeClaudeCodeReply({ sessionId: "reply-cancel", prompt: "Continue" }, manager);
@@ -976,6 +1042,50 @@ describe("executeClaudeCodeReply", () => {
     const session = manager.get("reply-cancel");
     expect(session).toBeDefined();
     expect(session!.status).toBe("cancelled");
+  });
+
+  it("should block disk-resume when init reports bypassPermissions and bypass is disabled", async () => {
+    const prev = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
+    process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1";
+    try {
+      mockQuery.mockReturnValue(
+        fakeStream([
+          {
+            type: "system",
+            subtype: "init",
+            session_id: "disk-bypass",
+            uuid: "u1",
+            permissionMode: "bypassPermissions",
+            cwd: "/project",
+            tools: ["Read"],
+            model: "claude-sonnet-4-5-20250929",
+          },
+          {
+            type: "result",
+            subtype: "success",
+            result: "Should not reach here",
+            duration_ms: 100,
+            num_turns: 1,
+            total_cost_usd: 0.01,
+            is_error: false,
+            uuid: "u2",
+            session_id: "disk-bypass",
+          },
+        ]) as QueryReturn
+      );
+
+      const result = await executeClaudeCodeReply(
+        { sessionId: "disk-bypass", prompt: "Continue", cwd: "/tmp" },
+        manager,
+        false // allowBypass = false
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.result).toContain("PERMISSION_DENIED");
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
+      else process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = prev;
+    }
   });
 });
 
@@ -1006,7 +1116,7 @@ describe("cancellation semantics", () => {
         // The abort causes an error
         throw new Error("AbortError: The operation was aborted");
         yield; // unreachable, satisfies require-yield
-      })() as any
+      })() as QueryReturn
     );
 
     await executeClaudeCode({ prompt: "Long task" }, manager, "/tmp");
@@ -1022,7 +1132,7 @@ describe("cancellation semantics", () => {
       (async function* () {
         throw new Error("Authentication failed: invalid API key");
         yield; // unreachable, satisfies require-yield
-      })() as any
+      })() as QueryReturn
     );
 
     const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");

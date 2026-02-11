@@ -255,6 +255,8 @@ export async function executeClaudeCode(
         }
       }
     }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 
   // Some SDK abort paths end the stream without throwing. Ensure aborts become TIMEOUT/CANCELLED,
@@ -306,8 +308,6 @@ export async function executeClaudeCode(
       : `Error [${ErrorCode.INTERNAL}]: No session ID received from agent.`;
     resultText = resultText ? `${noInitMsg} Original: ${resultText}` : noInitMsg;
   }
-
-  if (timeoutId) clearTimeout(timeoutId);
 
   return {
     sessionId,

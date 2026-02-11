@@ -289,6 +289,8 @@ export async function executeClaudeCodeReply(
           resultText =
             result.errors.map(String).join("\n") || `Error [${result.subtype}]: Unknown error`;
         }
+
+        break;
       }
     }
   } catch (err: unknown) {
@@ -304,6 +306,17 @@ export async function executeClaudeCodeReply(
     } else {
       resultText = err instanceof Error ? err.message : String(err);
     }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  // Some SDK abort paths end the stream without throwing. Ensure aborts become TIMEOUT/CANCELLED,
+  // not an INTERNAL "missing_result" error.
+  if (!seenResult && !isError && abortController.signal.aborted) {
+    isError = true;
+    resultText = timedOut
+      ? `Error [${ErrorCode.TIMEOUT}]: Session timed out after ${input.timeout}ms.`
+      : `Error [${ErrorCode.CANCELLED}]: Session was cancelled.`;
   }
 
   if (!seenResult && !isError) {
@@ -381,8 +394,6 @@ export async function executeClaudeCodeReply(
     const noForkMsg = `Error [${ErrorCode.INTERNAL}]: Fork requested but no new session ID received from agent.`;
     resultText = resultText ? `${noForkMsg} Original: ${resultText}` : noForkMsg;
   }
-
-  if (timeoutId) clearTimeout(timeoutId);
 
   return {
     sessionId: targetSessionId,
@@ -656,6 +667,8 @@ async function executeClaudeCodeReplyDiskResume(
           resultText =
             result.errors.map(String).join("\n") || `Error [${result.subtype}]: Unknown error`;
         }
+
+        break;
       }
     }
   } catch (err: unknown) {
@@ -671,6 +684,17 @@ async function executeClaudeCodeReplyDiskResume(
     } else {
       resultText = err instanceof Error ? err.message : String(err);
     }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  // Some SDK abort paths end the stream without throwing. Ensure aborts become TIMEOUT/CANCELLED,
+  // not an INTERNAL "missing_result" error.
+  if (!seenResult && !isError && abortController.signal.aborted) {
+    isError = true;
+    resultText = timedOut
+      ? `Error [${ErrorCode.TIMEOUT}]: Session timed out after ${input.timeout}ms.`
+      : `Error [${ErrorCode.CANCELLED}]: Session was cancelled.`;
   }
 
   if (!seenResult && !isError) {
@@ -682,7 +706,10 @@ async function executeClaudeCodeReplyDiskResume(
 
   const targetSessionId = input.forkSession ? newSessionId : input.sessionId;
 
-  // Update totals/status and clear abortController for tracked sessions
+  // Update totals/status and clear abortController for tracked sessions.
+  // Note: In disk-resume mode, the original session may not exist in memory (it was resumed
+  // from disk). When forking, only the new forked session is tracked; the original session
+  // has no in-memory state to clean up, which is the expected behavior.
   const tracked = sessionManager.get(targetSessionId);
   if (tracked) {
     const nextTurns = input.forkSession ? numTurns : (tracked.totalTurns ?? 0) + numTurns;
@@ -712,8 +739,6 @@ async function executeClaudeCodeReplyDiskResume(
     const noForkMsg = `Error [${ErrorCode.INTERNAL}]: Fork requested but no new session ID received from agent.`;
     resultText = resultText ? `${noForkMsg} Original: ${resultText}` : noForkMsg;
   }
-
-  if (timeoutId) clearTimeout(timeoutId);
 
   return {
     sessionId: targetSessionId,

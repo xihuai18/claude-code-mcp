@@ -5,13 +5,17 @@
 ### Features
 - New tool: `claude_code_configure` for runtime bypass mode management (enable/disable without restart)
 - New parameters for `claude_code`: `additionalDirectories`, `outputFormat`, `thinking`, `tools`, `timeout`
+- New parameters for `claude_code` and `claude_code_reply`: `pathToClaudeCodeExecutable`, `agent`, `mcpServers`, `sandbox`, `fallbackModel`, `enableFileCheckpointing`, `includePartialMessages`, `strictMcpConfig`, `settingSources`, `debug`, `debugFile`, `env`
 - Effort level now supports `"max"` in addition to low/medium/high
-- `AgentResult` now includes `structuredOutput`, `stopReason`, `errorSubtype`, `usage`
+- `AgentResult` now includes `structuredOutput`, `stopReason`, `errorSubtype`, `usage`, `modelUsage`, `permissionDenials`
 
 ### Improvements
 - README: Added Prerequisites section clarifying Claude Code CLI dependency
+- README/DESIGN.md: Updated parameter tables to include all supported parameters
 - DESIGN.md: Updated to reflect 4-tool architecture and current security model
 - SECURITY.md: Fixed inaccurate references to system CLI and env vars
+- Moved `clearTimeout` into `finally` blocks for safer resource cleanup
+- Added `break` after result processing in `claude_code_reply` for consistency
 
 ### Bug Fixes
 - Fixed `claude_code_reply` not passing `cwd`/`permissionMode`/`allowDangerouslySkipPermissions` to SDK

@@ -1,6 +1,6 @@
 {
   "name": "@leo000001/claude-code-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP server that wraps Claude Code (Claude Agent SDK) as tools for any MCP client",
   "type": "module",
   "main": "dist/index.js",
@@ -28,9 +28,14 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "claude-code",
     "claude",
+    "claude-agent-sdk",
+    "anthropic",
     "agent",
+    "coding-agent",
+    "model-context-protocol",
     "ai"
   ],
   "author": "xihuai18",
