@@ -19,6 +19,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 import { query, AbortError } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 import { consumeQuery, classifyError } from "../src/tools/query-consumer.js";
+import { executeClaudeCodeCheck } from "../src/tools/claude-code-check.js";
+import type { CheckResult } from "../src/types.js";
 
 const mockQuery = vi.mocked(query);
 type QueryReturn = ReturnType<typeof query>;
@@ -648,6 +650,141 @@ describe("consumeQuery error paths", () => {
 
     const session = manager.get("sess-preabort");
     expect(session!.status).toBe("idle");
+
+    manager.destroy();
+  });
+});
+
+describe("integration: consumeQuery + executeClaudeCodeCheck respond_permission", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should complete the full flow: query → waiting_permission → poll → respond_permission → idle", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockImplementation(({ options }: { options: { canUseTool: CanUseTool } }) => {
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-e2e",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Bash"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        const result = await options.canUseTool(
+          "Bash",
+          { cmd: "rm -rf /tmp/test" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tu-e2e",
+            decisionReason: "needs approval",
+          }
+        );
+        expect(result.behavior).toBe("allow");
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "done",
+          duration_ms: 10,
+          num_turns: 1,
+          total_cost_usd: 0.001,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-e2e",
+          duration_api_ms: 5,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })();
+    });
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test e2e",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+
+    // Wait for session to enter waiting_permission
+    for (let i = 0; i < 50; i++) {
+      if (manager.get("sess-e2e")?.status === "waiting_permission") break;
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    // Step 1: poll — should see waiting_permission with actions
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "sess-e2e" },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.status).toBe("waiting_permission");
+    expect(polled.pollInterval).toBe(1000);
+    expect(polled.actions).toHaveLength(1);
+    expect(polled.actions![0].toolName).toBe("Bash");
+
+    const requestId = polled.actions![0].requestId;
+
+    // Step 2: respond_permission — approve the request
+    const responded = executeClaudeCodeCheck(
+      {
+        action: "respond_permission",
+        sessionId: "sess-e2e",
+        requestId,
+        decision: "allow",
+      },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect("isError" in responded && responded.isError).toBeFalsy();
+    expect(responded.status).toBe("running");
+    expect(responded.actions).toBeUndefined();
+
+    // Wait for the query to finish
+    await handle.done;
+
+    // Step 3: final poll — session should be idle with result
+    const final = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "sess-e2e" },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(final.status).toBe("idle");
+    expect(final.result).toBeDefined();
+    expect(final.result!.isError).toBe(false);
 
     manager.destroy();
   });
