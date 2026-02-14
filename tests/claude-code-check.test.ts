@@ -29,7 +29,7 @@ describe("executeClaudeCodeCheck", () => {
     manager.update("s1", { status: "idle" });
 
     const res = executeClaudeCodeCheck(
-      { action: "poll", sessionId: "s1", includeTools: true },
+      { action: "poll", sessionId: "s1", pollOptions: { includeTools: true } },
       manager,
       toolCache
     );
@@ -44,7 +44,7 @@ describe("executeClaudeCodeCheck", () => {
     manager.update("s1", { status: "idle" });
 
     const res = executeClaudeCodeCheck(
-      { action: "poll", sessionId: "s1", includeTools: true },
+      { action: "poll", sessionId: "s1", pollOptions: { includeTools: true } },
       manager,
       toolCache
     ) as CheckResult;
@@ -81,8 +81,10 @@ describe("executeClaudeCodeCheck", () => {
         sessionId: "s1",
         requestId: "r1",
         decision: "allow",
-        updatedInput: { cmd: "echo ok" },
-        updatedPermissions: [{ scope: "test" }],
+        permissionOptions: {
+          updatedInput: { cmd: "echo ok" },
+          updatedPermissions: [{ scope: "test" }],
+        },
       },
       manager,
       toolCache

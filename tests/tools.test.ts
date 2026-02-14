@@ -153,12 +153,14 @@ describe("executeClaudeCode (async)", () => {
     await executeClaudeCode(
       {
         prompt: "Test",
-        additionalDirectories: ["/extra"],
-        persistSession: false,
-        thinking: { type: "adaptive" },
-        outputFormat: { type: "json_schema", schema: { type: "object" } },
-        effort: "max",
-        env: { TEST_ENV: "1" },
+        advanced: {
+          additionalDirectories: ["/extra"],
+          persistSession: false,
+          thinking: { type: "adaptive" },
+          outputFormat: { type: "json_schema", schema: { type: "object" } },
+          effort: "max",
+          env: { TEST_ENV: "1" },
+        },
       },
       manager,
       "/tmp",
@@ -209,7 +211,7 @@ describe("executeClaudeCode (async)", () => {
       );
 
       const promise = executeClaudeCode(
-        { prompt: "Test", sessionInitTimeoutMs: 10 },
+        { prompt: "Test", advanced: { sessionInitTimeoutMs: 10 } },
         manager,
         "/tmp",
         toolCache
@@ -247,7 +249,7 @@ describe("executeClaudeCode (async)", () => {
 
     const request = new AbortController();
     const promise = executeClaudeCode(
-      { prompt: "Test", sessionInitTimeoutMs: 10_000 },
+      { prompt: "Test", advanced: { sessionInitTimeoutMs: 10_000 } },
       manager,
       "/tmp",
       toolCache,
@@ -421,8 +423,10 @@ describe("executeClaudeCodeReply (async)", () => {
         {
           sessionId: "disk-1",
           prompt: "Hi",
-          cwd: "/tmp",
-          resumeToken: computeResumeToken("disk-1", "test-secret"),
+          diskResumeConfig: {
+            cwd: "/tmp",
+            resumeToken: computeResumeToken("disk-1", "test-secret"),
+          },
         },
         manager,
         toolCache
@@ -439,7 +443,7 @@ describe("executeClaudeCodeReply (async)", () => {
     vi.stubEnv("CLAUDE_CODE_MCP_RESUME_SECRET", "test-secret");
     try {
       const res = await executeClaudeCodeReply(
-        { sessionId: "disk-1", prompt: "Hi", cwd: "/tmp" },
+        { sessionId: "disk-1", prompt: "Hi", diskResumeConfig: { cwd: "/tmp" } },
         manager,
         toolCache
       );
@@ -455,7 +459,11 @@ describe("executeClaudeCodeReply (async)", () => {
     vi.stubEnv("CLAUDE_CODE_MCP_RESUME_SECRET", "test-secret");
     try {
       const res = await executeClaudeCodeReply(
-        { sessionId: "disk-1", prompt: "Hi", cwd: "/tmp", resumeToken: "bad" },
+        {
+          sessionId: "disk-1",
+          prompt: "Hi",
+          diskResumeConfig: { cwd: "/tmp", resumeToken: "bad" },
+        },
         manager,
         toolCache
       );

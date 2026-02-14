@@ -17,11 +17,29 @@ import { ErrorCode } from "../types.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 import { discoverToolsFromInit } from "./tool-discovery.js";
 
+/** Fine-grained poll control options (most callers just use responseMode). */
+export interface PollOptions {
+  includeTools?: boolean;
+  includeEvents?: boolean;
+  includeActions?: boolean;
+  includeResult?: boolean;
+  includeUsage?: boolean;
+  includeModelUsage?: boolean;
+  includeStructuredOutput?: boolean;
+  includeTerminalEvents?: boolean;
+  includeProgressEvents?: boolean;
+}
+
+/** Advanced permission response options. */
+export interface PermissionResponseOptions {
+  updatedInput?: Record<string, unknown>;
+  updatedPermissions?: Array<Record<string, unknown>>;
+}
+
 export interface ClaudeCodeCheckInput {
   action: CheckAction;
   sessionId: string;
   cursor?: number;
-  includeTools?: boolean;
 
   /**
    * Response shaping. Defaults to "minimal" to reduce payload size.
@@ -30,35 +48,17 @@ export interface ClaudeCodeCheckInput {
   responseMode?: CheckResponseMode;
   /** Max number of events to return per poll (pagination via nextCursor). */
   maxEvents?: number;
-  /** Include the events array (default true). */
-  includeEvents?: boolean;
-  /** Include actions[] for pending permissions (default true). */
-  includeActions?: boolean;
-  /** Include top-level result when status is idle/error (default true). */
-  includeResult?: boolean;
-  /** Include AgentResult.usage (default: full=true, minimal=false). */
-  includeUsage?: boolean;
-  /** Include AgentResult.modelUsage (default: full=true, minimal=false). */
-  includeModelUsage?: boolean;
-  /** Include AgentResult.structuredOutput (default: full=true, minimal=false). */
-  includeStructuredOutput?: boolean;
-  /**
-   * Include terminal result/error events in the events stream when top-level result is included.
-   * Default: full=true, minimal=false (to avoid duplication).
-   */
-  includeTerminalEvents?: boolean;
-  /**
-   * Include progress events (tool_progress, auth_status) in the events stream.
-   * Default: full=true, minimal=false (these are mostly noise for callers).
-   */
-  includeProgressEvents?: boolean;
+
+  /** Fine-grained poll control. Overrides responseMode defaults for individual fields. */
+  pollOptions?: PollOptions;
 
   requestId?: string;
   decision?: PermissionDecision;
   denyMessage?: string;
-  updatedInput?: Record<string, unknown>;
-  updatedPermissions?: Array<Record<string, unknown>>;
   interrupt?: boolean;
+
+  /** Advanced permission response options (only with decision='allow'). */
+  permissionOptions?: PermissionResponseOptions;
 }
 
 export type ClaudeCodeCheckResult =
@@ -156,15 +156,16 @@ function buildResult(
   input: ClaudeCodeCheckInput
 ): CheckResult {
   const responseMode: CheckResponseMode = input.responseMode ?? "minimal";
-  const includeTools = input.includeTools;
-  const includeEvents = input.includeEvents ?? true;
-  const includeActions = input.includeActions ?? true;
-  const includeResult = input.includeResult ?? true;
-  const includeUsage = input.includeUsage ?? responseMode === "full";
-  const includeModelUsage = input.includeModelUsage ?? responseMode === "full";
-  const includeStructuredOutput = input.includeStructuredOutput ?? responseMode === "full";
-  const includeTerminalEvents = input.includeTerminalEvents ?? responseMode === "full";
-  const includeProgressEvents = input.includeProgressEvents ?? responseMode === "full";
+  const po = input.pollOptions ?? {};
+  const includeTools = po.includeTools;
+  const includeEvents = po.includeEvents ?? true;
+  const includeActions = po.includeActions ?? true;
+  const includeResult = po.includeResult ?? true;
+  const includeUsage = po.includeUsage ?? responseMode === "full";
+  const includeModelUsage = po.includeModelUsage ?? responseMode === "full";
+  const includeStructuredOutput = po.includeStructuredOutput ?? responseMode === "full";
+  const includeTerminalEvents = po.includeTerminalEvents ?? responseMode === "full";
+  const includeProgressEvents = po.includeProgressEvents ?? responseMode === "full";
   const maxEvents = input.maxEvents ?? (responseMode === "minimal" ? 200 : undefined);
 
   const sessionId = input.sessionId;
@@ -366,8 +367,8 @@ export function executeClaudeCodeCheck(
     input.requestId,
     toPermissionResult({
       decision: input.decision,
-      updatedInput: input.updatedInput,
-      updatedPermissions: input.updatedPermissions,
+      updatedInput: input.permissionOptions?.updatedInput,
+      updatedPermissions: input.permissionOptions?.updatedPermissions,
       denyMessage: input.denyMessage,
       interrupt: input.interrupt,
     }),

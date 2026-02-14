@@ -17,15 +17,13 @@ import { computeResumeToken, getResumeSecret } from "../utils/resume-token.js";
 import { raceWithAbort } from "../utils/race-with-abort.js";
 import { buildOptions } from "../utils/build-options.js";
 
-export interface ClaudeCodeInput {
-  prompt: string;
-  cwd?: string;
-  allowedTools?: string[];
-  disallowedTools?: string[];
-  maxTurns?: number;
-  model?: string;
-  systemPrompt?: string | { type: "preset"; preset: "claude_code"; append?: string };
+/** Low-frequency / SDK-passthrough options grouped under `advanced`. */
+export interface ClaudeCodeAdvancedOptions {
+  tools?: string[] | { type: "preset"; preset: "claude_code" };
+  persistSession?: boolean;
+  sessionInitTimeoutMs?: number;
   agents?: Record<string, AgentDefinition>;
+  agent?: string;
   maxBudgetUsd?: number;
   effort?: EffortLevel;
   betas?: string[];
@@ -35,10 +33,7 @@ export interface ClaudeCodeInput {
     | { type: "adaptive" }
     | { type: "enabled"; budgetTokens: number }
     | { type: "disabled" };
-  tools?: string[] | { type: "preset"; preset: "claude_code" };
-  persistSession?: boolean;
   pathToClaudeCodeExecutable?: string;
-  agent?: string;
   mcpServers?: Record<string, McpServerConfig>;
   sandbox?: SandboxSettings;
   fallbackModel?: string;
@@ -49,10 +44,20 @@ export interface ClaudeCodeInput {
   debug?: boolean;
   debugFile?: string;
   env?: Record<string, string | undefined>;
-  /** Timeout waiting for system/init (default 10000ms) */
-  sessionInitTimeoutMs?: number;
+}
+
+export interface ClaudeCodeInput {
+  prompt: string;
+  cwd?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  maxTurns?: number;
+  model?: string;
+  systemPrompt?: string | { type: "preset"; preset: "claude_code"; append?: string };
   /** Timeout waiting for permission decision (default 60000ms) */
   permissionRequestTimeoutMs?: number;
+  /** Low-frequency SDK options. All fields are optional and have sensible defaults. */
+  advanced?: ClaudeCodeAdvancedOptions;
 }
 
 export type ClaudeCodeStartResult =
@@ -77,16 +82,28 @@ export async function executeClaudeCode(
   }
 
   const abortController = new AbortController();
+  const adv = input.advanced ?? {};
 
   const permissionRequestTimeoutMs = input.permissionRequestTimeoutMs ?? 60_000;
-  const sessionInitTimeoutMs = input.sessionInitTimeoutMs ?? 10_000;
+  const sessionInitTimeoutMs = adv.sessionInitTimeoutMs ?? 10_000;
+
+  // Flatten top-level + advanced into a single object for buildOptions / sessionManager.
+  const flat = {
+    cwd,
+    allowedTools: input.allowedTools,
+    disallowedTools: input.disallowedTools,
+    maxTurns: input.maxTurns,
+    model: input.model,
+    systemPrompt: input.systemPrompt,
+    ...adv,
+  };
 
   try {
     const handle = consumeQuery({
       mode: "start",
       prompt: input.prompt,
       abortController,
-      options: buildOptions({ ...input, cwd }),
+      options: buildOptions(flat),
       permissionRequestTimeoutMs,
       sessionInitTimeoutMs,
       sessionManager,
@@ -101,29 +118,29 @@ export async function executeClaudeCode(
           permissionMode: "default",
           allowedTools: input.allowedTools,
           disallowedTools: input.disallowedTools,
-          tools: input.tools,
+          tools: adv.tools,
           maxTurns: input.maxTurns,
           systemPrompt: input.systemPrompt,
-          agents: input.agents as Record<string, AgentDefinition> | undefined,
-          maxBudgetUsd: input.maxBudgetUsd,
-          effort: input.effort,
-          betas: input.betas,
-          additionalDirectories: input.additionalDirectories,
-          outputFormat: input.outputFormat,
-          thinking: input.thinking,
-          persistSession: input.persistSession,
-          pathToClaudeCodeExecutable: input.pathToClaudeCodeExecutable,
-          agent: input.agent,
-          mcpServers: input.mcpServers,
-          sandbox: input.sandbox,
-          fallbackModel: input.fallbackModel,
-          enableFileCheckpointing: input.enableFileCheckpointing,
-          includePartialMessages: input.includePartialMessages,
-          strictMcpConfig: input.strictMcpConfig,
-          settingSources: input.settingSources ?? DEFAULT_SETTING_SOURCES,
-          debug: input.debug,
-          debugFile: input.debugFile,
-          env: input.env,
+          agents: adv.agents as Record<string, AgentDefinition> | undefined,
+          maxBudgetUsd: adv.maxBudgetUsd,
+          effort: adv.effort,
+          betas: adv.betas,
+          additionalDirectories: adv.additionalDirectories,
+          outputFormat: adv.outputFormat,
+          thinking: adv.thinking,
+          persistSession: adv.persistSession,
+          pathToClaudeCodeExecutable: adv.pathToClaudeCodeExecutable,
+          agent: adv.agent,
+          mcpServers: adv.mcpServers,
+          sandbox: adv.sandbox,
+          fallbackModel: adv.fallbackModel,
+          enableFileCheckpointing: adv.enableFileCheckpointing,
+          includePartialMessages: adv.includePartialMessages,
+          strictMcpConfig: adv.strictMcpConfig,
+          settingSources: adv.settingSources ?? DEFAULT_SETTING_SOURCES,
+          debug: adv.debug,
+          debugFile: adv.debugFile,
+          env: adv.env,
           abortController,
         });
       },

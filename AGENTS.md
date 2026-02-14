@@ -16,8 +16,8 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
   - `.claude/settings.local.json`（本地设置，不提交）
   - `CLAUDE.md`（项目上下文文件）
 - **API Key 共享**：SDK 内置的 CLI 从 `~/.claude/` 读取 API key，与系统安装的 `claude` 命令共享配置
-- **环境变量继承**：`env` 参数以 `{ ...process.env, ...input.env }` 方式合并，用户值优先覆盖，无需重复配置
-- **可选隔离**：传 `settingSources: []` 可切换为 SDK 隔离模式，不加载任何本地配置
+- **环境变量继承**：`advanced.env` 参数以 `{ ...process.env, ...input.advanced.env }` 方式合并，用户值优先覆盖，无需重复配置
+- **可选隔离**：传 `advanced.settingSources: []` 可切换为 SDK 隔离模式，不加载任何本地配置
 
 这意味着用户在本地 Claude Code CLI 中的所有配置（权限规则、项目上下文、API key）都会被 MCP server 自动继承，实现真正的零配置启动。
 
@@ -36,12 +36,12 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 ### 3. 最少配置（Minimum Configuration）
 
-`claude_code` 仅 `prompt` 为必填参数，其余 25+ 参数全部可选且有合理默认值：
+`claude_code` 仅 `prompt` 为必填参数，其余高频参数（`cwd`, `allowedTools`, `disallowedTools`, `maxTurns`, `model`, `systemPrompt`, `permissionRequestTimeoutMs`）保留在顶层，22 个低频参数折叠到 `advanced` 对象中：
 
 - **工作目录**：默认为 server 进程的 cwd
 - **权限**：默认 `permissionMode="default"` + 空 `allowedTools`/`disallowedTools`（所有工具调用都会触发权限请求）
-- **会话持久化**：默认 `persistSession=true`（历史保存到 `~/.claude/projects/`）
-- **超时**：`sessionInitTimeoutMs=10000`，`permissionRequestTimeoutMs=60000`
+- **会话持久化**：默认 `advanced.persistSession=true`（历史保存到 `~/.claude/projects/`）
+- **超时**：`advanced.sessionInitTimeoutMs=10000`，`permissionRequestTimeoutMs=60000`
 - **设置来源**：默认加载全部本地设置（见上方第 1 点）
 - **模型/effort/thinking**：默认使用 SDK/Claude Code 的默认值
 
@@ -49,22 +49,22 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 ### 4. 最大 SDK 能力暴露（Maximum SDK Capability）
 
-本项目将 Claude Agent SDK 的 `Options` 接口几乎完整地暴露为工具参数（通过 `src/utils/build-options.ts` 统一构建），包括：
+本项目将 Claude Agent SDK 的 `Options` 接口几乎完整地暴露为工具参数（通过 `src/utils/build-options.ts` 统一构建）。高频参数保留在顶层，低频参数折叠到嵌套对象中（`claude_code` 的 `advanced`、`claude_code_reply` 的 `diskResumeConfig`、`claude_code_check` 的 `pollOptions`/`permissionOptions`），包括：
 
-- **模型控制**：`model`、`fallbackModel`、`effort`、`thinking`、`betas`
-- **工具控制**：`tools`（可见性）、`allowedTools`/`disallowedTools`（审批策略）
+- **模型控制**：`model`、`advanced.fallbackModel`、`advanced.effort`、`advanced.thinking`、`advanced.betas`
+- **工具控制**：`advanced.tools`（可见性）、`allowedTools`/`disallowedTools`（审批策略）
 - **系统提示**：`systemPrompt`（完全替换或 preset + append 扩展）
-- **子 Agent**：`agents`（定义自定义子 agent，含 prompt/tools/model/mcpServers）
-- **MCP 嵌套**：`mcpServers`（agent 内部可连接其他 MCP server）
-- **沙箱**：`sandbox`（命令执行隔离，如 Docker 容器）
-- **结构化输出**：`outputFormat`（JSON Schema 约束输出格式）
-- **费用/轮次限制**：`maxBudgetUsd`、`maxTurns`
-- **文件检查点**：`enableFileCheckpointing`
-- **调试**：`debug`、`debugFile`
-- **环境变量**：`env`（合并到子进程环境）
-- **额外目录**：`additionalDirectories`
+- **子 Agent**：`advanced.agents`（定义自定义子 agent，含 prompt/tools/model/mcpServers）
+- **MCP 嵌套**：`advanced.mcpServers`（agent 内部可连接其他 MCP server）
+- **沙箱**：`advanced.sandbox`（命令执行隔离，如 Docker 容器）
+- **结构化输出**：`advanced.outputFormat`（JSON Schema 约束输出格式）
+- **费用/轮次限制**：`advanced.maxBudgetUsd`、`maxTurns`
+- **文件检查点**：`advanced.enableFileCheckpointing`
+- **调试**：`advanced.debug`、`advanced.debugFile`
+- **环境变量**：`advanced.env`（合并到子进程环境）
+- **额外目录**：`advanced.additionalDirectories`
 
-`claude_code_reply` 在磁盘恢复场景下也支持全部参数，确保重启后能以相同配置恢复 session。
+`claude_code_reply` 在磁盘恢复场景下通过 `diskResumeConfig` 对象支持全部参数，确保重启后能以相同配置恢复 session。
 
 ### 5. 完全无阻塞（Non-Blocking Async Execution）
 
@@ -84,8 +84,8 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 本项目实现了三层权限防护 + 异步权限裁决流程：
 
-**第零层 — 模型可见性控制（`tools` 参数）**：
-- 控制 agent 能"看到"哪些工具。不在 `tools` 列表中的工具从模型上下文中完全消失
+**第零层 — 模型可见性控制（`advanced.tools` 参数）**：
+- 控制 agent 能"看到"哪些工具。不在 `advanced.tools` 列表中的工具从模型上下文中完全消失
 - 最强限制：工具不可见 = 不可能被调用
 
 **第一层 — 输入侧硬限制（`allowedTools` / `disallowedTools`）**：
@@ -97,7 +97,7 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 - 不在 allow/deny 列表中的工具 → SDK 发 `can_use_tool` → MCP server 创建权限请求
 - Session 状态转为 `waiting_permission`，请求通过 `claude_code_check` 的 `actions[]` 暴露给调用方
 - 调用方通过 `respond_permission` 逐个批准/拒绝
-- 支持高级操作：`updatedInput`（修改工具输入后再执行）、`updatedPermissions`（更新权限规则）、`interrupt`（deny 时中断整个 agent）、`denyMessage`（拒绝原因，展示给 Claude）
+- 支持高级操作：`permissionOptions.updatedInput`（修改工具输入后再执行）、`permissionOptions.updatedPermissions`（更新权限规则）、`interrupt`（deny 时中断整个 agent）、`denyMessage`（拒绝原因，展示给 Claude）
 
 **权限请求生命周期**：
 - 创建时启动超时计时器（`permissionRequestTimeoutMs`，默认 60s）
@@ -110,7 +110,7 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 - `tool-discovery.ts` 维护 `TOOL_CATALOG` 静态映射（工具名 → 描述 + 分类）
 - 首个 session 的 `system/init` 消息提供运行时工具列表，与静态映射合并
 - 合并结果用于动态生成 `claude_code` 的工具描述，并通过 `tools/list_changed` 通知支持 discovery 的 Client
-- `claude_code_check` 的 `includeTools=true` 返回权威的 `availableTools` 列表
+- `claude_code_check` 的 `pollOptions.includeTools=true` 返回权威的 `availableTools` 列表
 
 ## Quick Commands
 
@@ -183,7 +183,7 @@ mcp_demo/                     # Copy-paste MCP client config examples
 - **Tool discovery** (`src/tools/tool-discovery.ts`): maintains a `TOOL_CATALOG` of known Claude Code internal tools with descriptions and categories. Merges runtime `system/init` tool lists with the static catalog. Generates dynamic `claude_code` tool descriptions. `ToolDiscoveryCache` updates on first session init and triggers `tools/list_changed`.
 - **Build options** (`src/utils/build-options.ts`): centralizes SDK `Partial<Options>` construction from flat input objects — used by start, reply, and disk-resume code paths.
 - **Session lifecycle**: `running` ↔ `waiting_permission` → `idle` | `error` | `cancelled`. The `SessionManager` holds an in-memory `Map<id, SessionInfo>` plus an event buffer (polled via `claude_code_check`) and pending permission requests. Conversation history is persisted to disk by the SDK (under `~/.claude/projects/`), not by this server. `cancelled` is a terminal state — cancelled sessions cannot be resumed.
-- **Async permissions**: when a tool call needs approval, the session transitions to `waiting_permission` and surfaces requests via `claude_code_check` (`actions[]`). Callers approve/deny via `respond_permission`. Three-layer defense: `tools` (visibility), `allowedTools`/`disallowedTools` (auto-approve/deny), `canUseTool` callback (interactive).
+- **Async permissions**: when a tool call needs approval, the session transitions to `waiting_permission` and surfaces requests via `claude_code_check` (`actions[]`). Callers approve/deny via `respond_permission`. Three-layer defense: `advanced.tools` (visibility), `allowedTools`/`disallowedTools` (auto-approve/deny), `canUseTool` callback (interactive).
 - **Resume token** (`src/utils/resume-token.ts`): HMAC-SHA256 token for secure disk resume. Only generated when `CLAUDE_CODE_MCP_RESUME_SECRET` is set.
 - **Atomic state transitions**: `SessionManager.tryAcquire()` atomically moves a session from `idle`/`error` to `running` (used by `claude_code_reply`).
 - **Session fork**: `claude_code_reply` supports `forkSession: true` — creates a branched copy of the session; the original remains unchanged.
@@ -191,7 +191,7 @@ mcp_demo/                     # Copy-paste MCP client config examples
 - **Logging**: use `console.error` — stdout is reserved for MCP stdio communication.
 - **Tool response pattern**: tools return `{ content: [{ type: "text", text }], isError }` — never throw from the tool handler; catch and wrap errors.
 - **Graceful shutdown**: `index.ts` registers SIGINT/SIGTERM handlers; `server.close` is patched to call `sessionManager.destroy()` (aborts all running sessions).
-- **Default settings**: the server loads all local Claude settings by default (`settingSources: ["user", "project", "local"]`), including `CLAUDE.md`. Pass `settingSources: []` for SDK isolation mode.
+- **Default settings**: the server loads all local Claude settings by default (`advanced.settingSources: ["user", "project", "local"]`), including `CLAUDE.md`. Pass `advanced.settingSources: []` for SDK isolation mode.
 
 ## Types Pattern (`src/types.ts`)
 
@@ -237,7 +237,7 @@ These are set on the MCP server process (not the child Claude Code process):
 - Keep the "minimum tools, maximum capability" approach (don't add extra MCP tools unless necessary).
 - The server runs the SDK in `permissionMode="default"` and always provides `canUseTool`. Callers can pre-approve via `allowedTools`/`disallowedTools`, and handle other approvals via `claude_code_check`.
 - Sensitive session fields (cwd, systemPrompt, agents) are redacted by default; use `includeSensitive=true` in `claude_code_session` to include them.
-- Environment variables (`env` field) are never exposed in public session info. The `env` parameter merges as `{ ...process.env, ...input.env }` — user values take precedence.
+- Environment variables (`advanced.env` field) are never exposed in public session info. The `advanced.env` parameter merges as `{ ...process.env, ...input.advanced.env }` — user values take precedence.
 - Gotcha: subagents require the `Task` tool (or an explicit approval via `claude_code_check` when permission is requested).
 
 ## Testing Expectations

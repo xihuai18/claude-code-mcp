@@ -21,37 +21,27 @@ import { computeResumeToken, getResumeSecret } from "../utils/resume-token.js";
 import { raceWithAbort } from "../utils/race-with-abort.js";
 import { buildOptions } from "../utils/build-options.js";
 
-export interface ClaudeCodeReplyInput {
-  sessionId: string;
-  prompt: string;
-  forkSession?: boolean;
-  /**
-   * Resume token returned by claude_code / claude_code_reply. Required for disk resume fallback.
-   */
+/** Disk resume fallback configuration — only used when the in-memory session is missing. */
+export interface DiskResumeConfig {
   resumeToken?: string;
-
-  /**
-   * Optional overrides used for "disk resume" when the in-memory session is missing.
-   * Enabled only when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`.
-   */
   cwd?: string;
   allowedTools?: string[];
   disallowedTools?: string[];
   tools?: ToolsConfig;
+  persistSession?: boolean;
   maxTurns?: number;
   model?: string;
   systemPrompt?: SystemPrompt;
   agents?: Record<string, AgentDefinition>;
+  agent?: string;
   maxBudgetUsd?: number;
   effort?: EffortLevel;
   betas?: string[];
   additionalDirectories?: string[];
   outputFormat?: OutputFormat;
   thinking?: ThinkingConfig;
-  persistSession?: boolean;
   resumeSessionAt?: string;
   pathToClaudeCodeExecutable?: string;
-  agent?: string;
   mcpServers?: Record<string, McpServerConfig>;
   sandbox?: SandboxSettings;
   fallbackModel?: string;
@@ -62,11 +52,23 @@ export interface ClaudeCodeReplyInput {
   debug?: boolean;
   debugFile?: string;
   env?: Record<string, string | undefined>;
+}
+
+export interface ClaudeCodeReplyInput {
+  sessionId: string;
+  prompt: string;
+  forkSession?: boolean;
 
   /** Timeout waiting for fork init (default 10000ms, only used when forkSession=true) */
   sessionInitTimeoutMs?: number;
   /** Timeout waiting for permission decision (default 60000ms) */
   permissionRequestTimeoutMs?: number;
+
+  /**
+   * Disk resume fallback configuration. Only used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`
+   * and the in-memory session is missing. Contains resumeToken + all session config overrides.
+   */
+  diskResumeConfig?: DiskResumeConfig;
 }
 
 export type ClaudeCodeReplyStartResult =
@@ -104,11 +106,11 @@ function toStartError(
   };
 }
 
-function buildOptionsFromDiskResume(input: ClaudeCodeReplyInput): ReturnType<typeof buildOptions> {
-  if (input.cwd === undefined || typeof input.cwd !== "string" || input.cwd.trim() === "") {
+function buildOptionsFromDiskResume(dr: DiskResumeConfig): ReturnType<typeof buildOptions> {
+  if (dr.cwd === undefined || typeof dr.cwd !== "string" || dr.cwd.trim() === "") {
     throw new Error(`Error [${ErrorCode.INVALID_ARGUMENT}]: cwd must be provided for disk resume.`);
   }
-  return buildOptions(input as Parameters<typeof buildOptions>[0]);
+  return buildOptions(dr as Parameters<typeof buildOptions>[0]);
 }
 
 export async function executeClaudeCodeReply(
@@ -139,7 +141,9 @@ export async function executeClaudeCodeReply(
         error: `Error [${ErrorCode.PERMISSION_DENIED}]: Disk resume is enabled but CLAUDE_CODE_MCP_RESUME_SECRET is not set.`,
       };
     }
-    if (typeof input.resumeToken !== "string" || input.resumeToken.trim() === "") {
+
+    const dr = input.diskResumeConfig ?? {};
+    if (typeof dr.resumeToken !== "string" || dr.resumeToken.trim() === "") {
       return {
         sessionId: input.sessionId,
         status: "error",
@@ -147,7 +151,7 @@ export async function executeClaudeCodeReply(
       };
     }
     const expectedToken = computeResumeToken(input.sessionId, resumeSecret);
-    if (input.resumeToken !== expectedToken) {
+    if (dr.resumeToken !== expectedToken) {
       return {
         sessionId: input.sessionId,
         status: "error",
@@ -157,38 +161,38 @@ export async function executeClaudeCodeReply(
 
     try {
       const abortController = new AbortController();
-      const options = buildOptionsFromDiskResume(input);
+      const options = buildOptionsFromDiskResume(dr);
 
       sessionManager.create({
         sessionId: input.sessionId,
-        cwd: options.cwd ?? input.cwd ?? "",
-        model: input.model,
+        cwd: options.cwd ?? dr.cwd ?? "",
+        model: dr.model,
         permissionMode: "default",
-        allowedTools: input.allowedTools,
-        disallowedTools: input.disallowedTools,
-        tools: input.tools,
-        maxTurns: input.maxTurns,
-        systemPrompt: input.systemPrompt,
-        agents: input.agents,
-        maxBudgetUsd: input.maxBudgetUsd,
-        effort: input.effort,
-        betas: input.betas,
-        additionalDirectories: input.additionalDirectories,
-        outputFormat: input.outputFormat,
-        thinking: input.thinking,
-        persistSession: input.persistSession,
-        pathToClaudeCodeExecutable: input.pathToClaudeCodeExecutable,
-        agent: input.agent,
-        mcpServers: input.mcpServers,
-        sandbox: input.sandbox,
-        fallbackModel: input.fallbackModel,
-        enableFileCheckpointing: input.enableFileCheckpointing,
-        includePartialMessages: input.includePartialMessages,
-        strictMcpConfig: input.strictMcpConfig,
-        settingSources: input.settingSources ?? DEFAULT_SETTING_SOURCES,
-        debug: input.debug,
-        debugFile: input.debugFile,
-        env: input.env,
+        allowedTools: dr.allowedTools,
+        disallowedTools: dr.disallowedTools,
+        tools: dr.tools,
+        maxTurns: dr.maxTurns,
+        systemPrompt: dr.systemPrompt,
+        agents: dr.agents,
+        maxBudgetUsd: dr.maxBudgetUsd,
+        effort: dr.effort,
+        betas: dr.betas,
+        additionalDirectories: dr.additionalDirectories,
+        outputFormat: dr.outputFormat,
+        thinking: dr.thinking,
+        persistSession: dr.persistSession,
+        pathToClaudeCodeExecutable: dr.pathToClaudeCodeExecutable,
+        agent: dr.agent,
+        mcpServers: dr.mcpServers,
+        sandbox: dr.sandbox,
+        fallbackModel: dr.fallbackModel,
+        enableFileCheckpointing: dr.enableFileCheckpointing,
+        includePartialMessages: dr.includePartialMessages,
+        strictMcpConfig: dr.strictMcpConfig,
+        settingSources: dr.settingSources ?? DEFAULT_SETTING_SOURCES,
+        debug: dr.debug,
+        debugFile: dr.debugFile,
+        env: dr.env,
         abortController,
       });
 
