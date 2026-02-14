@@ -143,6 +143,8 @@ Use `claude_code_check` to poll events and obtain the final `result`.
 > - If you configure `advanced.mcpServers` and want the agent to auto-use tools from those servers without approvals, include the exact tool names in `allowedTools` (e.g. `["mcp__my_server__tools/list"]`). Otherwise you will see permission requests via `claude_code_check`.
 > - `advanced.includePartialMessages` affects the underlying SDK event stream; intermediate messages are captured as events and returned via `claude_code_check` (the `claude_code` call itself does not stream).
 
+> **Security: Configure permissions based on your own scope.** Callers (MCP clients / orchestrating agents) MUST set `allowedTools` and `disallowedTools` according to their own permission boundaries. Only pre-approve tools that you yourself are authorized to perform — do not grant the agent broader permissions than you have. For example, if you lack write access to a directory, do not include `Write`/`Edit` in `allowedTools`. When in doubt, leave both lists empty and review each permission request individually via `claude_code_check`.
+
 ### `claude_code_reply` — Continue a session
 
 Continue an existing session by sending a follow-up message. The agent retains full context from previous turns including files read, code analysis, and conversation history.

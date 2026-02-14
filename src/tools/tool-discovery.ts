@@ -144,7 +144,13 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   }
 
   desc +=
-    "\nUse `allowedTools` to pre-approve tools (no permission prompts). " +
+    "\nSecurity: You MUST configure allowedTools/disallowedTools based on your own permission scope. " +
+    "Only allow tools that you yourself are authorized to perform — " +
+    "do not grant the agent broader permissions than you have. " +
+    "For example, if you lack write access to a directory, do not include Write/Edit in allowedTools. " +
+    "When in doubt, leave both lists empty and review each permission request individually via claude_code_check.\n\n";
+  desc +=
+    "Use `allowedTools` to pre-approve tools (no permission prompts). " +
     "Use `disallowedTools` to permanently block specific tools. " +
     'Any tool not in either list will pause the session (status: "waiting_permission") until approved or denied via claude_code_check.\n';
   return desc;
