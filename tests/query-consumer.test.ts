@@ -318,17 +318,23 @@ describe("classifyError", () => {
 
   it("should classify ECONNREFUSED as transient", () => {
     const signal = new AbortController().signal;
-    expect(classifyError(new Error("connect ECONNREFUSED 127.0.0.1:443"), signal)).toBe("transient");
+    expect(classifyError(new Error("connect ECONNREFUSED 127.0.0.1:443"), signal)).toBe(
+      "transient"
+    );
   });
 
   it("should classify ENOTFOUND as transient", () => {
     const signal = new AbortController().signal;
-    expect(classifyError(new Error("getaddrinfo ENOTFOUND api.example.com"), signal)).toBe("transient");
+    expect(classifyError(new Error("getaddrinfo ENOTFOUND api.example.com"), signal)).toBe(
+      "transient"
+    );
   });
 
   it("should classify EAI_AGAIN as transient", () => {
     const signal = new AbortController().signal;
-    expect(classifyError(new Error("getaddrinfo EAI_AGAIN api.example.com"), signal)).toBe("transient");
+    expect(classifyError(new Error("getaddrinfo EAI_AGAIN api.example.com"), signal)).toBe(
+      "transient"
+    );
   });
 
   it("should classify unknown errors as fatal", () => {
