@@ -1,6 +1,6 @@
 {
   "name": "@leo000001/claude-code-mcp",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "MCP server that runs Claude Code as tools — start coding agents, poll their progress, and control permissions from any MCP client",
   "type": "module",
   "main": "dist/index.js",
