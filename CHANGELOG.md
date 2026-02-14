@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Breaking Changes
+- `claude_code` and `claude_code_reply` now start asynchronously and return `{ sessionId, status: "running", pollInterval }`. Use `claude_code_check` to poll events and fetch the final `result`.
+- Removed tool: `claude_code_configure`
+- New tool: `claude_code_check` (poll + respond_permission)
+
+### Features
+- New module: `src/tools/query-consumer.ts` — shared background query consumer (`consumeQuery`) for start, resume, and disk-resume code paths
+- New module: `src/tools/tool-discovery.ts` — runtime tool discovery with `TOOL_CATALOG`, `ToolDiscoveryCache`, and dynamic `claude_code` description generation
+- New module: `src/utils/build-options.ts` — centralized SDK `Partial<Options>` construction from flat input objects
+- New module: `src/utils/race-with-abort.ts` — race a promise against an AbortSignal with cleanup
+- New module: `src/utils/resume-token.ts` — HMAC-SHA256 resume token generation/validation for secure disk resume
+
+### Improvements
+- `claude_code_check`: default `responseMode="minimal"` to reduce payload size; supports `maxEvents` pagination with `truncated`/`truncatedFields`
+- `claude_code_check`: includes lightweight session diagnostics (`cancelledAt`/`cancelledReason`/`cancelledSource`, `lastEventId`, `lastToolUseId`)
+- Disk resume security: disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` + `resumeToken`
+
 ## 1.6.0 (2026-02-12)
 
 ### Bug Fixes

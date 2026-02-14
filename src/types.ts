@@ -5,15 +5,13 @@
  * TypeScript types can derive from the same source of truth.
  */
 
+import type {
+  PermissionResult as SDKPermissionResult,
+  PermissionUpdate as SDKPermissionUpdate,
+} from "@anthropic-ai/claude-agent-sdk";
+
 /** Permission modes supported by Claude Agent SDK */
-export const PERMISSION_MODES = [
-  "default",
-  "acceptEdits",
-  "bypassPermissions",
-  "plan",
-  "delegate",
-  "dontAsk",
-] as const;
+export const PERMISSION_MODES = ["default", "acceptEdits", "plan", "delegate", "dontAsk"] as const;
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 /** Effort levels */
@@ -24,16 +22,12 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 export const AGENT_MODELS = ["sonnet", "opus", "haiku", "inherit"] as const;
 export type AgentModel = (typeof AGENT_MODELS)[number];
 
-/** Configure tool actions */
-export const CONFIGURE_ACTIONS = ["enable_bypass", "disable_bypass", "get_config"] as const;
-export type ConfigureAction = (typeof CONFIGURE_ACTIONS)[number];
-
 /** Session management actions */
 export const SESSION_ACTIONS = ["list", "get", "cancel"] as const;
 export type SessionAction = (typeof SESSION_ACTIONS)[number];
 
 /** Session status */
-export type SessionStatus = "idle" | "running" | "cancelled" | "error";
+export type SessionStatus = "idle" | "running" | "waiting_permission" | "cancelled" | "error";
 
 export type SystemPrompt = string | { type: "preset"; preset: "claude_code"; append?: string };
 
@@ -77,6 +71,9 @@ export interface SessionInfo {
   status: SessionStatus;
   createdAt: string;
   lastActiveAt: string;
+  cancelledAt?: string;
+  cancelledReason?: string;
+  cancelledSource?: string;
   totalTurns: number;
   totalCostUsd: number;
   cwd: string;
@@ -118,6 +115,8 @@ export interface SessionInfo {
   debugFile?: string;
   /** Environment variables passed to the Claude Code process */
   env?: Record<string, string | undefined>;
+  /** Last seen tool use id (best-effort) */
+  lastToolUseId?: string;
   abortController?: AbortController;
 }
 
@@ -127,6 +126,9 @@ export interface PublicSessionInfo {
   status: SessionStatus;
   createdAt: string;
   lastActiveAt: string;
+  cancelledAt?: string;
+  cancelledReason?: string;
+  cancelledSource?: string;
   totalTurns: number;
   totalCostUsd: number;
   model?: string;
@@ -147,6 +149,7 @@ export interface PublicSessionInfo {
   includePartialMessages?: boolean;
   strictMcpConfig?: boolean;
   debug?: boolean;
+  lastToolUseId?: string;
 }
 
 /** Session metadata returned when includeSensitive=true (still excludes secrets like env) */
@@ -180,11 +183,122 @@ export interface AgentResult {
   }>;
 }
 
+export const CHECK_ACTIONS = ["poll", "respond_permission"] as const;
+export type CheckAction = (typeof CHECK_ACTIONS)[number];
+
+export const CHECK_RESPONSE_MODES = ["minimal", "full"] as const;
+export type CheckResponseMode = (typeof CHECK_RESPONSE_MODES)[number];
+
+export type PermissionDecision = "allow" | "deny";
+
+/**
+ * Permission updates suggested by the SDK (shape is SDK-defined and may evolve).
+ * We treat it as opaque JSON and forward it to callers.
+ */
+export type PermissionUpdate = SDKPermissionUpdate;
+export type PermissionResult = SDKPermissionResult;
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  category?: string;
+}
+
+export type SessionEventType =
+  | "output"
+  | "progress"
+  | "permission_request"
+  | "permission_result"
+  | "result"
+  | "error";
+
+export interface SessionEvent {
+  id: number;
+  type: SessionEventType;
+  data: unknown;
+  timestamp: string;
+  pinned: boolean;
+}
+
+export interface EventBuffer {
+  events: SessionEvent[];
+  maxSize: number;
+  hardMaxSize: number;
+  nextId: number;
+}
+
+export interface PermissionRequestRecord {
+  requestId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  summary: string;
+  decisionReason?: string;
+  blockedPath?: string;
+  toolUseID: string;
+  agentID?: string;
+  suggestions?: PermissionUpdate[];
+  description?: string;
+  createdAt: string;
+}
+
+export type FinishFn = (result: PermissionResult) => void;
+
+export type FinishSource = "respond" | "timeout" | "cancel" | "cleanup" | "destroy" | "signal";
+
+export interface SessionStartResult {
+  sessionId: string;
+  status: "running";
+  pollInterval: number;
+  resumeToken?: string;
+}
+
+export type StoredAgentResult =
+  | { type: "result"; result: AgentResult; createdAt: string }
+  | { type: "error"; result: AgentResult; createdAt: string };
+
+export interface CheckResult {
+  sessionId: string;
+  status: SessionStatus;
+  pollInterval?: number;
+  cursorResetTo?: number;
+  truncated?: boolean;
+  truncatedFields?: string[];
+  events: Array<{
+    id: number;
+    type: SessionEventType;
+    data: unknown;
+    timestamp: string;
+  }>;
+  nextCursor?: number;
+  availableTools?: ToolInfo[];
+  actions?: Array<{
+    type: "permission";
+    requestId: string;
+    toolName: string;
+    input: Record<string, unknown>;
+    summary: string;
+    decisionReason?: string;
+    blockedPath?: string;
+    toolUseID: string;
+    agentID?: string;
+    suggestions?: PermissionUpdate[];
+    description?: string;
+    createdAt: string;
+  }>;
+  result?: AgentResult;
+  cancelledAt?: string;
+  cancelledReason?: string;
+  cancelledSource?: string;
+  lastEventId?: number;
+  lastToolUseId?: string;
+}
+
 /** Error codes for structured error responses */
 export enum ErrorCode {
   INVALID_ARGUMENT = "INVALID_ARGUMENT",
   SESSION_NOT_FOUND = "SESSION_NOT_FOUND",
   SESSION_BUSY = "SESSION_BUSY",
+  PERMISSION_REQUEST_NOT_FOUND = "PERMISSION_REQUEST_NOT_FOUND",
   PERMISSION_DENIED = "PERMISSION_DENIED",
   TIMEOUT = "TIMEOUT",
   CANCELLED = "CANCELLED",

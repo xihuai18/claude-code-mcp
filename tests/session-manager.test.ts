@@ -207,16 +207,13 @@ describe("SessionManager", () => {
   it("should abort and mark stuck running sessions as error after max time", () => {
     vi.useFakeTimers();
     try {
-      const mgr = new SessionManager({
-        runningSessionMaxMs: 5000,
-        cleanupIntervalMs: 1000,
-      });
+      const mgr = new SessionManager();
       const ac = new AbortController();
       mgr.create({ sessionId: "stuck", cwd: "/tmp", abortController: ac });
       // Session is "running" with abortController
 
-      // Advance past the running max time
-      vi.advanceTimersByTime(6000);
+      // Advance past the running max time (default 4 hours)
+      vi.advanceTimersByTime(4 * 60 * 60 * 1000 + 60_000);
 
       const session = mgr.get("stuck");
       expect(session).toBeDefined();
@@ -299,5 +296,159 @@ describe("SessionManager", () => {
     expect("abortController" in sens).toBe(false);
 
     mgr.destroy();
+  });
+
+  describe("event buffer + permissions", () => {
+    it("should support cursorResetTo when old events are evicted", () => {
+      manager.create({ sessionId: "buf", cwd: "/tmp" });
+      for (let i = 0; i < 1005; i++) {
+        manager.pushEvent("buf", {
+          type: "output",
+          data: { i },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const res = manager.readEvents("buf", 1);
+      expect(res.events.length).toBeGreaterThan(0);
+      expect(res.cursorResetTo).toBeGreaterThan(1);
+    });
+
+    it("should track pending permission and resolve via finishRequest", () => {
+      const ac = new AbortController();
+      manager.create({ sessionId: "perm", cwd: "/tmp", abortController: ac });
+
+      const finish = vi.fn();
+      manager.setPendingPermission(
+        "perm",
+        {
+          requestId: "r1",
+          toolName: "Bash",
+          input: { cmd: "echo hi" },
+          summary: "Execute shell command",
+          toolUseID: "tu1",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+
+      expect(manager.get("perm")!.status).toBe("waiting_permission");
+      expect(manager.listPendingPermissions("perm")).toHaveLength(1);
+
+      const ok = manager.finishRequest(
+        "perm",
+        "r1",
+        { behavior: "allow", updatedInput: { cmd: "echo ok" } },
+        "respond"
+      );
+      expect(ok).toBe(true);
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(manager.get("perm")!.status).toBe("running");
+      expect(manager.getPendingPermissionCount("perm")).toBe(0);
+
+      expect(
+        manager.finishRequest("perm", "r1", { behavior: "deny", message: "late" }, "respond")
+      ).toBe(false);
+    });
+
+    it("should enforce disallowedTools even when respond_permission attempts to allow", () => {
+      manager.create({ sessionId: "perm", cwd: "/tmp", disallowedTools: ["Bash"] });
+
+      const finish = vi.fn();
+      manager.setPendingPermission(
+        "perm",
+        {
+          requestId: "r1",
+          toolName: "Bash",
+          input: { cmd: "echo hi" },
+          summary: "Execute shell command",
+          toolUseID: "tu1",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+
+      const ok = manager.finishRequest("perm", "r1", { behavior: "allow" }, "respond");
+      expect(ok).toBe(true);
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(finish.mock.calls[0]?.[0]?.behavior).toBe("deny");
+      expect(finish.mock.calls[0]?.[0]?.message).toContain("disallowed");
+    });
+
+    it("should timeout pending permission requests", async () => {
+      vi.useFakeTimers();
+      try {
+        manager.destroy();
+        manager = new SessionManager();
+        manager.create({ sessionId: "timeout", cwd: "/tmp" });
+        const finish = vi.fn();
+        manager.setPendingPermission(
+          "timeout",
+          {
+            requestId: "r1",
+            toolName: "Bash",
+            input: { cmd: "echo hi" },
+            summary: "Execute shell command",
+            toolUseID: "tu1",
+            createdAt: new Date().toISOString(),
+          },
+          finish,
+          10
+        );
+
+        await vi.advanceTimersByTimeAsync(10);
+        expect(finish).toHaveBeenCalledTimes(1);
+        expect(manager.getPendingPermissionCount("timeout")).toBe(0);
+        expect(manager.get("timeout")!.status).toBe("running");
+      } finally {
+        manager.destroy();
+        vi.useRealTimers();
+        manager = new SessionManager();
+      }
+    });
+
+    it("should evict pinned permission events to keep buffer bounded", () => {
+      manager.create({ sessionId: "pin", cwd: "/tmp" });
+      // Only pinned events: permission_result is pinned by default.
+      for (let i = 0; i < 1500; i++) {
+        manager.pushEvent("pin", {
+          type: "permission_result",
+          data: { requestId: `r${i}`, behavior: "deny", source: "respond" },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const res = manager.readEvents("pin", 0);
+      expect(res.events.length).toBeLessThanOrEqual(1000);
+      expect(res.cursorResetTo).toBeGreaterThan(0);
+    });
+
+    it("should cancel waiting_permission sessions and deny pending requests", () => {
+      const ac = new AbortController();
+      manager.create({ sessionId: "cancel", cwd: "/tmp", abortController: ac });
+
+      const finish = vi.fn();
+      manager.setPendingPermission(
+        "cancel",
+        {
+          requestId: "r1",
+          toolName: "Bash",
+          input: { cmd: "echo hi" },
+          summary: "Execute shell command",
+          toolUseID: "tu1",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+
+      expect(manager.cancel("cancel")).toBe(true);
+      expect(ac.signal.aborted).toBe(true);
+      expect(manager.get("cancel")!.status).toBe("cancelled");
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(finish.mock.calls[0]?.[0]?.behavior).toBe("deny");
+    });
   });
 });

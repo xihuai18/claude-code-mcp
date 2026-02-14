@@ -1,6 +1,6 @@
 /**
- * Tests for claude_code and claude_code_reply tools
- * Uses mocked query() to simulate Agent SDK behavior
+ * Tests for claude_code and claude_code_reply tools (v2 async behavior)
+ * Uses mocked query() to simulate Agent SDK behavior.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SessionManager } from "../src/session/manager.js";
@@ -20,24 +20,29 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 import { executeClaudeCode } from "../src/tools/claude-code.js";
 import { executeClaudeCodeReply } from "../src/tools/claude-code-reply.js";
+import { ToolDiscoveryCache } from "../src/tools/tool-discovery.js";
+import { computeResumeToken } from "../src/utils/resume-token.js";
 
 const mockQuery = vi.mocked(query);
 type QueryReturn = ReturnType<typeof query>;
 
-/** Helper to create an async generator from messages */
-async function* fakeStream(messages: Record<string, unknown>[]) {
-  for (const msg of messages) {
-    yield msg;
+async function waitUntil(fn: () => boolean, maxTicks = 50): Promise<void> {
+  for (let i = 0; i < maxTicks; i++) {
+    if (fn()) return;
+    await new Promise((r) => setTimeout(r, 0));
   }
 }
 
-describe("executeClaudeCode", () => {
+describe("executeClaudeCode (async)", () => {
   let manager: SessionManager;
+  let toolCache: ToolDiscoveryCache;
 
   beforeEach(() => {
     manager = new SessionManager();
+    toolCache = new ToolDiscoveryCache();
     vi.clearAllMocks();
   });
 
@@ -45,147 +50,146 @@ describe("executeClaudeCode", () => {
     manager.destroy();
   });
 
-  it("should handle a successful session", async () => {
+  it("should return running session quickly and store the final result in SessionManager", async () => {
     mockQuery.mockReturnValue(
-      fakeStream([
-        {
+      (async function* () {
+        yield {
+          type: "system",
+          subtype: "status",
+          status: null,
+          uuid: "u0",
+          session_id: "sess-123",
+        };
+        yield {
           type: "system",
           subtype: "init",
           session_id: "sess-123",
           uuid: "u1",
-        },
-        {
+          cwd: "/tmp",
+          tools: ["Read", "Write"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+        yield {
           type: "result",
           subtype: "success",
           result: "Fixed the bug!",
-          duration_ms: 5000,
-          num_turns: 3,
-          total_cost_usd: 0.05,
+          duration_ms: 5,
+          num_turns: 1,
+          total_cost_usd: 0.01,
           is_error: false,
           uuid: "u2",
           session_id: "sess-123",
-        },
-      ]) as QueryReturn
+          duration_api_ms: 5,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+          structured_output: { ok: true },
+        };
+      })() as QueryReturn
     );
 
-    const result = await executeClaudeCode({ prompt: "Fix the bug" }, manager, "/tmp");
+    const start = await executeClaudeCode({ prompt: "Fix the bug" }, manager, "/tmp", toolCache);
 
-    expect(result.sessionId).toBe("sess-123");
-    expect(result.result).toBe("Fixed the bug!");
-    expect(result.isError).toBe(false);
-    expect(result.durationMs).toBe(5000);
-    expect(result.numTurns).toBe(3);
-    expect(result.totalCostUsd).toBe(0.05);
+    expect(start.status).toBe("running");
+    expect(start.sessionId).toBe("sess-123");
+    expect(start.pollInterval).toBe(3000);
 
-    // Session should be tracked and idle
-    const session = manager.get("sess-123");
-    expect(session).toBeDefined();
-    expect(session!.status).toBe("idle");
+    await waitUntil(() => manager.get("sess-123")?.status === "idle");
+    expect(manager.get("sess-123")!.status).toBe("idle");
+
+    const stored = manager.getResult("sess-123");
+    expect(stored?.type).toBe("result");
+    expect(stored?.result.result).toBe("Fixed the bug!");
   });
 
-  it("should handle error result from agent", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "system",
-          subtype: "init",
-          session_id: "sess-err",
-          uuid: "u1",
-        },
-        {
-          type: "result",
-          subtype: "error_during_execution",
-          errors: ["Something went wrong"],
-          duration_ms: 1000,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: true,
-          uuid: "u2",
-          session_id: "sess-err",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
-
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("Something went wrong");
-    expect(manager.get("sess-err")!.status).toBe("error");
-  });
-
-  it("should handle non-string errors array", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "system",
-          subtype: "init",
-          session_id: "sess-nonstr",
-          uuid: "u1",
-        },
-        {
-          type: "result",
-          subtype: "error_during_execution",
-          errors: [{ message: "Oops" }, 123, null],
-          duration_ms: 1000,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: true,
-          uuid: "u2",
-          session_id: "sess-nonstr",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
-
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("[object Object]");
-    expect(result.result).toContain("123");
-    expect(result.result).toContain("null");
-  });
-
-  it("should handle thrown error from query()", async () => {
+  it("should pass option fields through to query()", async () => {
     mockQuery.mockReturnValue(
       (async function* () {
         yield {
           type: "system",
           subtype: "init",
-          session_id: "sess-throw",
+          session_id: "sess-opts",
           uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Read"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
         };
-        throw new Error("Network failure");
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-opts",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
       })() as QueryReturn
     );
 
-    const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
+    await executeClaudeCode(
+      {
+        prompt: "Test",
+        additionalDirectories: ["/extra"],
+        persistSession: false,
+        thinking: { type: "adaptive" },
+        outputFormat: { type: "json_schema", schema: { type: "object" } },
+        effort: "max",
+        env: { TEST_ENV: "1" },
+      },
+      manager,
+      "/tmp",
+      toolCache
+    );
 
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("Network failure");
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const call = mockQuery.mock.calls[0]![0] as { options: Record<string, unknown> };
+    expect(call.options.additionalDirectories).toEqual(["/extra"]);
+    expect(call.options.persistSession).toBe(false);
+    expect(call.options.thinking).toEqual({ type: "adaptive" });
+    expect(call.options.outputFormat).toEqual({ type: "json_schema", schema: { type: "object" } });
+    expect(call.options.effort).toBe("max");
+    expect(call.options.permissionMode).toBe("default");
+    expect(typeof call.options.canUseTool).toBe("function");
+    expect((call.options.env as Record<string, unknown>).TEST_ENV).toBe("1");
   });
 
-  it("should handle missing init message", async () => {
-    mockQuery.mockReturnValue(fakeStream([]) as QueryReturn);
-
-    const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
-
-    expect(result.isError).toBe(true);
-    expect(result.sessionId).toBe("");
-    expect(result.result).toContain("INTERNAL");
-  });
-
-  it("should reject empty cwd string", async () => {
-    const result = await executeClaudeCode({ prompt: "Test", cwd: "" }, manager, "/tmp");
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("INVALID_ARGUMENT");
+  it("should return error on invalid cwd", async () => {
+    const start = await executeClaudeCode({ prompt: "Test", cwd: "" }, manager, "/tmp", toolCache);
+    expect(start.status).toBe("error");
+    expect(start.error).toContain("INVALID_ARGUMENT");
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  it("should timeout and abort query()", async () => {
+  it("should return TIMEOUT when init is not received within sessionInitTimeoutMs", async () => {
     vi.useFakeTimers();
     try {
       mockQuery.mockImplementation(
         ({ options }: { options: { abortController: AbortController } }) => {
-          const ac: AbortController = options.abortController;
+          const ac = options.abortController;
           return (async function* () {
             const abortPromise = new Promise<void>((_resolve, reject) => {
               ac.signal.addEventListener(
@@ -198,483 +202,135 @@ describe("executeClaudeCode", () => {
                 { once: true }
               );
             });
-            yield {
-              type: "system",
-              subtype: "init",
-              session_id: "sess-timeout",
-              uuid: "u1",
-            };
             await abortPromise;
-            yield; // unreachable, satisfies require-yield
+            yield; // unreachable
           })();
         }
       );
 
-      const resultPromise = executeClaudeCode({ prompt: "Test", timeout: 10 }, manager, "/tmp");
+      const promise = executeClaudeCode(
+        { prompt: "Test", sessionInitTimeoutMs: 10 },
+        manager,
+        "/tmp",
+        toolCache
+      );
       await vi.advanceTimersByTimeAsync(10);
-      const result = await resultPromise;
-
-      expect(result.isError).toBe(true);
-      expect(result.result).toContain("TIMEOUT");
-      expect(manager.get("sess-timeout")!.status).toBe("error");
+      const start = await promise;
+      expect(start.status).toBe("error");
+      expect(start.error).toContain("TIMEOUT");
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("should return INTERNAL error when init received but no result message", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "system",
-          subtype: "init",
-          session_id: "sess-noresult",
-          uuid: "u1",
-        },
-      ]) as QueryReturn
+  it("should return CANCELLED when the MCP tool call is cancelled before init", async () => {
+    mockQuery.mockImplementation(
+      ({ options }: { options: { abortController: AbortController } }) => {
+        const ac = options.abortController;
+        return (async function* () {
+          const abortPromise = new Promise<void>((_resolve, reject) => {
+            ac.signal.addEventListener(
+              "abort",
+              () => {
+                const e = new Error("The operation was aborted");
+                e.name = "AbortError";
+                reject(e);
+              },
+              { once: true }
+            );
+          });
+          await abortPromise;
+          yield; // unreachable
+        })();
+      }
     );
 
-    const result = await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
-
-    expect(result.isError).toBe(true);
-    expect(result.sessionId).toBe("sess-noresult");
-    expect(result.result).toContain("INTERNAL");
-    expect(result.result).toContain("No result message");
-    expect(manager.get("sess-noresult")!.status).toBe("error");
-  });
-
-  it("should block bypassPermissions when not allowed", async () => {
-    const result = await executeClaudeCode(
-      { prompt: "Do something", permissionMode: "bypassPermissions" },
+    const request = new AbortController();
+    const promise = executeClaudeCode(
+      { prompt: "Test", sessionInitTimeoutMs: 10_000 },
       manager,
       "/tmp",
-      false
+      toolCache,
+      request.signal
     );
+    request.abort();
 
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("PERMISSION_DENIED");
-    expect(mockQuery).not.toHaveBeenCalled();
+    const start = await promise;
+    expect(start.status).toBe("error");
+    expect(start.error).toContain("CANCELLED");
   });
 
-  it("should allow bypassPermissions when explicitly enabled", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
+  it("should surface permission requests via SessionManager and continue after finishRequest", async () => {
+    mockQuery.mockImplementation(({ options }: { options: { canUseTool: CanUseTool } }) => {
+      return (async function* () {
+        yield {
           type: "system",
           subtype: "init",
-          session_id: "sess-bypass",
+          session_id: "sess-perm",
           uuid: "u1",
-        },
-        {
+          cwd: "/tmp",
+          tools: ["Bash"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        await options.canUseTool(
+          "Bash",
+          { cmd: "echo hi" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tu1",
+            decisionReason: "needs permission",
+          }
+        );
+
+        yield {
           type: "result",
           subtype: "success",
-          result: "Done",
-          duration_ms: 100,
+          result: "ok",
+          duration_ms: 1,
           num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-bypass",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCode(
-      { prompt: "Do something", permissionMode: "bypassPermissions" },
-      manager,
-      "/tmp",
-      true
-    );
-
-    expect(result.isError).toBe(false);
-    expect(mockQuery).toHaveBeenCalled();
-  });
-
-  it("should return INTERNAL error when result arrives without init", async () => {
-    // SDK yields a success result but never sends an init message
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Somehow succeeded",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "ghost",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
-
-    // Should be an error because no session was created
-    expect(result.isError).toBe(true);
-    expect(result.sessionId).toBe("");
-    expect(result.result).toContain("INTERNAL");
-    // The original text should be preserved for debugging
-    expect(result.result).toContain("Somehow succeeded");
-  });
-
-  it("should pass additionalDirectories to query options", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-dirs", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-dirs",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode(
-      { prompt: "Test", additionalDirectories: ["/extra/dir"] },
-      manager,
-      "/tmp"
-    );
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ additionalDirectories: ["/extra/dir"] }),
-      })
-    );
-  });
-
-  it("should pass persistSession to query options", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-persist", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-persist",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode({ prompt: "Test", persistSession: false }, manager, "/tmp");
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ persistSession: false }),
-      })
-    );
-  });
-
-  it("should default permissionMode to dontAsk when not specified", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-perm", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
+          total_cost_usd: 0,
           is_error: false,
           uuid: "u2",
           session_id: "sess-perm",
-        },
-      ]) as QueryReturn
-    );
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })();
+    });
 
-    await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
+    const start = await executeClaudeCode({ prompt: "Test" }, manager, "/tmp", toolCache);
+    expect(start.sessionId).toBe("sess-perm");
 
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ permissionMode: "dontAsk" }),
-      })
-    );
+    await waitUntil(() => manager.get("sess-perm")?.status === "waiting_permission");
+    const pending = manager.listPendingPermissions("sess-perm");
+    expect(pending).toHaveLength(1);
 
-    const session = manager.get("sess-perm");
-    expect(session!.permissionMode).toBe("dontAsk");
-  });
+    manager.finishRequest("sess-perm", pending[0]!.requestId, { behavior: "allow" }, "respond");
 
-  it("should pass thinking option to query options", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-think", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-think",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode(
-      { prompt: "Test", thinking: { type: "enabled", budgetTokens: 5000 } },
-      manager,
-      "/tmp"
-    );
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({
-          thinking: { type: "enabled", budgetTokens: 5000 },
-        }),
-      })
-    );
-  });
-
-  it("should pass outputFormat to query options", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-fmt", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-fmt",
-        },
-      ]) as QueryReturn
-    );
-
-    const fmt = { type: "json_schema" as const, schema: { type: "object" } };
-    await executeClaudeCode({ prompt: "Test", outputFormat: fmt }, manager, "/tmp");
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ outputFormat: fmt }),
-      })
-    );
-  });
-
-  it("should pass effort 'max' to query options", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-max", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-max",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode({ prompt: "Test", effort: "max" }, manager, "/tmp");
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ effort: "max" }),
-      })
-    );
-  });
-
-  it("should default settingSources to ['user', 'project', 'local'] when not specified", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-ss-default", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-ss-default",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({
-          settingSources: ["user", "project", "local"],
-        }),
-      })
-    );
-
-    // Session should also store the resolved default
-    const session = manager.get("sess-ss-default");
-    expect(session!.settingSources).toEqual(["user", "project", "local"]);
-  });
-
-  it("should pass explicit settingSources (empty array) to query options", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-ss-empty", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-ss-empty",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode({ prompt: "Test", settingSources: [] }, manager, "/tmp");
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ settingSources: [] }),
-      })
-    );
-  });
-
-  it("should merge env with process.env when env is provided", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-env-merge", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-env-merge",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode(
-      { prompt: "Test", env: { CUSTOM_VAR: "custom_value" } },
-      manager,
-      "/tmp"
-    );
-
-    const callArgs = mockQuery.mock.calls[0]![0] as {
-      options: { env?: Record<string, string | undefined> };
-    };
-    const passedEnv = callArgs.options.env!;
-    // User-provided value should be present
-    expect(passedEnv.CUSTOM_VAR).toBe("custom_value");
-    // process.env values should also be present (PATH is always set)
-    expect(passedEnv.PATH).toBe(process.env.PATH);
-  });
-
-  it("should not set options.env when env is not provided", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-env-none", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-env-none",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
-
-    const callArgs = mockQuery.mock.calls[0]![0] as {
-      options: { env?: Record<string, string | undefined> };
-    };
-    expect(callArgs.options.env).toBeUndefined();
-  });
-
-  it("should clear abortController after completion", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "system",
-          subtype: "init",
-          session_id: "sess-ac",
-          uuid: "u1",
-        },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-ac",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
-
-    const session = manager.get("sess-ac");
-    expect(session).toBeDefined();
-    expect(session!.abortController).toBeUndefined();
-  });
-
-  it("should extract structuredOutput from successful result", async () => {
-    mockQuery.mockReturnValue(
-      fakeStream([
-        { type: "system", subtype: "init", session_id: "sess-struct", uuid: "u1" },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          structured_output: { answer: 42 },
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u2",
-          session_id: "sess-struct",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCode({ prompt: "Test" }, manager, "/tmp");
-
-    expect(result.isError).toBe(false);
-    expect(result.structuredOutput).toEqual({ answer: 42 });
+    await waitUntil(() => manager.get("sess-perm")?.status === "idle");
+    expect(manager.get("sess-perm")!.status).toBe("idle");
   });
 });
 
-describe("executeClaudeCodeReply", () => {
+describe("executeClaudeCodeReply (async)", () => {
   let manager: SessionManager;
+  let toolCache: ToolDiscoveryCache;
 
   beforeEach(() => {
     manager = new SessionManager();
+    toolCache = new ToolDiscoveryCache();
     vi.clearAllMocks();
   });
 
@@ -682,700 +338,285 @@ describe("executeClaudeCodeReply", () => {
     manager.destroy();
   });
 
-  it("should return error for non-existent session", async () => {
-    const result = await executeClaudeCodeReply({ sessionId: "nope", prompt: "Continue" }, manager);
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("SESSION_NOT_FOUND");
-  });
-
-  it("should disk-resume when enabled and session is missing", async () => {
-    const prev = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-    process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1";
-    try {
-      mockQuery.mockReturnValue(
-        fakeStream([
-          {
-            type: "system",
-            subtype: "init",
-            session_id: "disk-sess",
-            uuid: "u1",
-            permissionMode: "dontAsk",
-            cwd: "/project",
-            tools: ["Read"],
-            model: "claude-sonnet-4-5-20250929",
-            apiKeySource: "env",
-            claude_code_version: "2.1.38",
-            mcp_servers: [],
-            slash_commands: [],
-            output_style: "default",
-            skills: [],
-            plugins: [],
-            betas: [],
-          },
-          {
-            type: "result",
-            subtype: "success",
-            result: "Resumed!",
-            duration_ms: 100,
-            num_turns: 1,
-            total_cost_usd: 0.01,
-            is_error: false,
-            uuid: "u2",
-            session_id: "disk-sess",
-          },
-        ]) as QueryReturn
-      );
-
-      const result = await executeClaudeCodeReply(
-        { sessionId: "disk-sess", prompt: "Continue", cwd: "/tmp", persistSession: false },
-        manager
-      );
-
-      expect(result.isError).toBe(false);
-      expect(result.sessionId).toBe("disk-sess");
-      expect(result.result).toBe("Resumed!");
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.objectContaining({
-          options: expect.objectContaining({
-            resume: "disk-sess",
-            permissionMode: "dontAsk",
-            persistSession: false,
-          }),
-        })
-      );
-      const session = manager.get("disk-sess");
-      expect(session).toBeDefined();
-      expect(session!.status).toBe("idle");
-      // Updated from init message
-      expect(session!.cwd).toBe("/project");
-    } finally {
-      if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-      else process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = prev;
-    }
-  });
-
-  it("should disk-resume fork when enabled and session is missing", async () => {
-    const prev = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-    process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1";
-    try {
-      mockQuery.mockReturnValue(
-        fakeStream([
-          {
-            type: "system",
-            subtype: "init",
-            session_id: "disk-forked",
-            uuid: "u1",
-            permissionMode: "dontAsk",
-            cwd: "/project",
-            tools: ["Read"],
-            model: "claude-sonnet-4-5-20250929",
-            apiKeySource: "env",
-            claude_code_version: "2.1.38",
-            mcp_servers: [],
-            slash_commands: [],
-            output_style: "default",
-            skills: [],
-            plugins: [],
-            betas: [],
-          },
-          {
-            type: "result",
-            subtype: "success",
-            result: "Forked!",
-            duration_ms: 100,
-            num_turns: 1,
-            total_cost_usd: 0.01,
-            is_error: false,
-            uuid: "u2",
-            session_id: "disk-forked",
-          },
-        ]) as QueryReturn
-      );
-
-      const result = await executeClaudeCodeReply(
-        { sessionId: "disk-orig", prompt: "Continue", forkSession: true },
-        manager
-      );
-
-      expect(result.isError).toBe(false);
-      expect(result.sessionId).toBe("disk-forked");
-      expect(manager.get("disk-orig")).toBeUndefined();
-      expect(manager.get("disk-forked")).toBeDefined();
-    } finally {
-      if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-      else process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = prev;
-    }
-  });
-
-  it("should return error for busy session", async () => {
-    manager.create({ sessionId: "busy", cwd: "/tmp" });
-
-    const result = await executeClaudeCodeReply({ sessionId: "busy", prompt: "Continue" }, manager);
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("SESSION_BUSY");
-  });
-
-  it("should reject cancelled session", async () => {
-    manager.create({ sessionId: "cancelled-sess", cwd: "/tmp" });
-    manager.cancel("cancelled-sess");
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "cancelled-sess", prompt: "Continue" },
-      manager
-    );
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("CANCELLED");
-    expect(mockQuery).not.toHaveBeenCalled();
-  });
-
-  it("should reject resume of bypassPermissions session when bypass disabled", async () => {
-    manager.create({
-      sessionId: "bypass-sess",
-      cwd: "/tmp",
-      permissionMode: "bypassPermissions",
+  it("should keep only the latest terminal result event across multiple replies", async () => {
+    manager.create({ sessionId: "sess-multi", cwd: "/tmp", permissionMode: "default" });
+    manager.update("sess-multi", { status: "idle" });
+    manager.pushEvent("sess-multi", {
+      type: "result",
+      data: { sessionId: "sess-multi", result: "first", isError: false },
+      timestamp: new Date().toISOString(),
     });
-    manager.update("bypass-sess", { status: "idle" });
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "bypass-sess", prompt: "Continue" },
-      manager,
-      false // allowBypass = false
-    );
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("PERMISSION_DENIED");
-    expect(mockQuery).not.toHaveBeenCalled();
-  });
-
-  it("should allow resume of bypassPermissions session when bypass enabled", async () => {
-    manager.create({
-      sessionId: "bypass-ok",
-      cwd: "/tmp",
-      permissionMode: "bypassPermissions",
-    });
-    manager.update("bypass-ok", { status: "idle" });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "bypass-ok",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "bypass-ok", prompt: "Continue" },
-      manager,
-      true // allowBypass = true
-    );
-    expect(result.isError).toBe(false);
-    expect(mockQuery).toHaveBeenCalled();
-  });
-
-  it("should continue an idle session", async () => {
-    manager.create({ sessionId: "idle-sess", cwd: "/tmp" });
-    manager.update("idle-sess", {
-      status: "idle",
-      totalTurns: 2,
-      totalCostUsd: 0.03,
-    });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Tests added!",
-          duration_ms: 3000,
-          num_turns: 2,
-          total_cost_usd: 0.04,
-          is_error: false,
-          uuid: "u2",
-          session_id: "idle-sess",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "idle-sess", prompt: "Add tests" },
-      manager
-    );
-
-    expect(result.isError).toBe(false);
-    expect(result.result).toBe("Tests added!");
-    const session = manager.get("idle-sess");
-    expect(session!.totalTurns).toBe(4);
-    expect(session!.totalCostUsd).toBeCloseTo(0.07);
-  });
-
-  it("should pass persistSession to query options on reply", async () => {
-    manager.create({ sessionId: "persist-reply", cwd: "/tmp", persistSession: false });
-    manager.update("persist-reply", { status: "idle" });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "persist-reply",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCodeReply({ sessionId: "persist-reply", prompt: "Continue" }, manager);
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ persistSession: false }),
-      })
-    );
-  });
-
-  it("should default settingSources to ['user', 'project', 'local'] on reply", async () => {
-    // Create session without explicit settingSources (simulating old session or undefined)
-    manager.create({ sessionId: "ss-reply-default", cwd: "/tmp" });
-    manager.update("ss-reply-default", { status: "idle" });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "ss-reply-default",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCodeReply({ sessionId: "ss-reply-default", prompt: "Continue" }, manager);
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({
-          settingSources: ["user", "project", "local"],
-        }),
-      })
-    );
-  });
-
-  it("should inherit custom settingSources from session on reply", async () => {
-    manager.create({ sessionId: "ss-reply-custom", cwd: "/tmp", settingSources: ["user"] });
-    manager.update("ss-reply-custom", { status: "idle" });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "ss-reply-custom",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCodeReply({ sessionId: "ss-reply-custom", prompt: "Continue" }, manager);
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ settingSources: ["user"] }),
-      })
-    );
-  });
-
-  it("should merge env with process.env on reply", async () => {
-    manager.create({ sessionId: "env-reply", cwd: "/tmp", env: { MY_VAR: "hello" } });
-    manager.update("env-reply", { status: "idle" });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "env-reply",
-        },
-      ]) as QueryReturn
-    );
-
-    await executeClaudeCodeReply({ sessionId: "env-reply", prompt: "Continue" }, manager);
-
-    const callArgs = mockQuery.mock.calls[0]![0] as {
-      options: { env?: Record<string, string | undefined> };
-    };
-    const passedEnv = callArgs.options.env!;
-    expect(passedEnv.MY_VAR).toBe("hello");
-    expect(passedEnv.PATH).toBe(process.env.PATH);
-  });
-
-  it("should handle fork correctly", async () => {
-    manager.create({ sessionId: "orig", cwd: "/project" });
-    manager.update("orig", {
-      status: "idle",
-      totalTurns: 5,
-      totalCostUsd: 0.1,
-    });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "system",
-          subtype: "init",
-          session_id: "forked-sess",
-          uuid: "u1",
-        },
-        {
-          type: "result",
-          subtype: "success",
-          result: "Forked work done",
-          duration_ms: 2000,
-          num_turns: 1,
-          total_cost_usd: 0.02,
-          is_error: false,
-          uuid: "u2",
-          session_id: "forked-sess",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "orig", prompt: "Try alternative", forkSession: true },
-      manager
-    );
-
-    expect(result.sessionId).toBe("forked-sess");
-    expect(result.isError).toBe(false);
-
-    // Original session unchanged
-    const orig = manager.get("orig");
-    expect(orig!.status).toBe("idle");
-    expect(orig!.totalTurns).toBe(5);
-    expect(orig!.totalCostUsd).toBe(0.1);
-
-    // Forked session has only its own totals
-    const forked = manager.get("forked-sess");
-    expect(forked).toBeDefined();
-    expect(forked!.totalTurns).toBe(1);
-    expect(forked!.totalCostUsd).toBe(0.02);
-  });
-
-  it("should return error when fork requested but no new sessionId received", async () => {
-    manager.create({ sessionId: "orig-nofork", cwd: "/tmp" });
-    manager.update("orig-nofork", { status: "idle" });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Done without fork",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "orig-nofork",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "orig-nofork", prompt: "Fork me", forkSession: true },
-      manager
-    );
-
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("INTERNAL");
-    expect(result.result).toContain("Fork requested but no new session ID");
-  });
-
-  it("should allow reply to error status session", async () => {
-    manager.create({ sessionId: "err-sess", cwd: "/tmp" });
-    manager.update("err-sess", { status: "error" });
-
-    mockQuery.mockReturnValue(
-      fakeStream([
-        {
-          type: "result",
-          subtype: "success",
-          result: "Recovered",
-          duration_ms: 100,
-          num_turns: 1,
-          total_cost_usd: 0.01,
-          is_error: false,
-          uuid: "u1",
-          session_id: "err-sess",
-        },
-      ]) as QueryReturn
-    );
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "err-sess", prompt: "Try again" },
-      manager
-    );
-
-    expect(result.isError).toBe(false);
-    expect(result.result).toBe("Recovered");
-  });
-
-  it("should timeout and abort reply query()", async () => {
-    vi.useFakeTimers();
-    try {
-      manager.create({ sessionId: "reply-timeout", cwd: "/tmp" });
-      manager.update("reply-timeout", { status: "idle" });
-
-      mockQuery.mockImplementation(
-        ({ options }: { options: { abortController: AbortController } }) => {
-          const ac: AbortController = options.abortController;
-          return (async function* () {
-            const abortPromise = new Promise<void>((_resolve, reject) => {
-              ac.signal.addEventListener(
-                "abort",
-                () => {
-                  const e = new Error("The operation was aborted");
-                  e.name = "AbortError";
-                  reject(e);
-                },
-                { once: true }
-              );
-            });
-            await abortPromise;
-            yield; // unreachable, satisfies require-yield
-          })();
-        }
-      );
-
-      const resultPromise = executeClaudeCodeReply(
-        { sessionId: "reply-timeout", prompt: "Continue", timeout: 10 },
-        manager
-      );
-      await vi.advanceTimersByTimeAsync(10);
-      const result = await resultPromise;
-
-      expect(result.isError).toBe(true);
-      expect(result.result).toContain("TIMEOUT");
-      expect(manager.get("reply-timeout")!.status).toBe("error");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("should return TIMEOUT (not INTERNAL) when SDK ends stream silently after abort", async () => {
-    vi.useFakeTimers();
-    try {
-      manager.create({ sessionId: "silent-abort", cwd: "/tmp" });
-      manager.update("silent-abort", { status: "idle" });
-
-      mockQuery.mockImplementation(
-        ({ options }: { options: { abortController: AbortController } }) => {
-          const ac: AbortController = options.abortController;
-          // eslint-disable-next-line require-yield
-          return (async function* () {
-            // Wait for abort, then end stream silently (no throw, no result)
-            await new Promise<void>((resolve) => {
-              ac.signal.addEventListener("abort", () => resolve(), { once: true });
-            });
-            // Stream ends without yielding a result or throwing
-          })();
-        }
-      );
-
-      const resultPromise = executeClaudeCodeReply(
-        { sessionId: "silent-abort", prompt: "Continue", timeout: 10 },
-        manager
-      );
-      await vi.advanceTimersByTimeAsync(10);
-      const result = await resultPromise;
-
-      expect(result.isError).toBe(true);
-      expect(result.result).toContain("TIMEOUT");
-      // Should NOT contain INTERNAL
-      expect(result.result).not.toContain("INTERNAL");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("should reject fork of cancelled session", async () => {
-    manager.create({ sessionId: "cancel-fork", cwd: "/tmp" });
-    manager.cancel("cancel-fork");
-
-    const result = await executeClaudeCodeReply(
-      { sessionId: "cancel-fork", prompt: "Fork", forkSession: true },
-      manager
-    );
-
-    expect(result.isError).toBe(true);
-    expect(result.result).toContain("CANCELLED");
-  });
-  it("should preserve cancelled status in reply after cancellation", async () => {
-    manager.create({ sessionId: "reply-cancel", cwd: "/tmp" });
-    manager.update("reply-cancel", { status: "idle" });
 
     mockQuery.mockReturnValue(
       (async function* () {
-        // Simulate cancel happening during reply execution
-        manager.cancel("reply-cancel");
-        throw new Error("AbortError: The operation was aborted");
-        yield; // unreachable, satisfies require-yield
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "second",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u3",
+          session_id: "sess-multi",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
       })() as QueryReturn
     );
 
-    await executeClaudeCodeReply({ sessionId: "reply-cancel", prompt: "Continue" }, manager);
+    const reply = await executeClaudeCodeReply(
+      { sessionId: "sess-multi", prompt: "reply" },
+      manager,
+      toolCache
+    );
+    expect(reply.status).toBe("running");
 
-    const session = manager.get("reply-cancel");
-    expect(session).toBeDefined();
-    expect(session!.status).toBe("cancelled");
+    await waitUntil(() => manager.get("sess-multi")?.status === "idle");
+    const events = manager.readEvents("sess-multi", 0).events;
+    const terminalCount = events.filter((e) => e.type === "result" || e.type === "error").length;
+    expect(terminalCount).toBe(1);
+    expect((manager.getResult("sess-multi")?.result.result as string) ?? "").toBe("second");
   });
 
-  it("should block disk-resume when init reports bypassPermissions and bypass is disabled", async () => {
-    const prev = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-    process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1";
+  it("should return error for missing session when disk resume is disabled", async () => {
+    const res = await executeClaudeCodeReply(
+      { sessionId: "nope", prompt: "Hi" },
+      manager,
+      toolCache
+    );
+    expect(res.status).toBe("error");
+    expect(res.error).toContain("SESSION_NOT_FOUND");
+  });
+
+  it("should disk-resume when enabled and session is missing", async () => {
+    vi.stubEnv("CLAUDE_CODE_MCP_ALLOW_DISK_RESUME", "1");
+    vi.stubEnv("CLAUDE_CODE_MCP_RESUME_SECRET", "test-secret");
     try {
       mockQuery.mockReturnValue(
-        fakeStream([
-          {
-            type: "system",
-            subtype: "init",
-            session_id: "disk-bypass",
-            uuid: "u1",
-            permissionMode: "bypassPermissions",
-            cwd: "/project",
-            tools: ["Read"],
-            model: "claude-sonnet-4-5-20250929",
-          },
-          {
+        (async function* () {
+          yield {
             type: "result",
             subtype: "success",
-            result: "Should not reach here",
-            duration_ms: 100,
+            result: "ok",
+            duration_ms: 1,
             num_turns: 1,
-            total_cost_usd: 0.01,
+            total_cost_usd: 0,
             is_error: false,
             uuid: "u2",
-            session_id: "disk-bypass",
-          },
-        ]) as QueryReturn
+            session_id: "disk-1",
+            duration_api_ms: 1,
+            stop_reason: null,
+            usage: {},
+            modelUsage: {},
+            permission_denials: [],
+          };
+        })() as QueryReturn
       );
 
-      const result = await executeClaudeCodeReply(
-        { sessionId: "disk-bypass", prompt: "Continue", cwd: "/tmp" },
-        manager,
-        false // allowBypass = false
-      );
-
-      expect(result.isError).toBe(true);
-      expect(result.result).toContain("PERMISSION_DENIED");
-    } finally {
-      if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-      else process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = prev;
-    }
-  });
-
-  it("should block disk-resume when input permissionMode is bypassPermissions and bypass is disabled", async () => {
-    const prev = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-    process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1";
-    try {
-      const result = await executeClaudeCodeReply(
+      const res = await executeClaudeCodeReply(
         {
-          sessionId: "disk-bypass-input",
-          prompt: "Continue",
+          sessionId: "disk-1",
+          prompt: "Hi",
           cwd: "/tmp",
-          permissionMode: "bypassPermissions",
+          resumeToken: computeResumeToken("disk-1", "test-secret"),
         },
         manager,
-        false // allowBypass = false
+        toolCache
       );
-
-      expect(result.isError).toBe(true);
-      expect(result.result).toContain("PERMISSION_DENIED");
-      // query should not have been called at all
-      expect(mockQuery).not.toHaveBeenCalled();
+      expect(res.status).toBe("running");
+      expect(manager.get("disk-1")).toBeDefined();
     } finally {
-      if (prev === undefined) delete process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME;
-      else process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = prev;
+      vi.unstubAllEnvs();
     }
   });
-});
 
-describe("cancellation semantics", () => {
-  let manager: SessionManager;
-
-  beforeEach(() => {
-    manager = new SessionManager();
-    vi.clearAllMocks();
+  it("should reject disk resume when resumeToken is missing", async () => {
+    vi.stubEnv("CLAUDE_CODE_MCP_ALLOW_DISK_RESUME", "1");
+    vi.stubEnv("CLAUDE_CODE_MCP_RESUME_SECRET", "test-secret");
+    try {
+      const res = await executeClaudeCodeReply(
+        { sessionId: "disk-1", prompt: "Hi", cwd: "/tmp" },
+        manager,
+        toolCache
+      );
+      expect(res.status).toBe("error");
+      expect(res.error).toContain("PERMISSION_DENIED");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  afterEach(() => {
-    manager.destroy();
+  it("should reject disk resume when resumeToken is invalid", async () => {
+    vi.stubEnv("CLAUDE_CODE_MCP_ALLOW_DISK_RESUME", "1");
+    vi.stubEnv("CLAUDE_CODE_MCP_RESUME_SECRET", "test-secret");
+    try {
+      const res = await executeClaudeCodeReply(
+        { sessionId: "disk-1", prompt: "Hi", cwd: "/tmp", resumeToken: "bad" },
+        manager,
+        toolCache
+      );
+      expect(res.status).toBe("error");
+      expect(res.error).toContain("PERMISSION_DENIED");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  it("should preserve cancelled status after execution completes", async () => {
-    // Simulate: session is cancelled mid-execution, abort causes error
+  it("should return error for busy sessions", async () => {
+    manager.create({ sessionId: "busy", cwd: "/tmp" });
+    manager.update("busy", { status: "running" });
+    const res = await executeClaudeCodeReply(
+      { sessionId: "busy", prompt: "Hi" },
+      manager,
+      toolCache
+    );
+    expect(res.status).toBe("error");
+    expect(res.error).toContain("SESSION_BUSY");
+  });
+
+  it("should resume an idle session", async () => {
+    manager.create({ sessionId: "idle", cwd: "/tmp" });
+    manager.update("idle", { status: "idle" });
+
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "idle",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as QueryReturn
+    );
+
+    const res = await executeClaudeCodeReply(
+      { sessionId: "idle", prompt: "Hi" },
+      manager,
+      toolCache
+    );
+    expect(res.status).toBe("running");
+    await waitUntil(() => manager.get("idle")?.status === "idle");
+    expect(manager.get("idle")!.status).toBe("idle");
+  });
+
+  it("should handle fork by returning the new sessionId and keeping the original idle", async () => {
+    manager.create({ sessionId: "orig", cwd: "/tmp" });
+    manager.update("orig", { status: "idle" });
+
     mockQuery.mockReturnValue(
       (async function* () {
         yield {
           type: "system",
           subtype: "init",
-          session_id: "sess-cancel",
+          session_id: "forked",
           uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Read"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
         };
-        // Simulate cancel happening during execution
-        manager.cancel("sess-cancel");
-        // The abort causes an error
-        throw new Error("AbortError: The operation was aborted");
-        yield; // unreachable, satisfies require-yield
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "forked",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
       })() as QueryReturn
     );
 
-    await executeClaudeCode({ prompt: "Long task" }, manager, "/tmp");
+    const res = await executeClaudeCodeReply(
+      { sessionId: "orig", prompt: "Hi", forkSession: true, sessionInitTimeoutMs: 1000 },
+      manager,
+      toolCache
+    );
+    expect(res.status).toBe("running");
+    expect(res.sessionId).toBe("forked");
 
-    // Session should remain "cancelled", not be overwritten to "error"
-    const session = manager.get("sess-cancel");
-    expect(session).toBeDefined();
-    expect(session!.status).toBe("cancelled");
+    expect(manager.get("orig")!.status).toBe("idle");
+    expect(manager.get("forked")).toBeDefined();
+
+    await waitUntil(() => manager.get("forked")?.status === "idle");
   });
 
-  it("should preserve original error when no init message received", async () => {
+  it("should return INTERNAL error when fork requested but no new sessionId is received", async () => {
+    manager.create({ sessionId: "orig", cwd: "/tmp" });
+    manager.update("orig", { status: "idle" });
+
     mockQuery.mockReturnValue(
       (async function* () {
-        throw new Error("Authentication failed: invalid API key");
-        yield; // unreachable, satisfies require-yield
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "orig",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Read"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "orig",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
       })() as QueryReturn
     );
 
-    const result = await executeClaudeCode({ prompt: "Do something" }, manager, "/tmp");
-
-    expect(result.isError).toBe(true);
-    // Should contain both the INTERNAL error and the original error
-    expect(result.result).toContain("INTERNAL");
-    expect(result.result).toContain("Authentication failed");
+    const res = await executeClaudeCodeReply(
+      { sessionId: "orig", prompt: "Hi", forkSession: true, sessionInitTimeoutMs: 1000 },
+      manager,
+      toolCache
+    );
+    expect(res.status).toBe("error");
+    expect(res.error).toContain("INTERNAL");
   });
 });

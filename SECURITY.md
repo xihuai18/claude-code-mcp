@@ -18,9 +18,9 @@ We aim to acknowledge reports within 48 hours and provide a fix or mitigation pl
 
 ## Security Considerations
 
-- `bypassPermissions` mode is disabled by default and requires explicit opt-in via the `claude_code_configure` tool at runtime
+- This server uses an async permission flow: when a tool call needs approval, the session pauses (`waiting_permission`) and surfaces requests via `claude_code_check` (`actions[]`). Callers must explicitly approve/deny via `respond_permission`.
 - The MCP server uses the Claude Agent SDK's bundled CLI (`cli.js`), not the system-installed `claude` binary
 - Session metadata is held in-memory only and is not persisted to disk by the MCP server (the SDK's CLI persists conversation history separately)
-- Disk resume is disabled by default. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, the server may resume sessions from the CLI's on-disk transcript even if in-memory metadata is missing.
-- `claude_code_session` redacts sensitive fields by default; `includeSensitive` requires `CLAUDE_CODE_MCP_ALLOW_SENSITIVE_SESSION_DETAILS=1`
+- Disk resume is disabled by default (`CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=0`). If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, disk resume fallback also requires `CLAUDE_CODE_MCP_RESUME_SECRET` (default: unset) and a valid `resumeToken` from `claude_code`/`claude_code_reply`.
+- `claude_code_session` redacts sensitive fields (cwd, systemPrompt, agents, additionalDirectories) by default; use `includeSensitive=true` to include them
 - Sessions auto-expire after 30 minutes of inactivity

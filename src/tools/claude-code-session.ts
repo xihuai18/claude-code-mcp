@@ -62,7 +62,10 @@ export function executeClaudeCodeSession(
           isError: true,
         };
       }
-      const cancelled = sessionManager.cancel(input.sessionId);
+      const cancelled = sessionManager.cancel(input.sessionId, {
+        reason: "Cancelled by caller",
+        source: "claude_code_session",
+      });
       if (!cancelled) {
         const session = sessionManager.get(input.sessionId);
         if (!session) {
