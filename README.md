@@ -224,6 +224,7 @@ Poll session events/results and approve/deny pending permission requests.
 | `includeModelUsage`       | boolean | No                     | Include `result.modelUsage` (default: true in full mode, false in minimal mode)                                            |
 | `includeStructuredOutput` | boolean | No                     | Include `result.structuredOutput` (default: true in full mode, false in minimal mode)                                      |
 | `includeTerminalEvents`   | boolean | No                     | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`, `true` in `"full"` |
+| `includeProgressEvents`   | boolean | No                     | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`, `true` in `"full"` |
 | `requestId`               | string  | For respond_permission | Permission request ID                                                                                                      |
 | `decision`                | string  | For respond_permission | `"allow"` or `"deny"`                                                                                                      |
 | `denyMessage`             | string  | No                     | Deny reason shown to Claude (`deny` only). Default: `"Permission denied by caller"`                                        |
@@ -240,6 +241,7 @@ Notes:
 - If `cursorResetTo` is present, your `cursor` was too old (events were evicted); reset your cursor to `cursorResetTo`.
 - For safety, de-duplicate events by `event.id` on the client side.
 - If `truncated=true`, the server intentionally limited the payload (e.g. `maxEvents`) — continue polling with `nextCursor`.
+- In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy progress events (`tool_progress`, `auth_status`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
 
 ## Usage Example
 

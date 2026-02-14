@@ -16,6 +16,9 @@
 
 ### Improvements
 - `claude_code_check`: default `responseMode="minimal"` to reduce payload size; supports `maxEvents` pagination with `truncated`/`truncatedFields`
+- `claude_code_check`: minimal mode now slims assistant message events (strips `usage`, `model`, `id`, `cache_control` from content blocks)
+- `claude_code_check`: minimal mode filters out noisy progress events (`tool_progress`, `auth_status`); use `includeProgressEvents: true` to restore
+- `claude_code_check`: minimal mode omits `lastEventId`/`lastToolUseId` from top-level response and `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd` from AgentResult
 - `claude_code_check`: includes lightweight session diagnostics (`cancelledAt`/`cancelledReason`/`cancelledSource`, `lastEventId`, `lastToolUseId`)
 - Disk resume security: disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` + `resumeToken`
 

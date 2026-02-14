@@ -587,6 +587,7 @@ Defaults (poll):
 - includeTools: false
 - includeEvents/includeActions/includeResult: true
 - maxEvents: 200 in minimal mode (unlimited in full mode unless maxEvents is set)
+- minimal mode strips verbose fields from assistant messages (usage, model, id, cache_control) and filters out noisy progress events (tool_progress, auth_status)
 
 action="poll" — Retrieve events since the last poll.
   Returns events (agent output, progress updates, permission requests, errors, final result).
@@ -663,6 +664,12 @@ action="respond_permission" — Approve or deny a pending permission request.
         .optional()
         .describe(
           "When true, includes terminal result/error events in events even if top-level result is included. Default: true in full mode, false in minimal mode."
+        ),
+      includeProgressEvents: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, includes progress events (tool_progress, auth_status) in the events stream. Default: true in full mode, false in minimal mode."
         ),
 
       requestId: z

@@ -47,6 +47,11 @@ export interface ClaudeCodeCheckInput {
    * Default: full=true, minimal=false (to avoid duplication).
    */
   includeTerminalEvents?: boolean;
+  /**
+   * Include progress events (tool_progress, auth_status) in the events stream.
+   * Default: full=true, minimal=false (these are mostly noise for callers).
+   */
+  includeProgressEvents?: boolean;
 
   requestId?: string;
   decision?: PermissionDecision;
@@ -87,14 +92,59 @@ function toPermissionResult(params: {
   };
 }
 
+/**
+ * Slim down an assistant output event's message object in minimal mode.
+ * Strips verbose API fields (usage, model, id, type, stop_sequence) and
+ * cache_control metadata from content blocks, keeping only the essentials.
+ */
+function slimAssistantData(data: unknown): unknown {
+  if (!data || typeof data !== "object") return data;
+  const d = data as Record<string, unknown>;
+  if (d.type !== "assistant") return data;
+
+  const msg = d.message;
+  if (!msg || typeof msg !== "object") return data;
+  const m = msg as Record<string, unknown>;
+
+  // Strip verbose fields from the message object
+  const slimmed: Record<string, unknown> = {};
+  if (m.role !== undefined) slimmed.role = m.role;
+  if (m.stop_reason !== undefined) slimmed.stop_reason = m.stop_reason;
+
+  // Slim content blocks: remove cache_control and other metadata
+  if (Array.isArray(m.content)) {
+    slimmed.content = (m.content as Array<Record<string, unknown>>).map((block) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { cache_control, ...rest } = block;
+      return rest;
+    });
+  }
+
+  return {
+    type: d.type,
+    message: slimmed,
+    ...(d.parent_tool_use_id ? { parent_tool_use_id: d.parent_tool_use_id } : {}),
+    ...(d.error ? { error: d.error } : {}),
+  };
+}
+
 function toEvents(
   events: Array<{ id: number; type: SessionEventType; data: unknown; timestamp: string }>,
-  opts: { includeUsage: boolean; includeModelUsage: boolean; includeStructuredOutput: boolean }
+  opts: {
+    includeUsage: boolean;
+    includeModelUsage: boolean;
+    includeStructuredOutput: boolean;
+    slim: boolean;
+  }
 ): CheckResult["events"] {
   return events.map((e) => {
     if ((e.type === "result" || e.type === "error") && isAgentResult(e.data)) {
       const redacted = redactAgentResult(e.data, opts);
       return { id: e.id, type: e.type, data: redacted, timestamp: e.timestamp };
+    }
+    // In minimal mode, slim down assistant output events
+    if (opts.slim && e.type === "output") {
+      return { id: e.id, type: e.type, data: slimAssistantData(e.data), timestamp: e.timestamp };
     }
     return { id: e.id, type: e.type, data: e.data, timestamp: e.timestamp };
   });
@@ -114,6 +164,7 @@ function buildResult(
   const includeModelUsage = input.includeModelUsage ?? responseMode === "full";
   const includeStructuredOutput = input.includeStructuredOutput ?? responseMode === "full";
   const includeTerminalEvents = input.includeTerminalEvents ?? responseMode === "full";
+  const includeProgressEvents = input.includeProgressEvents ?? responseMode === "full";
   const maxEvents = input.maxEvents ?? (responseMode === "minimal" ? 200 : undefined);
 
   const sessionId = input.sessionId;
@@ -148,12 +199,24 @@ function buildResult(
   const outputEvents = (() => {
     if (!includeEvents) return [] as typeof windowEvents;
 
+    let filtered = windowEvents;
+
     // Avoid duplicating terminal result/error both in events and top-level result.
     if (!includeTerminalEvents && includeResult && (status === "idle" || status === "error")) {
-      return windowEvents.filter((e) => e.type !== "result" && e.type !== "error");
+      filtered = filtered.filter((e) => e.type !== "result" && e.type !== "error");
     }
 
-    return windowEvents;
+    // In minimal mode, filter out noisy progress events (tool_progress, auth_status).
+    if (!includeProgressEvents) {
+      filtered = filtered.filter((e) => {
+        if (e.type !== "progress") return true;
+        const d = e.data as Record<string, unknown> | null;
+        const progressType = d?.type;
+        return progressType !== "tool_progress" && progressType !== "auth_status";
+      });
+    }
+
+    return filtered;
   })();
 
   const pending =
@@ -171,7 +234,12 @@ function buildResult(
     cursorResetTo,
     truncated: truncated ? true : undefined,
     truncatedFields: truncatedFields.length > 0 ? truncatedFields : undefined,
-    events: toEvents(outputEvents, { includeUsage, includeModelUsage, includeStructuredOutput }),
+    events: toEvents(outputEvents, {
+      includeUsage,
+      includeModelUsage,
+      includeStructuredOutput,
+      slim: responseMode === "minimal",
+    }),
     nextCursor,
     availableTools,
     actions:
@@ -197,13 +265,14 @@ function buildResult(
             includeUsage,
             includeModelUsage,
             includeStructuredOutput,
+            slim: responseMode === "minimal",
           })
         : undefined,
     cancelledAt: session?.cancelledAt,
     cancelledReason: session?.cancelledReason,
     cancelledSource: session?.cancelledSource,
-    lastEventId: sessionManager.getLastEventId(sessionId),
-    lastToolUseId: session?.lastToolUseId,
+    lastEventId: responseMode === "full" ? sessionManager.getLastEventId(sessionId) : undefined,
+    lastToolUseId: responseMode === "full" ? session?.lastToolUseId : undefined,
   };
 }
 
@@ -222,12 +291,28 @@ function isAgentResult(value: unknown): value is AgentResult {
 
 function redactAgentResult(
   result: AgentResult,
-  opts: { includeUsage: boolean; includeModelUsage: boolean; includeStructuredOutput: boolean }
+  opts: {
+    includeUsage: boolean;
+    includeModelUsage: boolean;
+    includeStructuredOutput: boolean;
+    slim?: boolean;
+  }
 ): AgentResult {
-  const { usage, modelUsage, structuredOutput, ...rest } = result;
+  const {
+    usage,
+    modelUsage,
+    structuredOutput,
+    durationApiMs,
+    sessionTotalTurns,
+    sessionTotalCostUsd,
+    ...rest
+  } = result;
 
   return {
     ...rest,
+    durationApiMs: opts.slim ? undefined : durationApiMs,
+    sessionTotalTurns: opts.slim ? undefined : sessionTotalTurns,
+    sessionTotalCostUsd: opts.slim ? undefined : sessionTotalCostUsd,
     usage: opts.includeUsage ? usage : undefined,
     modelUsage: opts.includeModelUsage ? modelUsage : undefined,
     structuredOutput: opts.includeStructuredOutput ? structuredOutput : undefined,
