@@ -10,6 +10,7 @@
   - `claude_code`: 22 low-frequency params moved into `advanced` object (e.g. `effort` → `advanced.effort`, `tools` → `advanced.tools`, `agents` → `advanced.agents`, `env` → `advanced.env`)
   - `claude_code_reply`: 28 disk-resume params moved into `diskResumeConfig` object (e.g. `resumeToken` → `diskResumeConfig.resumeToken`, `cwd` → `diskResumeConfig.cwd`)
   - `claude_code_check`: 9 poll control params moved into `pollOptions` object (e.g. `includeTools` → `pollOptions.includeTools`); 2 permission response params moved into `permissionOptions` object (e.g. `updatedInput` → `permissionOptions.updatedInput`)
+  - Schema descriptions for nested object fields have been compacted (self-explanatory fields no longer carry `.describe()` text; object-level descriptions enhanced as summaries) to reduce token overhead for calling models
 
 ### Features
 - New module: `src/tools/query-consumer.ts` — shared background query consumer (`consumeQuery`) for start, resume, and disk-resume code paths

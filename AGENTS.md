@@ -25,12 +25,12 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 受 OpenAI Codex MCP 极简设计（仅 `codex` + `codex-reply`）启发，本项目仅暴露 **4 个 MCP 工具**，覆盖完整的 agent 生命周期：
 
-| 工具                  | 职责                                | 阻塞？ |
-| --------------------- | ----------------------------------- | ------ |
-| `claude_code`         | 启动新 session                      | 仅等 init（~几百ms） |
-| `claude_code_reply`   | 继续已有 session（含 fork/磁盘恢复）| 立即返回 |
-| `claude_code_session` | 管理 session（list/get/cancel）     | 同步 |
-| `claude_code_check`   | 轮询事件 + 处理权限请求             | 同步 |
+| 工具                  | 职责                                 | 阻塞？               |
+| --------------------- | ------------------------------------ | -------------------- |
+| `claude_code`         | 启动新 session                       | 仅等 init（~几百ms） |
+| `claude_code_reply`   | 继续已有 session（含 fork/磁盘恢复） | 立即返回             |
+| `claude_code_session` | 管理 session（list/get/cancel）      | 同步                 |
+| `claude_code_check`   | 轮询事件 + 处理权限请求              | 同步                 |
 
 不暴露额外的配置工具（已移除 `claude_code_configure`）、不暴露内部工具代理、不暴露 resources/prompts。所有能力通过这 4 个工具的参数组合实现。
 
@@ -210,11 +210,11 @@ mcp_demo/                     # Copy-paste MCP client config examples
 
 These are set on the MCP server process (not the child Claude Code process):
 
-| Variable                                          | Default            | Purpose                                                      |
-| ------------------------------------------------- | ------------------ | ------------------------------------------------------------ |
-| `CLAUDE_CODE_GIT_BASH_PATH`                       | auto-detect        | Path to `bash.exe` on Windows                                |
-| `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME`               | `0`                | Allow `claude_code_reply` to resume from on-disk transcripts |
-| `CLAUDE_CODE_MCP_RESUME_SECRET`                   | *(unset)*          | HMAC secret used to validate `resumeToken` for disk resume fallback |
+| Variable                            | Default     | Purpose                                                             |
+| ----------------------------------- | ----------- | ------------------------------------------------------------------- |
+| `CLAUDE_CODE_GIT_BASH_PATH`         | auto-detect | Path to `bash.exe` on Windows                                       |
+| `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | `0`         | Allow `claude_code_reply` to resume from on-disk transcripts        |
+| `CLAUDE_CODE_MCP_RESUME_SECRET`     | *(unset)*   | HMAC secret used to validate `resumeToken` for disk resume fallback |
 
 ## Code Style & Conventions
 
@@ -224,6 +224,13 @@ These are set on the MCP server process (not the child Claude Code process):
 - **ESLint**: flat config (`eslint.config.js`); `@typescript-eslint/no-explicit-any` is a warning; `@typescript-eslint/no-unused-vars` is an error (use `_`-prefixed args to intentionally ignore). Ignores: `dist/`, `node_modules/`, `*.config.*`.
 - **Exports**: follow existing patterns (named exports; tools export an `*Input` type/interface and an `execute*` function).
 - **Schemas**: tool inputs are validated with `zod`; keep validation close to tool registration in `src/server.ts`.
+- **Zod `.describe()` convention**: every parameter in `src/server.ts` Zod schemas **must** document its default value (e.g. `Default: false`, `Default: SDK`, `Default: none`). Additional description text is optional — only add it when the field name alone is ambiguous. Keep descriptions as concise as possible. Convention for default values:
+  - `Default: <concrete value>` — for params with a known default (e.g. `Default: false`, `Default: 10000`, `Default: []`)
+  - `Default: SDK` — for params whose default is managed by the Claude Agent SDK
+  - `Default: none` — for truly optional params with no default
+  - `Default: SDK-bundled` — specifically for `pathToClaudeCodeExecutable`
+  - Required params (e.g. `prompt`, `sessionId`) do not need a default annotation
+- **Two-tier description strategy**: Zod `.describe()` strings are serialized into JSON Schema and sent to calling models — keep them minimal (default value + brief hint only when field name is ambiguous). Human-facing documentation (`README.md`, `docs/DESIGN.md`) should provide full, detailed descriptions with examples and context. Do not duplicate README-level detail into `.describe()` strings.
 - **Errors**: use existing `ErrorCode` and the repo's `isError`/structured result patterns. Tool handlers catch all errors and return structured responses — never throw.
 - **Formatting**: Prettier is the source of truth; don't hand-format against it. Key settings: double quotes (`singleQuote: false`), semicolons, trailing commas (ES5), `printWidth: 100`, `tabWidth: 2`.
 
