@@ -15,6 +15,7 @@ import type {
 } from "../types.js";
 import { ErrorCode } from "../types.js";
 import { enhanceWindowsError } from "../utils/windows.js";
+import { normalizePermissionUpdatedInput } from "../utils/permission-updated-input.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 
 export type ConsumeQueryMode = "start" | "resume" | "disk-resume";
@@ -259,7 +260,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
         Array.isArray(sessionInfo.allowedTools) &&
         sessionInfo.allowedTools.includes(toolName)
       ) {
-        return { behavior: "allow" };
+        return { behavior: "allow", updatedInput: normalizePermissionUpdatedInput(input) };
       }
     }
 

@@ -377,6 +377,33 @@ describe("SessionManager", () => {
       expect(finish.mock.calls[0]?.[0]?.message).toContain("disallowed");
     });
 
+    it("should default allow.updatedInput to the original tool input when omitted", () => {
+      manager.create({ sessionId: "perm", cwd: "/tmp" });
+
+      const finish = vi.fn();
+      manager.setPendingPermission(
+        "perm",
+        {
+          requestId: "r1",
+          toolName: "Bash",
+          input: { cmd: "echo hi" },
+          summary: "Execute shell command",
+          toolUseID: "tu1",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+
+      const ok = manager.finishRequest("perm", "r1", { behavior: "allow" }, "respond");
+      expect(ok).toBe(true);
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(finish.mock.calls[0]?.[0]?.behavior).toBe("allow");
+      expect((finish.mock.calls[0]?.[0] as { updatedInput?: unknown }).updatedInput).toEqual({
+        cmd: "echo hi",
+      });
+    });
+
     it("should timeout pending permission requests", async () => {
       vi.useFakeTimers();
       try {

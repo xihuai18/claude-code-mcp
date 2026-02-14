@@ -15,6 +15,7 @@ import type {
   SessionStatus,
   StoredAgentResult,
 } from "../types.js";
+import { normalizePermissionUpdatedInput } from "../utils/permission-updated-input.js";
 
 const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 const DEFAULT_RUNNING_SESSION_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours max for running sessions
@@ -359,6 +360,20 @@ export class SessionManager {
           behavior: "deny",
           message: `Tool '${pending.record.toolName}' is disallowed by session policy.`,
           interrupt: false,
+        };
+      }
+    }
+    if (finalResult.behavior === "allow") {
+      const updatedInput = (finalResult as { updatedInput?: unknown }).updatedInput;
+      const validRecord =
+        updatedInput !== null &&
+        updatedInput !== undefined &&
+        typeof updatedInput === "object" &&
+        !Array.isArray(updatedInput);
+      if (!validRecord) {
+        finalResult = {
+          ...finalResult,
+          updatedInput: normalizePermissionUpdatedInput(pending.record.input),
         };
       }
     }
