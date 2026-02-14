@@ -3,7 +3,11 @@
  */
 import { existsSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { join, dirname, normalize } from "node:path";
+import path from "node:path";
+
+// Always use win32 path semantics in this module so that the logic works
+// correctly even when the test-suite runs on a non-Windows CI host.
+const { join, dirname, normalize } = path.win32;
 
 export function isWindows(): boolean {
   return process.platform === "win32";
