@@ -412,6 +412,7 @@ All environment variables are optional. They are set on the MCP server process (
 | Variable                            | Description                                                                                                      | Default        |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
 | `CLAUDE_CODE_GIT_BASH_PATH`         | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                          | Auto-detected  |
+| `CLAUDE_CODE_MCP_ENABLE_RESOURCES`  | Set to `1` to enable optional read-only MCP resources (see [Resources](#resources-optional))                     | `0` (disabled) |
 | `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
 | `CLAUDE_CODE_MCP_RESUME_SECRET`     | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | *(unset)*      |
 
