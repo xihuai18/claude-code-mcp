@@ -23,7 +23,7 @@ codex mcp add claude-code -- npx -y @leo000001/claude-code-mcp
 
 ## Polling + permissions (v2 async)
 
-`claude_code` / `claude_code_reply` start sessions asynchronously and return `{ sessionId, status: "running" }`.
+`claude_code` / `claude_code_reply` start sessions asynchronously and return `{ sessionId, status: "running", pollInterval }`.
 
 To read progress, fetch the final result, and handle permission requests, call `claude_code_check`:
 
