@@ -210,6 +210,16 @@ Gotchas:
 - `NotebookEdit` expects native Windows paths (e.g. `D:\path\file.ipynb`); this server normalizes MSYS paths like `/d/...` when possible.
 - `TeamDelete` may require members to reach `shutdown_approved` (otherwise you may see "active member" errors); cleanup can be asynchronous during shutdown.
 - Skills may become available later in the same session (early calls may show "Unknown", later succeed after skills are loaded/registered).
+- Some internal features (e.g. ToolSearch) may not appear in `availableTools` (derived from SDK `system/init.tools`).
+
+### Resources (optional)
+
+This server is tools-first, but can optionally expose a few **read-only** MCP resources. Enable by setting `CLAUDE_CODE_MCP_ENABLE_RESOURCES=1` on the server process.
+
+- `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (static + runtime-discovered)
+- `claude-code-mcp:///gotchas` (Markdown): practical limits/gotchas
+- `claude-code-mcp:///sessions` (JSON): active sessions (public/redacted; no `cwd`/`prompt`/`env`)
+- `claude-code-mcp:///sessions/{sessionId}` (JSON template): read a session by ID (public/redacted)
 
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
 

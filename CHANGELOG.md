@@ -28,6 +28,7 @@
 - `claude_code_check`: permission actions now include `timeoutMs`, `expiresAt`, and best-effort `remainingMs`
 - Permission result events now include `toolName`, and denial details (`message`, `interrupt`) when applicable
 - Disk resume security: disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` + `resumeToken`
+- Optional MCP resources (opt-in via `CLAUDE_CODE_MCP_ENABLE_RESOURCES=1`): internal tool catalog, gotchas, and public session views
 
 ## 1.6.0 (2026-02-12)
 

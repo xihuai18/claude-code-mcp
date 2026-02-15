@@ -9,6 +9,7 @@ import { executeClaudeCodeReply } from "./tools/claude-code-reply.js";
 import { executeClaudeCodeCheck } from "./tools/claude-code-check.js";
 import { executeClaudeCodeSession } from "./tools/claude-code-session.js";
 import { buildInternalToolsDescription, ToolDiscoveryCache } from "./tools/tool-discovery.js";
+import { registerResourcesIfEnabled } from "./resources/register-resources.js";
 import {
   EFFORT_LEVELS,
   AGENT_MODELS,
@@ -415,6 +416,8 @@ action="respond_permission" — Approve or deny a pending permission request.
       };
     }
   );
+
+  registerResourcesIfEnabled(server, { sessionManager, toolCache });
 
   // Cleanup on server close
   const originalClose = server.close.bind(server);
