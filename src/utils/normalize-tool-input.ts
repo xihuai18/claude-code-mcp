@@ -5,6 +5,25 @@ function normalizeMsysToWindowsPath(path: string): string | undefined {
   // Already a Windows drive path or UNC.
   if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\")) return undefined;
 
+  // MSYS-style UNC: //server/share/path -> \\server\share\path
+  // Guard against accidental matches like //d/... by requiring server name length >= 2.
+  if (path.startsWith("//")) {
+    const m = path.match(/^\/\/([^/]{2,})\/(.*)$/);
+    if (m) {
+      const host = m[1]!;
+      const rest = m[2] ?? "";
+      return `\\\\${host}\\${rest.replace(/\//g, "\\")}`;
+    }
+  }
+
+  // Cygwin-style: /cygdrive/c/path -> C:\path
+  const cyg = path.match(/^\/cygdrive\/([a-zA-Z])\/(.*)$/);
+  if (cyg) {
+    const drive = cyg[1]!.toUpperCase();
+    const rest = cyg[2] ?? "";
+    return `${drive}:\\${rest.replace(/\//g, "\\")}`;
+  }
+
   const m = path.match(/^\/(?:mnt\/)?([a-zA-Z])\/(.*)$/);
   if (!m) return undefined;
   const drive = m[1]!.toUpperCase();

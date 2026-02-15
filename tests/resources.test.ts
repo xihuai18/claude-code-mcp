@@ -60,6 +60,10 @@ describe("Resources", () => {
       expect(toolsRes.contents[0]?.mimeType).toBe("application/json");
       const parsed = JSON.parse(toolsRes.contents[0]?.text ?? "{}") as { tools?: unknown };
       expect(Array.isArray(parsed.tools)).toBe(true);
+
+      const gotchasRes = await client.readResource({ uri: "claude-code-mcp:///gotchas" });
+      expect(gotchasRes.contents[0]?.mimeType).toBe("text/markdown");
+      expect(gotchasRes.contents[0]?.text).toContain("gotchas");
     });
   });
 });
