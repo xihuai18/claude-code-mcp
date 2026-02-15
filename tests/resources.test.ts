@@ -53,8 +53,21 @@ describe("Resources", () => {
 
       const infoRes = await client.readResource({ uri: "claude-code-mcp:///server-info" });
       expect(infoRes.contents[0]?.mimeType).toBe("application/json");
-      const info = JSON.parse(infoRes.contents[0]?.text ?? "{}") as { name?: unknown };
+      const info = JSON.parse(infoRes.contents[0]?.text ?? "{}") as {
+        name?: unknown;
+        resources?: unknown;
+      };
       expect(info.name).toBe("claude-code-mcp");
+      expect(Array.isArray(info.resources)).toBe(true);
+      expect((info.resources as string[]).slice().sort()).toEqual(
+        [
+          "claude-code-mcp:///server-info",
+          "claude-code-mcp:///internal-tools",
+          "claude-code-mcp:///gotchas",
+        ]
+          .slice()
+          .sort()
+      );
 
       const toolsRes = await client.readResource({ uri: "claude-code-mcp:///internal-tools" });
       expect(toolsRes.contents[0]?.mimeType).toBe("application/json");

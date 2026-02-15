@@ -4,6 +4,12 @@ import type { ToolDiscoveryCache } from "../tools/tool-discovery.js";
 
 const RESOURCE_SCHEME = "claude-code-mcp";
 
+const RESOURCE_URIS = {
+  serverInfo: `${RESOURCE_SCHEME}:///server-info`,
+  internalTools: `${RESOURCE_SCHEME}:///internal-tools`,
+  gotchas: `${RESOURCE_SCHEME}:///gotchas`,
+} as const;
+
 function asTextResource(uri: URL, text: string, mimeType: string): ReadResourceResult {
   return {
     contents: [
@@ -20,7 +26,7 @@ export function registerResources(
   server: McpServer,
   deps: { toolCache: ToolDiscoveryCache }
 ): void {
-  const serverInfoUri = new URL(`${RESOURCE_SCHEME}:///server-info`);
+  const serverInfoUri = new URL(RESOURCE_URIS.serverInfo);
   server.registerResource(
     "server_info",
     serverInfoUri.toString(),
@@ -38,11 +44,7 @@ export function registerResources(
             node: process.version,
             platform: process.platform,
             arch: process.arch,
-            resources: [
-              "claude-code-mcp:///server-info",
-              "claude-code-mcp:///internal-tools",
-              "claude-code-mcp:///gotchas",
-            ],
+            resources: Object.values(RESOURCE_URIS),
             toolCatalogCount: deps.toolCache.getTools().length,
           },
           null,
@@ -52,7 +54,7 @@ export function registerResources(
       )
   );
 
-  const toolsUri = new URL(`${RESOURCE_SCHEME}:///internal-tools`);
+  const toolsUri = new URL(RESOURCE_URIS.internalTools);
   server.registerResource(
     "internal_tools",
     toolsUri.toString(),
@@ -69,7 +71,7 @@ export function registerResources(
       )
   );
 
-  const gotchasUri = new URL(`${RESOURCE_SCHEME}:///gotchas`);
+  const gotchasUri = new URL(RESOURCE_URIS.gotchas);
   server.registerResource(
     "gotchas",
     gotchasUri.toString(),
