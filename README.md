@@ -212,14 +212,12 @@ Gotchas:
 - Skills may become available later in the same session (early calls may show "Unknown", later succeed after skills are loaded/registered).
 - Some internal features (e.g. ToolSearch) may not appear in `availableTools` (derived from SDK `system/init.tools`).
 
-### Resources (optional)
+### Resources
 
-This server is tools-first, but can optionally expose a few **read-only** MCP resources. Enable by setting `CLAUDE_CODE_MCP_ENABLE_RESOURCES=1` on the server process.
+If your MCP client supports resources, this server exposes a couple of **read-only** MCP resources:
 
 - `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (static + runtime-discovered)
 - `claude-code-mcp:///gotchas` (Markdown): practical limits/gotchas
-- `claude-code-mcp:///sessions` (JSON): active sessions (public/redacted; no `cwd`/`prompt`/`env`)
-- `claude-code-mcp:///sessions/{sessionId}` (JSON template): read a session by ID (public/redacted)
 
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
 
@@ -412,7 +410,6 @@ All environment variables are optional. They are set on the MCP server process (
 | Variable                            | Description                                                                                                      | Default        |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
 | `CLAUDE_CODE_GIT_BASH_PATH`         | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                          | Auto-detected  |
-| `CLAUDE_CODE_MCP_ENABLE_RESOURCES`  | Set to `1` to enable optional read-only MCP resources (see [Resources](#resources-optional))                     | `0` (disabled) |
 | `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
 | `CLAUDE_CODE_MCP_RESUME_SECRET`     | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | *(unset)*      |
 
