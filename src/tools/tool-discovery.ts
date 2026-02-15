@@ -9,7 +9,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   },
   Read: {
     description:
-      "Read the contents of a file given its path (large files may require offset/limit or Grep chunking).",
+      "Read the contents of a file given its path (large files may hit per-call size caps; use offset/limit or Grep chunking).",
     category: "file_read",
   },
   Write: {
@@ -30,7 +30,8 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
     category: "file_read",
   },
   NotebookEdit: {
-    description: "Edit individual cells in Jupyter notebooks (.ipynb files).",
+    description:
+      "Edit individual cells in Jupyter notebooks (.ipynb files) (expects native Windows paths; this server normalizes /d/... when possible).",
     category: "file_write",
   },
   WebFetch: {
@@ -55,7 +56,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   },
   TeamDelete: {
     description:
-      "Delete a team and its resources (cleanup may complete asynchronously; do not assume immediate deletion).",
+      "Delete a team and its resources (may require all active members to shutdown_approved; cleanup may complete asynchronously).",
     category: "agent",
   },
 };

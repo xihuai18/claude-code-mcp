@@ -16,6 +16,7 @@ import type {
   StoredAgentResult,
 } from "../types.js";
 import { normalizePermissionUpdatedInput } from "../utils/permission-updated-input.js";
+import { normalizeToolInput } from "../utils/normalize-tool-input.js";
 
 const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 const DEFAULT_RUNNING_SESSION_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours max for running sessions
@@ -43,8 +44,10 @@ export class SessionManager {
   private cleanupTimer: ReturnType<typeof setInterval>;
   private sessionTtlMs = DEFAULT_SESSION_TTL_MS;
   private runningSessionMaxMs = DEFAULT_RUNNING_SESSION_MAX_MS;
+  private platform: NodeJS.Platform;
 
-  constructor() {
+  constructor(opts?: { platform?: NodeJS.Platform }) {
+    this.platform = opts?.platform ?? process.platform;
     // Periodically clean up expired sessions
     this.cleanupTimer = setInterval(() => this.cleanup(), DEFAULT_CLEANUP_INTERVAL_MS);
     if (this.cleanupTimer.unref) {
@@ -381,6 +384,16 @@ export class SessionManager {
         finalResult = {
           ...finalResult,
           updatedInput: normalizePermissionUpdatedInput(pending.record.input),
+        };
+      } else {
+        // Caller-provided updatedInput should be normalized consistently with our tool input normalization.
+        finalResult = {
+          ...finalResult,
+          updatedInput: normalizeToolInput(
+            pending.record.toolName,
+            updatedInput as Record<string, unknown>,
+            this.platform
+          ),
         };
       }
     }

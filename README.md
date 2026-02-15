@@ -205,9 +205,11 @@ Use `claude_code_check` to poll events and obtain the final `result`.
 
 Gotchas:
 - Permission approvals have a timeout (default 60s via `permissionRequestTimeoutMs`) and will auto-deny; watch `actions[].expiresAt` / `actions[].remainingMs`.
-- `Read` has a per-call size cap in practice; for large files use `offset`/`limit` or chunk with `Grep`.
+- `Read` has a per-call size cap in practice (often ~256KB); for large files use `offset`/`limit` or chunk with `Grep`.
 - `Edit` with `replace_all=true` is substring replacement; if no match is found the tool returns a clear error.
-- `TeamDelete` cleanup can be asynchronous during shutdown; you may see racy "already deleted"/"nothing to delete" style outcomes.
+- `NotebookEdit` expects native Windows paths (e.g. `D:\path\file.ipynb`); this server normalizes MSYS paths like `/d/...` when possible.
+- `TeamDelete` may require members to reach `shutdown_approved` (otherwise you may see "active member" errors); cleanup can be asynchronous during shutdown.
+- Skills may become available later in the same session (early calls may show "Unknown", later succeed after skills are loaded/registered).
 
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
 

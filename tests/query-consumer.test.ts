@@ -285,6 +285,97 @@ describe("consumeQuery", () => {
     manager.destroy();
   });
 
+  it("normalizes NotebookEdit MSYS paths in permission records (platform override)", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockImplementation(({ options }: { options: { canUseTool: CanUseTool } }) => {
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-nbedit",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["NotebookEdit"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        await options.canUseTool(
+          "NotebookEdit",
+          { file_path: "/d/nb.ipynb" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tu-nb",
+            decisionReason: "needs permission",
+          }
+        );
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-nbedit",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })();
+    });
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      platform: "win32",
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+
+    for (let i = 0; i < 20; i++) {
+      if (manager.get("sess-nbedit")!.status === "waiting_permission") break;
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(manager.get("sess-nbedit")!.status).toBe("waiting_permission");
+    const pending = manager.listPendingPermissions("sess-nbedit");
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.input).toEqual({ file_path: "D:\\nb.ipynb" });
+
+    manager.finishRequest("sess-nbedit", pending[0]!.requestId, { behavior: "allow" }, "respond");
+    await handle.done;
+
+    manager.destroy();
+  });
+
   it("should buffer pre-init events when waitForInitSessionId=true (fork-like resume)", async () => {
     const manager = new SessionManager();
     const toolCache = new ToolDiscoveryCache();

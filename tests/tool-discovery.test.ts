@@ -17,6 +17,8 @@ describe("tool-discovery", () => {
   it("catalog descriptions include important tool gotchas", () => {
     expect(TOOL_CATALOG.Read.description).toContain("offset/limit");
     expect(TOOL_CATALOG.Edit.description).toContain("replace_all");
+    expect(TOOL_CATALOG.NotebookEdit.description).toContain("Windows");
+    expect(TOOL_CATALOG.TeamDelete.description).toContain("shutdown_approved");
   });
 
   it("ToolDiscoveryCache starts from catalog and updates from init.tools", () => {

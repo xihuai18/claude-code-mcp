@@ -16,6 +16,7 @@ import type {
 import { ErrorCode } from "../types.js";
 import { enhanceWindowsError } from "../utils/windows.js";
 import { normalizePermissionUpdatedInput } from "../utils/permission-updated-input.js";
+import { normalizeToolInput } from "../utils/normalize-tool-input.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 
 export type ConsumeQueryMode = "start" | "resume" | "disk-resume";
@@ -55,6 +56,8 @@ export type ConsumeQueryParams =
       mode: "start";
       prompt: string;
       abortController: AbortController;
+      /** For tests only: override platform-dependent behavior. */
+      platform?: NodeJS.Platform;
       options: Partial<Options>;
       permissionRequestTimeoutMs: number;
       sessionInitTimeoutMs: number;
@@ -67,6 +70,8 @@ export type ConsumeQueryParams =
       sessionId: string;
       prompt: string;
       abortController: AbortController;
+      /** For tests only: override platform-dependent behavior. */
+      platform?: NodeJS.Platform;
       options: Partial<Options>;
       permissionRequestTimeoutMs: number;
       sessionInitTimeoutMs: number;
@@ -240,6 +245,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
 
   const canUseTool: CanUseTool = async (toolName, input, options) => {
     const sessionId = await getSessionId();
+    const normalizedInput = normalizeToolInput(toolName, input, params.platform);
 
     // Keep MCP permission behavior consistent with the SDK options semantics:
     // - disallowedTools: hard deny
@@ -260,7 +266,10 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
         Array.isArray(sessionInfo.allowedTools) &&
         sessionInfo.allowedTools.includes(toolName)
       ) {
-        return { behavior: "allow", updatedInput: normalizePermissionUpdatedInput(input) };
+        return {
+          behavior: "allow",
+          updatedInput: normalizePermissionUpdatedInput(normalizedInput),
+        };
       }
     }
 
@@ -273,8 +282,8 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
     const record: PermissionRequestRecord = {
       requestId,
       toolName,
-      input,
-      summary: summarizePermission(toolName, input),
+      input: normalizedInput,
+      summary: summarizePermission(toolName, normalizedInput),
       description: describeTool(toolName, params.toolCache),
       decisionReason: options.decisionReason,
       blockedPath: options.blockedPath,
