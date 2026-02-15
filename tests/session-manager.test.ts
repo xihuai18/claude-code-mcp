@@ -347,6 +347,15 @@ describe("SessionManager", () => {
       expect(manager.get("perm")!.status).toBe("running");
       expect(manager.getPendingPermissionCount("perm")).toBe(0);
 
+      const permEvents = manager.readEvents("perm").events;
+      const permResult = permEvents.find((e) => e.type === "permission_result");
+      expect(permResult?.data).toMatchObject({
+        requestId: "r1",
+        toolName: "Bash",
+        behavior: "allow",
+        source: "respond",
+      });
+
       expect(
         manager.finishRequest("perm", "r1", { behavior: "deny", message: "late" }, "respond")
       ).toBe(false);
@@ -375,6 +384,10 @@ describe("SessionManager", () => {
       expect(finish).toHaveBeenCalledTimes(1);
       expect(finish.mock.calls[0]?.[0]?.behavior).toBe("deny");
       expect(finish.mock.calls[0]?.[0]?.message).toContain("disallowed");
+
+      const permEvents = manager.readEvents("perm").events;
+      const permResult = permEvents.find((e) => e.type === "permission_result");
+      expect((permResult?.data as { message?: string }).message).toContain("disallowed");
     });
 
     it("should default allow.updatedInput to the original tool input when omitted", () => {

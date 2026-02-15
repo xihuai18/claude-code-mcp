@@ -245,20 +245,29 @@ function buildResult(
     availableTools,
     actions:
       includeActions && status === "waiting_permission"
-        ? pending.map((req) => ({
-            type: "permission" as const,
-            requestId: req.requestId,
-            toolName: req.toolName,
-            input: req.input,
-            summary: req.summary,
-            decisionReason: req.decisionReason,
-            blockedPath: req.blockedPath,
-            toolUseID: req.toolUseID,
-            agentID: req.agentID,
-            suggestions: req.suggestions,
-            description: req.description,
-            createdAt: req.createdAt,
-          }))
+        ? pending.map((req) => {
+            const expiresMs = req.expiresAt ? Date.parse(req.expiresAt) : Number.NaN;
+            const remainingMs = Number.isFinite(expiresMs)
+              ? Math.max(0, expiresMs - Date.now())
+              : undefined;
+            return {
+              type: "permission" as const,
+              requestId: req.requestId,
+              toolName: req.toolName,
+              input: req.input,
+              summary: req.summary,
+              decisionReason: req.decisionReason,
+              blockedPath: req.blockedPath,
+              toolUseID: req.toolUseID,
+              agentID: req.agentID,
+              suggestions: req.suggestions,
+              description: req.description,
+              createdAt: req.createdAt,
+              timeoutMs: req.timeoutMs,
+              expiresAt: req.expiresAt,
+              remainingMs,
+            };
+          })
         : undefined,
     result:
       includeResult && stored?.result

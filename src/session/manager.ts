@@ -296,10 +296,17 @@ export class SessionManager {
     if (!state || !info) return false;
 
     if (!state.pendingPermissions.has(req.requestId)) {
+      const inferredExpiresAt = new Date(Date.now() + timeoutMs).toISOString();
+      const record: PermissionRequestRecord = {
+        ...req,
+        timeoutMs,
+        expiresAt: inferredExpiresAt,
+      };
+
       const timeoutId = setTimeout(() => {
         this.finishRequest(
           sessionId,
-          req.requestId,
+          record.requestId,
           {
             behavior: "deny",
             message: `Permission request timed out after ${timeoutMs}ms.`,
@@ -309,13 +316,13 @@ export class SessionManager {
         );
       }, timeoutMs);
 
-      state.pendingPermissions.set(req.requestId, { record: req, finish, timeoutId });
+      state.pendingPermissions.set(record.requestId, { record, finish, timeoutId });
       info.status = "waiting_permission";
       info.lastActiveAt = new Date().toISOString();
 
       this.pushEvent(sessionId, {
         type: "permission_request",
-        data: req,
+        data: record,
         timestamp: new Date().toISOString(),
       });
       return true;
@@ -381,9 +388,20 @@ export class SessionManager {
     if (pending.timeoutId) clearTimeout(pending.timeoutId);
     state.pendingPermissions.delete(requestId);
 
+    const eventData: Record<string, unknown> = {
+      requestId,
+      toolName: pending.record.toolName,
+      behavior: finalResult.behavior,
+      source,
+    };
+    if (finalResult.behavior === "deny") {
+      eventData.message = finalResult.message;
+      eventData.interrupt = finalResult.interrupt;
+    }
+
     this.pushEvent(sessionId, {
       type: "permission_result",
-      data: { requestId, behavior: finalResult.behavior, source },
+      data: eventData,
       timestamp: new Date().toISOString(),
     });
 

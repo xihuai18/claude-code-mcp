@@ -267,6 +267,9 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
     const requestId = `${options.toolUseID}:${toolName}:${Date.now()}:${Math.random()
       .toString(16)
       .slice(2)}`;
+    const createdAt = new Date().toISOString();
+    const timeoutMs = params.permissionRequestTimeoutMs;
+    const expiresAt = new Date(Date.now() + timeoutMs).toISOString();
     const record: PermissionRequestRecord = {
       requestId,
       toolName,
@@ -278,7 +281,9 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
       toolUseID: options.toolUseID,
       agentID: options.agentID,
       suggestions: options.suggestions,
-      createdAt: new Date().toISOString(),
+      createdAt,
+      timeoutMs,
+      expiresAt,
     };
 
     return await new Promise<PermissionResult>((resolve) => {

@@ -239,6 +239,10 @@ export interface PermissionRequestRecord {
   suggestions?: PermissionUpdate[];
   description?: string;
   createdAt: string;
+  /** Timeout for this permission request in milliseconds (informational). */
+  timeoutMs?: number;
+  /** ISO timestamp when the permission request will auto-deny (informational). */
+  expiresAt?: string;
 }
 
 export type FinishFn = (result: PermissionResult) => void;
@@ -284,6 +288,10 @@ export interface CheckResult {
     suggestions?: PermissionUpdate[];
     description?: string;
     createdAt: string;
+    timeoutMs?: number;
+    expiresAt?: string;
+    /** Best-effort ms remaining until expiresAt (computed at poll time). */
+    remainingMs?: number;
   }>;
   result?: AgentResult;
   cancelledAt?: string;

@@ -41,7 +41,7 @@ Replace `123` with the `nextCursor` value from the previous response.
 
 By default, `claude_code_check` uses `responseMode="minimal"` (smaller payloads) and paginates with `maxEvents=200`. If you need more detail (usage/modelUsage/structuredOutput), set `responseMode="full"`.
 
-If `status` becomes `waiting_permission`, approve/deny each entry in `actions[]`:
+If `status` becomes `waiting_permission`, approve/deny each entry in `actions[]` (requests auto-deny on timeout; see `actions[].expiresAt` / `actions[].remainingMs`):
 
 ```json
 {

@@ -14,6 +14,11 @@ describe("tool-discovery", () => {
     expect(tools.find((t) => t.name === "UnknownTool")?.description).toBe("UnknownTool");
   });
 
+  it("catalog descriptions include important tool gotchas", () => {
+    expect(TOOL_CATALOG.Read.description).toContain("offset/limit");
+    expect(TOOL_CATALOG.Edit.description).toContain("replace_all");
+  });
+
   it("ToolDiscoveryCache starts from catalog and updates from init.tools", () => {
     const cache = new ToolDiscoveryCache();
     const initial = cache.getTools().map((t) => t.name);

@@ -74,6 +74,11 @@ describe("executeClaudeCodeCheck", () => {
     expect("isError" in polled).toBe(false);
     expect((polled as { status: string }).status).toBe("waiting_permission");
     expect((polled as { actions?: unknown[] }).actions?.length).toBe(1);
+    const action = (polled as CheckResult).actions?.[0];
+    expect(action?.timeoutMs).toBe(60_000);
+    expect(typeof action?.expiresAt).toBe("string");
+    expect(action?.remainingMs).toBeGreaterThan(0);
+    expect(action?.remainingMs).toBeLessThanOrEqual(60_000);
 
     const responded = executeClaudeCodeCheck(
       {
@@ -189,6 +194,10 @@ describe("executeClaudeCodeCheck", () => {
       description: "Detailed description",
       createdAt: record.createdAt,
     });
+    expect(polled.actions?.[0]?.timeoutMs).toBe(60_000);
+    expect(typeof polled.actions?.[0]?.expiresAt).toBe("string");
+    expect(polled.actions?.[0]?.remainingMs).toBeGreaterThan(0);
+    expect(polled.actions?.[0]?.remainingMs).toBeLessThanOrEqual(60_000);
   });
 
   it("supports concurrent permission requests and keeps waiting_state until all resolved", () => {

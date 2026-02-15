@@ -205,6 +205,86 @@ describe("consumeQuery", () => {
     manager.destroy();
   });
 
+  it("should auto-allow canUseTool for allowedTools and include updatedInput", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockImplementation(({ options }: { options: { canUseTool: CanUseTool } }) => {
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-allowed",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Bash"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        const toolInput = { cmd: "echo hi" };
+        const result = await options.canUseTool("Bash", toolInput, {
+          signal: new AbortController().signal,
+          toolUseID: "tu-allowed",
+        });
+        expect(result.behavior).toBe("allow");
+        expect((result as { updatedInput?: unknown }).updatedInput).toEqual(toolInput);
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-allowed",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })();
+    });
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          allowedTools: ["Bash"],
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+    expect(manager.get("sess-allowed")!.status).toBe("idle");
+    expect(manager.getPendingPermissionCount("sess-allowed")).toBe(0);
+
+    manager.destroy();
+  });
+
   it("should buffer pre-init events when waitForInitSessionId=true (fork-like resume)", async () => {
     const manager = new SessionManager();
     const toolCache = new ToolDiscoveryCache();

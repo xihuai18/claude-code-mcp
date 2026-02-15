@@ -25,6 +25,8 @@
 - `claude_code_check`: minimal mode filters out noisy progress events (`tool_progress`, `auth_status`); use `includeProgressEvents: true` to restore
 - `claude_code_check`: minimal mode omits `lastEventId`/`lastToolUseId` from top-level response and `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd` from AgentResult
 - `claude_code_check`: includes lightweight session diagnostics (`cancelledAt`/`cancelledReason`/`cancelledSource`, `lastEventId`, `lastToolUseId`)
+- `claude_code_check`: permission actions now include `timeoutMs`, `expiresAt`, and best-effort `remainingMs`
+- Permission result events now include `toolName`, and denial details (`message`, `interrupt`) when applicable
 - Disk resume security: disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` + `resumeToken`
 
 ## 1.6.0 (2026-02-12)

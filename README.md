@@ -203,7 +203,14 @@ Notes:
 
 Use `claude_code_check` to poll events and obtain the final `result`.
 
+Gotchas:
+- Permission approvals have a timeout (default 60s via `permissionRequestTimeoutMs`) and will auto-deny; watch `actions[].expiresAt` / `actions[].remainingMs`.
+- `Read` has a per-call size cap in practice; for large files use `offset`/`limit` or chunk with `Grep`.
+- `Edit` with `replace_all=true` is substring replacement; if no match is found the tool returns a clear error.
+- `TeamDelete` cleanup can be asynchronous during shutdown; you may see racy "already deleted"/"nothing to delete" style outcomes.
+
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
+
 
 ### `claude_code_session` — Manage sessions
 
@@ -240,7 +247,7 @@ Poll session events/results and approve/deny pending permission requests.
 
 | Parameter                             | Type    | Description                                                                                                                                               |
 | ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pollOptions.includeTools`            | boolean | When true, includes `availableTools` (`poll` only). Default: `false` (omitted until session init is received)                                             |
+| `pollOptions.includeTools`            | boolean | When true, includes `availableTools` (`poll` only). Default: `false` (omitted until session init is received). Derived from SDK `system/init.tools` (internal features may not appear). |
 | `pollOptions.includeEvents`           | boolean | When false, omits `events` (but `nextCursor` still advances). Default: `true`                                                                             |
 | `pollOptions.includeActions`          | boolean | When false, omits `actions[]` even if `waiting_permission`. Default: `true`                                                                               |
 | `pollOptions.includeResult`           | boolean | When false, omits top-level `result` even when `idle`/`error`. Default: `true`                                                                            |
@@ -271,6 +278,8 @@ Notes:
 - If `cursorResetTo` is present, your `cursor` was too old (events were evicted); reset your cursor to `cursorResetTo`.
 - For safety, de-duplicate events by `event.id` on the client side.
 - If `truncated=true`, the server intentionally limited the payload (e.g. `maxEvents`) — continue polling with `nextCursor`.
+- Permission `actions[]` include `timeoutMs`, `expiresAt`, and best-effort `remainingMs` to help callers avoid auto-deny timeouts.
+- `permission_result` event data is `{ requestId, toolName, behavior, source, message?, interrupt? }` (denial details only present for `deny`).
 - In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy progress events (`tool_progress`, `auth_status`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
 
 ## Usage Example

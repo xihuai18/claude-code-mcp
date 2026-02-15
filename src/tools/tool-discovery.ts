@@ -7,14 +7,18 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
     description: "Run shell commands (e.g. npm install, git commit, ls) in the project directory.",
     category: "execute",
   },
-  Read: { description: "Read the contents of a file given its path.", category: "file_read" },
+  Read: {
+    description:
+      "Read the contents of a file given its path (large files may require offset/limit or Grep chunking).",
+    category: "file_read",
+  },
   Write: {
     description: "Create a new file or completely replace an existing file's contents.",
     category: "file_write",
   },
   Edit: {
     description:
-      "Make targeted changes to specific parts of an existing file without rewriting the whole file.",
+      "Make targeted changes to specific parts of an existing file without rewriting the whole file (replace_all is substring-based).",
     category: "file_write",
   },
   Glob: {
@@ -48,6 +52,11 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   AskUserQuestion: {
     description: "Ask the user a question and wait for their answer before continuing.",
     category: "interaction",
+  },
+  TeamDelete: {
+    description:
+      "Delete a team and its resources (cleanup may complete asynchronously; do not assume immediate deletion).",
+    category: "agent",
   },
 };
 
@@ -131,7 +140,8 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
     "- sessionInitTimeoutMs: 10000\n" +
     "- permissionRequestTimeoutMs: 60000\n" +
     "- allowedTools/disallowedTools: [] (none)\n" +
-    "- resumeToken: omitted unless CLAUDE_CODE_MCP_RESUME_SECRET is set on the server\n\n";
+    "- resumeToken: omitted unless CLAUDE_CODE_MCP_RESUME_SECRET is set on the server\n" +
+    "- Permission prompts auto-deny on timeout; use claude_code_check actions[].expiresAt/remainingMs\n\n";
   desc +=
     "Internal tools available to the agent (use allowedTools/disallowedTools to control approval policy; " +
     "authoritative list returned by claude_code_check with includeTools=true):\n";
