@@ -133,12 +133,14 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 **Returns:** `{ sessionId, status: "running", pollInterval, resumeToken? }`
 
 Notes:
+
 - `resumeToken` is omitted by default, and is only returned when `CLAUDE_CODE_MCP_RESUME_SECRET` is set on the server.
 - On error: `{ sessionId: "", status: "error", error }`
 
 Use `claude_code_check` to poll events and obtain the final `result`.
 
 > Notes:
+>
 > - **Subagents require the `Task` tool** to be available to the primary agent. If you use `allowedTools`, include `"Task"` or the agent will be unable to invoke subagents.
 > - If you configure `advanced.mcpServers` and want the agent to auto-use tools from those servers without approvals, include the exact tool names in `allowedTools` (e.g. `["mcp__my_server__tools/list"]`). Otherwise you will see permission requests via `claude_code_check`.
 > - `advanced.includePartialMessages` affects the underlying SDK event stream; intermediate messages are captured as events and returned via `claude_code_check` (the `claude_code` call itself does not stream).
@@ -198,12 +200,14 @@ Continue an existing session by sending a follow-up message. The agent retains f
 **Returns:** `{ sessionId, status: "running", pollInterval, resumeToken? }`
 
 Notes:
+
 - `resumeToken` is omitted by default, and is only returned when `CLAUDE_CODE_MCP_RESUME_SECRET` is set on the server.
 - On error: `{ sessionId, status: "error", error }`
 
 Use `claude_code_check` to poll events and obtain the final `result`.
 
 Gotchas:
+
 - Permission approvals have a timeout (default 60s via `permissionRequestTimeoutMs`) and will auto-deny; watch `actions[].expiresAt` / `actions[].remainingMs`.
 - `Read` has a per-call size cap in practice (often ~256KB); for large files use `offset`/`limit` or chunk with `Grep`.
 - `Edit` with `replace_all=true` is substring replacement; if no match is found the tool returns a clear error.
@@ -216,11 +220,11 @@ Gotchas:
 
 If your MCP client supports resources, this server exposes a couple of **read-only** MCP resources:
 
+- `claude-code-mcp:///server-info` (JSON): static server metadata (version/platform/runtime)
 - `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (static + runtime-discovered)
 - `claude-code-mcp:///gotchas` (Markdown): practical limits/gotchas
 
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
-
 
 ### `claude_code_session` — Manage sessions
 
@@ -255,17 +259,17 @@ Poll session events/results and approve/deny pending permission requests.
 <details>
 <summary><code>pollOptions</code> object parameters (9 fine-grained poll controls)</summary>
 
-| Parameter                             | Type    | Description                                                                                                                                               |
-| ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parameter                             | Type    | Description                                                                                                                                                                             |
+| ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pollOptions.includeTools`            | boolean | When true, includes `availableTools` (`poll` only). Default: `false` (omitted until session init is received). Derived from SDK `system/init.tools` (internal features may not appear). |
-| `pollOptions.includeEvents`           | boolean | When false, omits `events` (but `nextCursor` still advances). Default: `true`                                                                             |
-| `pollOptions.includeActions`          | boolean | When false, omits `actions[]` even if `waiting_permission`. Default: `true`                                                                               |
-| `pollOptions.includeResult`           | boolean | When false, omits top-level `result` even when `idle`/`error`. Default: `true`                                                                            |
-| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: true in full mode, false in minimal mode)                                                                                |
-| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: true in full mode, false in minimal mode)                                                                           |
-| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: true in full mode, false in minimal mode)                                                                     |
-| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`, `true` in `"full"` |
-| `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`, `true` in `"full"`            |
+| `pollOptions.includeEvents`           | boolean | When false, omits `events` (but `nextCursor` still advances). Default: `true`                                                                                                           |
+| `pollOptions.includeActions`          | boolean | When false, omits `actions[]` even if `waiting_permission`. Default: `true`                                                                                                             |
+| `pollOptions.includeResult`           | boolean | When false, omits top-level `result` even when `idle`/`error`. Default: `true`                                                                                                          |
+| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: true in full mode, false in minimal mode)                                                                                                              |
+| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: true in full mode, false in minimal mode)                                                                                                         |
+| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: true in full mode, false in minimal mode)                                                                                                   |
+| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`, `true` in `"full"`                               |
+| `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`, `true` in `"full"`                                          |
 
 </details>
 
@@ -380,6 +384,7 @@ CLAUDE_CODE_GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe"
 ```
 
 > Replace the path with your actual `bash.exe` location. Common paths:
+>
 > - `C:\Program Files\Git\bin\bash.exe` (default installer)
 >
 > To find yours: `where git` in CMD/PowerShell, then look for `bash.exe` under the same Git root's `bin\` folder.
@@ -397,7 +402,7 @@ setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
 - **No runtime privilege escalation tool** — permission decisions are per-session (allow/deny lists + explicit approvals), and the server does not expose a `claude_code_configure` bypass switch.
 - **Environment variables are inherited** — the spawned Claude Code process inherits all environment variables (including `ANTHROPIC_API_KEY`) from the parent process by default. The `advanced.env` parameter **merges** with `process.env` (user-provided values take precedence), so you can safely add or override individual variables without losing existing ones.
 - Tool visibility vs approvals:
-  - Use `advanced.tools` to restrict which tools the agent can *see* (hidden tools cannot be called).
+  - Use `advanced.tools` to restrict which tools the agent can _see_ (hidden tools cannot be called).
   - Use `allowedTools` to auto-approve specific tools without prompting (the SDK may still prompt for path-based restrictions like `blockedPath`).
   - Use `disallowedTools` to hard-block tools; they are denied even if later approved via `claude_code_check`.
 - `maxTurns` and `advanced.maxBudgetUsd` prevent runaway execution.
@@ -411,7 +416,7 @@ All environment variables are optional. They are set on the MCP server process (
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
 | `CLAUDE_CODE_GIT_BASH_PATH`         | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                          | Auto-detected  |
 | `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
-| `CLAUDE_CODE_MCP_RESUME_SECRET`     | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | *(unset)*      |
+| `CLAUDE_CODE_MCP_RESUME_SECRET`     | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | _(unset)_      |
 
 ### How to configure
 

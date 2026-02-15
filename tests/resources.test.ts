@@ -41,11 +41,20 @@ describe("Resources", () => {
     await withClientServer(async (client) => {
       const uris = await safeListResources(client);
       expect(uris.sort()).toEqual(
-        ["claude-code-mcp:///gotchas", "claude-code-mcp:///internal-tools"].sort()
+        [
+          "claude-code-mcp:///gotchas",
+          "claude-code-mcp:///internal-tools",
+          "claude-code-mcp:///server-info",
+        ].sort()
       );
 
       const templates = await safeListTemplates(client);
       expect(templates).toEqual([]);
+
+      const infoRes = await client.readResource({ uri: "claude-code-mcp:///server-info" });
+      expect(infoRes.contents[0]?.mimeType).toBe("application/json");
+      const info = JSON.parse(infoRes.contents[0]?.text ?? "{}") as { name?: unknown };
+      expect(info.name).toBe("claude-code-mcp");
 
       const toolsRes = await client.readResource({ uri: "claude-code-mcp:///internal-tools" });
       expect(toolsRes.contents[0]?.mimeType).toBe("application/json");

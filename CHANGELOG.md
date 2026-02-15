@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Breaking Changes
+
 - `claude_code` and `claude_code_reply` now start asynchronously and return `{ sessionId, status: "running", pollInterval }`. Use `claude_code_check` to poll events and fetch the final `result`.
 - Removed tool: `claude_code_configure`
 - New tool: `claude_code_check` (poll + respond_permission)
@@ -13,6 +14,7 @@
   - Schema descriptions for nested object fields have been compacted (self-explanatory fields no longer carry `.describe()` text; object-level descriptions enhanced as summaries) to reduce token overhead for calling models
 
 ### Features
+
 - New module: `src/tools/query-consumer.ts` — shared background query consumer (`consumeQuery`) for start, resume, and disk-resume code paths
 - New module: `src/tools/tool-discovery.ts` — runtime tool discovery with `TOOL_CATALOG`, `ToolDiscoveryCache`, and dynamic `claude_code` description generation
 - New module: `src/utils/build-options.ts` — centralized SDK `Partial<Options>` construction from flat input objects
@@ -20,6 +22,7 @@
 - New module: `src/utils/resume-token.ts` — HMAC-SHA256 resume token generation/validation for secure disk resume
 
 ### Improvements
+
 - `claude_code_check`: default `responseMode="minimal"` to reduce payload size; supports `maxEvents` pagination with `truncated`/`truncatedFields`
 - `claude_code_check`: minimal mode now slims assistant message events (strips `usage`, `model`, `id`, `cache_control` from content blocks)
 - `claude_code_check`: minimal mode filters out noisy progress events (`tool_progress`, `auth_status`); use `includeProgressEvents: true` to restore
@@ -28,23 +31,27 @@
 - `claude_code_check`: permission actions now include `timeoutMs`, `expiresAt`, and best-effort `remainingMs`
 - Permission result events now include `toolName`, and denial details (`message`, `interrupt`) when applicable
 - Disk resume security: disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` + `resumeToken`
-- MCP resources: internal tool catalog and gotchas
+- MCP resources: server info, internal tool catalog, and gotchas
 
 ## 1.6.0 (2026-02-12)
 
 ### Bug Fixes
+
 - Windows: fixed Git Bash auto-detection path derivation and improved candidate search
 
 ### Security
+
 - `claude_code_session includeSensitive=true` no longer leaks extra fields (e.g. `env`, `debugFile`, `mcpServers`, `sandbox`) beyond the documented sensitive set
 
 ### Documentation
+
 - README: clarify `Task` is required for subagent invocation and how `allowedTools` interacts with `mcpServers`
 - README: clarify `includePartialMessages` is not streamed over MCP responses
 
 ## 1.4.0 (2026-02-11)
 
 ### Features
+
 - New tool: `claude_code_configure` for runtime bypass mode management (enable/disable without restart)
 - New parameters for `claude_code`: `additionalDirectories`, `outputFormat`, `thinking`, `tools`, `timeout`
 - New parameters for `claude_code` and `claude_code_reply`: `pathToClaudeCodeExecutable`, `agent`, `mcpServers`, `sandbox`, `fallbackModel`, `enableFileCheckpointing`, `includePartialMessages`, `strictMcpConfig`, `settingSources`, `debug`, `debugFile`, `env`
@@ -52,6 +59,7 @@
 - `AgentResult` now includes `structuredOutput`, `stopReason`, `errorSubtype`, `usage`, `modelUsage`, `permissionDenials`
 
 ### Improvements
+
 - README: Added Prerequisites section clarifying Claude Code CLI dependency
 - README/DESIGN.md: Updated parameter tables to include all supported parameters
 - DESIGN.md: Updated to reflect 4-tool architecture and current security model
@@ -60,6 +68,7 @@
 - Added `break` after result processing in `claude_code_reply` for consistency
 
 ### Bug Fixes
+
 - Fixed `claude_code_reply` not passing `cwd`/`permissionMode`/`allowDangerouslySkipPermissions` to SDK
 - Fixed falsy filtering dropping valid values like empty arrays and zero
 - Removed unsafe `as any` type assertions where possible
@@ -73,6 +82,7 @@
 ## 1.0.0 (2026-02-11)
 
 ### Features
+
 - Initial release
 - 3 MCP tools: `claude_code`, `claude_code_reply`, `claude_code_session`
 - Session management with resume and fork support

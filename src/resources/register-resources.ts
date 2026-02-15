@@ -20,6 +20,38 @@ export function registerResources(
   server: McpServer,
   deps: { toolCache: ToolDiscoveryCache }
 ): void {
+  const serverInfoUri = new URL(`${RESOURCE_SCHEME}:///server-info`);
+  server.registerResource(
+    "server_info",
+    serverInfoUri.toString(),
+    {
+      title: "Server Info",
+      description: "Static server metadata (version/platform/runtime).",
+      mimeType: "application/json",
+    },
+    () =>
+      asTextResource(
+        serverInfoUri,
+        JSON.stringify(
+          {
+            name: "claude-code-mcp",
+            node: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            resources: [
+              "claude-code-mcp:///server-info",
+              "claude-code-mcp:///internal-tools",
+              "claude-code-mcp:///gotchas",
+            ],
+            toolCatalogCount: deps.toolCache.getTools().length,
+          },
+          null,
+          2
+        ),
+        "application/json"
+      )
+  );
+
   const toolsUri = new URL(`${RESOURCE_SCHEME}:///internal-tools`);
   server.registerResource(
     "internal_tools",
