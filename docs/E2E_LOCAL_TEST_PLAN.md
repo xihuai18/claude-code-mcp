@@ -11,7 +11,7 @@
 - `claude_code_check`
 - `claude_code_session`
 
-会话状态机：`running -> waiting_permission -> idle | error | cancelled`。
+会话状态机：`running -> idle | error | cancelled`，中途可能经过 `waiting_permission`（`running <-> waiting_permission`）。
 
 ---
 
@@ -72,7 +72,8 @@
 1. 调 `claude_code` 启动 session，记录 `sessionId`。
 2. 用 `claude_code_check` action=`poll` 轮询。
 3. 若状态是 `waiting_permission`，处理 `actions[]`：
-   - 调 `claude_code_check` action=`respond_permission`。
+   - 从 `actions[]` 读取 `requestId`。
+   - 调 `claude_code_check` action=`respond_permission`，必须同时传 `requestId` 和 `decision`（`allow` 或 `deny`）。
 4. 重复轮询直到终态：`idle | error | cancelled`。
 5. 读取并记录 `result`。
 6. 在结束阶段调用 `claude_code_session cancel` 清理残留运行会话。
@@ -132,8 +133,7 @@
 - `cwd`: 指向独立测试工作目录
 - `maxTurns`: `6`
 - `advanced.maxBudgetUsd`: `0.2`
-- `allowedTools`: `[]`
-- `disallowedTools`: `[]`
+- `allowedTools`: `["Read", "Write"]`（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
 
 给模型的任务 prompt 示例：
 
@@ -160,7 +160,7 @@
 
 步骤要求：
 
-1. 启动一个会触发工具调用的任务（例如写文件 + 执行命令）。
+1. 启动一个会触发工具调用的任务（例如写文件 + 执行命令），且不要预批准相关工具（如 `allowedTools` 不包含 `Write/Bash`）。
 2. poll 到 `waiting_permission` 后读取 `actions[].requestId`。
 3. 若有多个 request，同时记录每个 `requestId -> 期望决策`，按顺序逐个处理。
 4. 对其中一个 request 做 allow。
@@ -206,7 +206,7 @@
 
 1. `list` 返回会话列表。
 2. `get(includeSensitive=false)` 不泄露敏感字段。
-3. `get(includeSensitive=true)` 可看到 `cwd/systemPrompt/agents`（仍不应暴露 env）。
+3. `get(includeSensitive=true)` 可看到 `cwd/systemPrompt/agents/additionalDirectories`（仍不应暴露 `env/mcpServers/sandbox` 等敏感内容）。
 4. `cancel` 后状态进入 `cancelled`。
 
 失败恢复：
@@ -324,7 +324,7 @@
 
 当必跑项通过后，可按需追加：
 
-1. `forkSession`：验证分支会话与原会话独立。
+1. `claude_code_reply(forkSession=true)`：验证分支会话返回新 `sessionId`，且与原会话事件流独立。
 2. `maxTurns`/`advanced.maxBudgetUsd`：验证失控防护。
 3. `includeTools=true`：验证运行时工具发现列表。
 4. `structuredOutput`：验证 schema 约束输出。
@@ -380,7 +380,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 
 ```text
 如果出现 waiting_permission，不要继续空轮询。
-请读取 actions[] 中的 requestId 并调用 claude_code_check(action=respond_permission)。
+请读取 actions[] 中的 requestId，并调用 claude_code_check(action=respond_permission, requestId=..., decision=...)。
 先执行一次 allow；若后续还有请求，再执行一次 deny(interrupt=false)。
 每次 respond_permission 后确认 permission_result；如临近超时（默认 60000ms）优先处理剩余时间最短的请求。
 然后继续 poll 到终态，并说明 permission_result。
