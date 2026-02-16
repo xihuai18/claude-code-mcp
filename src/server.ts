@@ -85,7 +85,7 @@ export function createServerContext(serverCwd: string): {
     z.object({
       type: z.literal("preset"),
       preset: z.literal("claude_code"),
-      append: z.string().optional().describe("Appended to preset. Default: none"),
+      append: z.string().optional().describe("Default: none"),
     }),
   ]);
 
@@ -117,15 +117,12 @@ export function createServerContext(serverCwd: string): {
   const sharedOptionFieldsSchemaShape = {
     tools: toolsConfigSchema.optional().describe("Tool set. Default: SDK"),
     persistSession: z.boolean().optional().describe("Default: true"),
-    agents: z
-      .record(z.string(), agentDefinitionSchema)
-      .optional()
-      .describe("Sub-agents. Default: none"),
-    agent: z.string().optional().describe("Primary agent name. Default: none"),
+    agents: z.record(z.string(), agentDefinitionSchema).optional().describe("Default: none"),
+    agent: z.string().optional().describe("Default: none"),
     maxBudgetUsd: z.number().positive().optional().describe("Default: none"),
     betas: z.array(z.string()).optional().describe("Default: none"),
     additionalDirectories: z.array(z.string()).optional().describe("Default: none"),
-    outputFormat: outputFormatSchema.optional().describe("Default: none (plain text)"),
+    outputFormat: outputFormatSchema.optional().describe("Default: none"),
     pathToClaudeCodeExecutable: z.string().optional().describe("Default: SDK-bundled"),
     mcpServers: z
       .record(z.string(), z.record(z.string(), z.unknown()))
@@ -134,21 +131,15 @@ export function createServerContext(serverCwd: string): {
     sandbox: z.record(z.string(), z.unknown()).optional().describe("Default: none"),
     fallbackModel: z.string().optional().describe("Default: none"),
     enableFileCheckpointing: z.boolean().optional().describe("Default: false"),
-    includePartialMessages: z
-      .boolean()
-      .optional()
-      .describe("Stream partial events. Default: false"),
+    includePartialMessages: z.boolean().optional().describe("Default: false"),
     strictMcpConfig: z.boolean().optional().describe("Default: false"),
     settingSources: z
       .array(z.enum(["user", "project", "local"]))
       .optional()
       .describe("Default: ['user','project','local']. []=isolation"),
     debug: z.boolean().optional().describe("Default: false"),
-    debugFile: z.string().optional().describe("Enables debug. Default: none"),
-    env: z
-      .record(z.string(), z.string().optional())
-      .optional()
-      .describe("Env vars merged with process.env. Default: none"),
+    debugFile: z.string().optional().describe("Default: none"),
+    env: z.record(z.string(), z.string().optional()).optional().describe("Default: none"),
   } as const;
 
   const advancedOptionFieldsSchemaShape = {
@@ -167,12 +158,7 @@ export function createServerContext(serverCwd: string): {
   const advancedOptionsSchema = z
     .object({
       ...advancedOptionFieldsSchemaShape,
-      sessionInitTimeoutMs: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("Init timeout (ms). Default: 10000"),
+      sessionInitTimeoutMs: z.number().int().positive().optional().describe("Default: 10000"),
     })
     .optional()
     .describe("Default: none");
@@ -186,11 +172,11 @@ export function createServerContext(serverCwd: string): {
       maxTurns: z.number().int().positive().optional().describe("Default: SDK"),
       model: z.string().optional().describe("Default: SDK"),
       systemPrompt: systemPromptSchema.optional().describe("Default: SDK"),
-      resumeSessionAt: z.string().optional().describe("Resume to message UUID. Default: none"),
+      resumeSessionAt: z.string().optional().describe("Default: none"),
       ...diskResumeOptionFieldsSchemaShape,
     })
     .optional()
-    .describe("Disk resume config. Default: none");
+    .describe("Default: none");
 
   const startResultSchema = z.object({
     sessionId: z.string(),
@@ -271,7 +257,7 @@ export function createServerContext(serverCwd: string): {
           .int()
           .positive()
           .optional()
-          .describe("Permission timeout (ms), auto-deny. Default: 60000"),
+          .describe("Default: 60000"),
         advanced: advancedOptionsSchema,
       },
       outputSchema: startResultSchema,
@@ -330,18 +316,13 @@ export function createServerContext(serverCwd: string): {
         forkSession: z.boolean().optional().describe("Fork into new session. Default: false"),
         effort: effortOptionSchema.describe("Default: SDK"),
         thinking: thinkingOptionSchema.describe("Default: SDK"),
-        sessionInitTimeoutMs: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe("Fork init timeout (ms). Default: 10000"),
+        sessionInitTimeoutMs: z.number().int().positive().optional().describe("Default: 10000"),
         permissionRequestTimeoutMs: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Permission timeout (ms), auto-deny. Default: 60000"),
+          .describe("Default: 60000"),
         diskResumeConfig: diskResumeConfigSchema,
       },
       outputSchema: startResultSchema,
@@ -450,11 +431,8 @@ export function createServerContext(serverCwd: string): {
           .describe("Max events. Default: 200 (minimal), unlimited (full)"),
 
         requestId: z.string().optional().describe("Permission request ID (from actions[])"),
-        decision: z.enum(["allow", "deny"]).optional().describe("allow or deny"),
-        denyMessage: z
-          .string()
-          .optional()
-          .describe("Deny reason. Default: 'Permission denied by caller'"),
+        decision: z.enum(["allow", "deny"]).optional().describe("Decision"),
+        denyMessage: z.string().optional().describe("Default: 'Permission denied by caller'"),
         interrupt: z.boolean().optional().describe("Halt session on deny. Default: false"),
 
         pollOptions: z
@@ -483,17 +461,14 @@ export function createServerContext(serverCwd: string): {
 
         permissionOptions: z
           .object({
-            updatedInput: z
-              .record(z.string(), z.unknown())
-              .optional()
-              .describe("Modified tool input. Default: none"),
+            updatedInput: z.record(z.string(), z.unknown()).optional().describe("Default: none"),
             updatedPermissions: z
               .array(z.record(z.string(), z.unknown()))
               .optional()
-              .describe("Permission rule updates. Default: none"),
+              .describe("Default: none"),
           })
           .optional()
-          .describe("Allow-only: modify tool input or update rules"),
+          .describe("Default: none"),
       },
       outputSchema: checkResultSchema,
       annotations: {
