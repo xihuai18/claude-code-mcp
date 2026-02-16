@@ -14,12 +14,19 @@ import type {
   ThinkingConfig,
   ToolsConfig,
 } from "../types.js";
-import { DEFAULT_SETTING_SOURCES, ErrorCode } from "../types.js";
+import { ErrorCode } from "../types.js";
 import { consumeQuery } from "./query-consumer.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
-import { computeResumeToken, getResumeSecret } from "../utils/resume-token.js";
+import {
+  computeResumeToken,
+  getResumeSecret,
+  getResumeSecrets,
+  isValidResumeToken,
+} from "../utils/resume-token.js";
 import { raceWithAbort } from "../utils/race-with-abort.js";
 import { buildOptions } from "../utils/build-options.js";
+import type { OptionSource } from "../utils/build-options.js";
+import { toSessionCreateParams } from "../utils/session-create.js";
 
 /** Disk resume fallback configuration — only used when the in-memory session is missing. */
 export interface DiskResumeConfig {
@@ -58,6 +65,8 @@ export interface ClaudeCodeReplyInput {
   sessionId: string;
   prompt: string;
   forkSession?: boolean;
+  effort?: EffortLevel;
+  thinking?: ThinkingConfig;
 
   /** Timeout waiting for fork init (default 10000ms, only used when forkSession=true) */
   sessionInitTimeoutMs?: number;
@@ -124,6 +133,14 @@ export async function executeClaudeCodeReply(
 
   const existing = sessionManager.get(input.sessionId);
   if (!existing) {
+    if (!sessionManager.hasCapacityFor(1)) {
+      return {
+        sessionId: input.sessionId,
+        status: "error",
+        error: `Error [${ErrorCode.RESOURCE_EXHAUSTED}]: Too many sessions (limit: ${sessionManager.getMaxSessions()}).`,
+      };
+    }
+
     const allowDiskResume = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME === "1";
     if (!allowDiskResume) {
       return {
@@ -133,7 +150,8 @@ export async function executeClaudeCodeReply(
       };
     }
 
-    const resumeSecret = getResumeSecret();
+    const resumeSecrets = getResumeSecrets();
+    const resumeSecret = resumeSecrets[0];
     if (!resumeSecret) {
       return {
         sessionId: input.sessionId,
@@ -150,8 +168,7 @@ export async function executeClaudeCodeReply(
         error: `Error [${ErrorCode.PERMISSION_DENIED}]: resumeToken is required for disk resume fallback.`,
       };
     }
-    const expectedToken = computeResumeToken(input.sessionId, resumeSecret);
-    if (dr.resumeToken !== expectedToken) {
+    if (!isValidResumeToken(input.sessionId, dr.resumeToken, resumeSecrets)) {
       return {
         sessionId: input.sessionId,
         status: "error",
@@ -162,39 +179,32 @@ export async function executeClaudeCodeReply(
     try {
       const abortController = new AbortController();
       const options = buildOptionsFromDiskResume(dr);
+      if (input.effort !== undefined) options.effort = input.effort;
+      if (input.thinking !== undefined) options.thinking = input.thinking;
 
-      sessionManager.create({
-        sessionId: input.sessionId,
+      const { resumeToken: _resumeToken, ...rest } = dr;
+      void _resumeToken;
+      const source: OptionSource = {
+        ...(rest as OptionSource),
         cwd: options.cwd ?? dr.cwd ?? "",
-        model: dr.model,
-        permissionMode: "default",
-        allowedTools: dr.allowedTools,
-        disallowedTools: dr.disallowedTools,
-        tools: dr.tools,
-        maxTurns: dr.maxTurns,
-        systemPrompt: dr.systemPrompt,
-        agents: dr.agents,
-        maxBudgetUsd: dr.maxBudgetUsd,
-        effort: dr.effort,
-        betas: dr.betas,
-        additionalDirectories: dr.additionalDirectories,
-        outputFormat: dr.outputFormat,
-        thinking: dr.thinking,
-        persistSession: dr.persistSession,
-        pathToClaudeCodeExecutable: dr.pathToClaudeCodeExecutable,
-        agent: dr.agent,
-        mcpServers: dr.mcpServers,
-        sandbox: dr.sandbox,
-        fallbackModel: dr.fallbackModel,
-        enableFileCheckpointing: dr.enableFileCheckpointing,
-        includePartialMessages: dr.includePartialMessages,
-        strictMcpConfig: dr.strictMcpConfig,
-        settingSources: dr.settingSources ?? DEFAULT_SETTING_SOURCES,
-        debug: dr.debug,
-        debugFile: dr.debugFile,
-        env: dr.env,
-        abortController,
-      });
+        additionalDirectories:
+          (options.additionalDirectories as string[] | undefined) ??
+          (rest as OptionSource).additionalDirectories,
+        debugFile: (options.debugFile as string | undefined) ?? (rest as OptionSource).debugFile,
+        pathToClaudeCodeExecutable:
+          (options.pathToClaudeCodeExecutable as string | undefined) ??
+          (rest as OptionSource).pathToClaudeCodeExecutable,
+        effort: input.effort ?? (rest as OptionSource).effort,
+        thinking: input.thinking ?? (rest as OptionSource).thinking,
+      };
+      sessionManager.create(
+        toSessionCreateParams({
+          sessionId: input.sessionId,
+          source,
+          permissionMode: "default",
+          abortController,
+        })
+      );
 
       try {
         consumeQuery({
@@ -283,8 +293,31 @@ export async function executeClaudeCodeReply(
     };
   }
 
-  const options = buildOptions(existing);
+  const session = acquired;
+  const options = buildOptions(session);
   if (input.forkSession) options.forkSession = true;
+
+  if (input.forkSession && !sessionManager.hasCapacityFor(1)) {
+    sessionManager.update(input.sessionId, { status: originalStatus, abortController: undefined });
+    return {
+      sessionId: input.sessionId,
+      status: "error",
+      error: `Error [${ErrorCode.RESOURCE_EXHAUSTED}]: Too many sessions (limit: ${sessionManager.getMaxSessions()}).`,
+    };
+  }
+
+  const sourceOverrides: Pick<OptionSource, "effort" | "thinking"> = {
+    effort: input.effort ?? session.effort,
+    thinking: input.thinking ?? session.thinking,
+  };
+  if (input.effort !== undefined) options.effort = input.effort;
+  if (input.thinking !== undefined) options.thinking = input.thinking;
+  if (!input.forkSession && (input.effort !== undefined || input.thinking !== undefined)) {
+    const patch: Partial<Pick<OptionSource, "effort" | "thinking">> = {};
+    if (input.effort !== undefined) patch.effort = input.effort;
+    if (input.thinking !== undefined) patch.thinking = input.thinking;
+    sessionManager.update(input.sessionId, patch);
+  }
 
   try {
     const handle = consumeQuery({
@@ -302,46 +335,23 @@ export async function executeClaudeCodeReply(
         if (!input.forkSession) return;
         if (init.session_id === input.sessionId) return;
 
-        if (!sessionManager.get(init.session_id)) {
-          sessionManager.create({
-            sessionId: init.session_id,
-            cwd: existing.cwd,
-            model: existing.model,
-            permissionMode: "default",
-            allowedTools: existing.allowedTools,
-            disallowedTools: existing.disallowedTools,
-            tools: existing.tools,
-            maxTurns: existing.maxTurns,
-            systemPrompt: existing.systemPrompt,
-            agents: existing.agents,
-            maxBudgetUsd: existing.maxBudgetUsd,
-            effort: existing.effort,
-            betas: existing.betas,
-            additionalDirectories: existing.additionalDirectories,
-            outputFormat: existing.outputFormat,
-            thinking: existing.thinking,
-            persistSession: existing.persistSession,
-            pathToClaudeCodeExecutable: existing.pathToClaudeCodeExecutable,
-            agent: existing.agent,
-            mcpServers: existing.mcpServers,
-            sandbox: existing.sandbox,
-            fallbackModel: existing.fallbackModel,
-            enableFileCheckpointing: existing.enableFileCheckpointing,
-            includePartialMessages: existing.includePartialMessages,
-            strictMcpConfig: existing.strictMcpConfig,
-            settingSources: existing.settingSources ?? DEFAULT_SETTING_SOURCES,
-            debug: existing.debug,
-            debugFile: existing.debugFile,
-            env: existing.env,
-            abortController,
-          });
-        }
-
-        // Restore original session state (fork should not affect the original session).
+        // Restore original session state as soon as we have the fork's session ID.
+        // Forking should not affect the original session (including its AbortController).
         sessionManager.update(input.sessionId, {
           status: originalStatus,
           abortController: undefined,
         });
+
+        if (!sessionManager.get(init.session_id)) {
+          sessionManager.create(
+            toSessionCreateParams({
+              sessionId: init.session_id,
+              source: { ...session, ...sourceOverrides },
+              permissionMode: "default",
+              abortController,
+            })
+          );
+        }
       },
     });
 

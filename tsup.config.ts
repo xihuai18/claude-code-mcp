@@ -10,7 +10,7 @@ export default defineConfig({
   outDir: "dist",
   clean: true,
   sourcemap: true,
-  dts: false,
+  dts: true,
   define: {
     __PKG_VERSION__: JSON.stringify(pkg.version),
   },

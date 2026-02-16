@@ -1,62 +1,58 @@
 import type { ToolInfo } from "../types.js";
 
 type ToolCatalogEntry = Omit<ToolInfo, "name">;
+type ToolDiscoveryUpdatedCallback = (tools: ToolInfo[]) => void;
 
 export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   Bash: {
-    description: "Run shell commands (e.g. npm install, git commit, ls) in the project directory.",
+    description: "Run shell commands",
     category: "execute",
   },
   Read: {
-    description:
-      "Read the contents of a file given its path (large files may hit per-call size caps; use offset/limit or Grep chunking).",
+    description: "Read file contents (large files: use offset/limit or Grep)",
     category: "file_read",
   },
   Write: {
-    description: "Create a new file or completely replace an existing file's contents.",
+    description: "Create or overwrite files",
     category: "file_write",
   },
   Edit: {
-    description:
-      "Make targeted changes to specific parts of an existing file without rewriting the whole file (replace_all is substring-based).",
+    description: "Targeted edits (replace_all is substring-based)",
     category: "file_write",
   },
   Glob: {
-    description: "Find files by name pattern (e.g. '**/*.ts' finds all TypeScript files).",
+    description: "Find files by glob pattern",
     category: "file_read",
   },
   Grep: {
-    description: "Search inside files for text or regex patterns (like grep/ripgrep).",
+    description: "Search file contents (regex)",
     category: "file_read",
   },
   NotebookEdit: {
-    description:
-      "Edit individual cells in Jupyter notebooks (.ipynb files) (expects native Windows paths; this server normalizes /d/... when possible).",
+    description: "Edit Jupyter notebook cells (Windows paths normalized)",
     category: "file_write",
   },
   WebFetch: {
-    description: "Download and read the content of a web page or API endpoint.",
+    description: "Fetch web page or API content",
     category: "network",
   },
-  WebSearch: { description: "Search the web and return relevant results.", category: "network" },
+  WebSearch: { description: "Web search", category: "network" },
   Task: {
-    description:
-      "Spawn a subagent to handle a subtask independently (requires this tool to be in allowedTools).",
+    description: "Spawn subagent (must be in allowedTools)",
     category: "agent",
   },
-  TaskOutput: { description: "Get the output from a background subagent task.", category: "agent" },
-  TaskStop: { description: "Cancel a running background subagent task.", category: "agent" },
+  TaskOutput: { description: "Get subagent output", category: "agent" },
+  TaskStop: { description: "Cancel subagent", category: "agent" },
   TodoWrite: {
-    description: "Create and update a structured task/todo checklist.",
+    description: "Task/todo checklist",
     category: "agent",
   },
   AskUserQuestion: {
-    description: "Ask the user a question and wait for their answer before continuing.",
+    description: "Ask user a question",
     category: "interaction",
   },
   TeamDelete: {
-    description:
-      "Delete a team and its resources (may require all active members to shutdown_approved; cleanup may complete asynchronously).",
+    description: "Delete team (may need shutdown_approved first)",
     category: "agent",
   },
 };
@@ -82,9 +78,11 @@ export function defaultCatalogTools(): ToolInfo[] {
 
 export class ToolDiscoveryCache {
   private cached: ToolInfo[];
+  private onUpdated?: ToolDiscoveryUpdatedCallback;
 
-  constructor(initial?: ToolInfo[]) {
+  constructor(initial?: ToolInfo[], onUpdated?: ToolDiscoveryUpdatedCallback) {
     this.cached = initial ?? defaultCatalogTools();
+    this.onUpdated = onUpdated;
   }
 
   getTools(): ToolInfo[] {
@@ -95,7 +93,14 @@ export class ToolDiscoveryCache {
     const discovered = discoverToolsFromInit(initTools);
     const next = mergeToolLists(discovered, defaultCatalogTools());
     const updated = JSON.stringify(next) !== JSON.stringify(this.cached);
-    if (updated) this.cached = next;
+    if (updated) {
+      this.cached = next;
+      try {
+        this.onUpdated?.(this.cached);
+      } catch {
+        // ignore observer errors (stdout is reserved for MCP)
+      }
+    }
     return { updated, tools: this.cached };
   }
 }
@@ -126,26 +131,19 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
 
   let desc =
     "Start a new Claude Code agent session.\n\n" +
-    "Launches an autonomous coding agent that can read/write files, run shell commands, search code, " +
-    "manage git, access the web, and more. " +
-    "Returns immediately with a sessionId — the agent runs asynchronously in the background.\n\n" +
+    "Launches an autonomous coding agent that can read/write files, run commands, search code, and more. " +
+    "Returns immediately with a sessionId — poll with claude_code_check for events and results.\n\n" +
     "Workflow:\n" +
-    '1. Call claude_code with a prompt → returns { sessionId, status: "running", pollInterval }\n' +
-    '2. Poll with claude_code_check (action="poll") to receive progress events and the final result\n' +
-    '3. If the agent needs permission for a tool call, approve or deny via claude_code_check (action="respond_permission")\n\n';
+    '1. claude_code → { sessionId, status: "running", pollInterval }\n' +
+    '2. claude_code_check (action="poll") → progress events + final result\n' +
+    '3. claude_code_check (action="respond_permission") → approve/deny tool calls\n\n';
 
   desc +=
-    "Defaults:\n" +
-    "- settingSources: ['user', 'project', 'local'] (loads ~/.claude/settings.json, .claude/settings.json, .claude/settings.local.json, and CLAUDE.md)\n" +
-    "- persistSession: true\n" +
-    "- sessionInitTimeoutMs: 10000\n" +
-    "- permissionRequestTimeoutMs: 60000\n" +
-    "- allowedTools/disallowedTools: [] (none)\n" +
-    "- resumeToken: omitted unless CLAUDE_CODE_MCP_RESUME_SECRET is set on the server\n" +
-    "- Permission prompts auto-deny on timeout; use claude_code_check actions[].expiresAt/remainingMs\n\n";
+    "Key defaults: settingSources=['user','project','local'] (loads all settings + CLAUDE.md). " +
+    "Permission prompts auto-deny on timeout; check actions[].expiresAt/remainingMs.\n\n";
   desc +=
-    "Internal tools available to the agent (use allowedTools/disallowedTools to control approval policy; " +
-    "authoritative list returned by claude_code_check with includeTools=true):\n";
+    "Internal tools (use allowedTools/disallowedTools to control; " +
+    "authoritative list via claude_code_check includeTools=true):\n";
 
   for (const category of categories) {
     desc += `\n[${category}]\n`;
@@ -155,14 +153,10 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   }
 
   desc +=
-    "\nSecurity: You MUST configure allowedTools/disallowedTools based on your own permission scope. " +
-    "Only allow tools that you yourself are authorized to perform — " +
-    "do not grant the agent broader permissions than you have. " +
-    "For example, if you lack write access to a directory, do not include Write/Edit in allowedTools. " +
-    "When in doubt, leave both lists empty and review each permission request individually via claude_code_check.\n\n";
+    "\nSecurity: Only allow tools you yourself are authorized to perform. " +
+    "When in doubt, leave allowedTools/disallowedTools empty and review each request via claude_code_check.\n\n";
   desc +=
-    "Use `allowedTools` to pre-approve tools (no permission prompts). " +
-    "Use `disallowedTools` to permanently block specific tools. " +
-    'Any tool not in either list will pause the session (status: "waiting_permission") until approved or denied via claude_code_check.\n';
+    "allowedTools = auto-approve (no prompts). disallowedTools = permanently block. " +
+    'Unlisted tools pause the session ("waiting_permission") until approved/denied.\n';
   return desc;
 }

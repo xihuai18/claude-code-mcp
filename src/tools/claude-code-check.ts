@@ -332,8 +332,17 @@ function redactAgentResult(
 export function executeClaudeCodeCheck(
   input: ClaudeCodeCheckInput,
   sessionManager: SessionManager,
-  toolCache?: ToolDiscoveryCache
+  toolCache?: ToolDiscoveryCache,
+  requestSignal?: AbortSignal
 ): ClaudeCodeCheckResult {
+  if (requestSignal?.aborted) {
+    return {
+      sessionId: input.sessionId ?? "",
+      error: `Error [${ErrorCode.CANCELLED}]: request was cancelled.`,
+      isError: true,
+    };
+  }
+
   if (typeof input.sessionId !== "string" || input.sessionId.trim() === "") {
     return {
       sessionId: "",

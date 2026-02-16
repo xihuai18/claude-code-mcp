@@ -24,6 +24,8 @@ const DEFAULT_CLEANUP_INTERVAL_MS = 60_000;
 
 const DEFAULT_EVENT_BUFFER_MAX_SIZE = 1000;
 const DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE = 2000;
+const DEFAULT_MAX_SESSIONS = 128;
+const DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION = 64;
 
 type PendingPermission = {
   record: PermissionRequestRecord;
@@ -41,18 +43,67 @@ type SessionRuntimeState = {
 export class SessionManager {
   private sessions = new Map<string, SessionInfo>();
   private runtime = new Map<string, SessionRuntimeState>();
+  private drainingSessions = new Map<string, number>();
   private cleanupTimer: ReturnType<typeof setInterval>;
   private sessionTtlMs = DEFAULT_SESSION_TTL_MS;
   private runningSessionMaxMs = DEFAULT_RUNNING_SESSION_MAX_MS;
   private platform: NodeJS.Platform;
+  private maxSessions: number;
+  private maxPendingPermissionsPerSession: number;
 
-  constructor(opts?: { platform?: NodeJS.Platform }) {
+  constructor(opts?: {
+    platform?: NodeJS.Platform;
+    maxSessions?: number;
+    maxPendingPermissionsPerSession?: number;
+  }) {
     this.platform = opts?.platform ?? process.platform;
+    const envRaw = process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
+    const envParsed =
+      typeof envRaw === "string" && envRaw.trim() !== "" ? Number.parseInt(envRaw, 10) : NaN;
+    const configured = opts?.maxSessions ?? (Number.isFinite(envParsed) ? envParsed : undefined);
+    this.maxSessions =
+      typeof configured === "number"
+        ? configured <= 0
+          ? Number.POSITIVE_INFINITY
+          : configured
+        : DEFAULT_MAX_SESSIONS;
+
+    const maxPendingEnvRaw = process.env.CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS;
+    const maxPendingEnvParsed =
+      typeof maxPendingEnvRaw === "string" && maxPendingEnvRaw.trim() !== ""
+        ? Number.parseInt(maxPendingEnvRaw, 10)
+        : NaN;
+    const maxPendingConfigured =
+      opts?.maxPendingPermissionsPerSession ??
+      (Number.isFinite(maxPendingEnvParsed) ? maxPendingEnvParsed : undefined);
+    this.maxPendingPermissionsPerSession =
+      typeof maxPendingConfigured === "number"
+        ? maxPendingConfigured <= 0
+          ? Number.POSITIVE_INFINITY
+          : maxPendingConfigured
+        : DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION;
     // Periodically clean up expired sessions
     this.cleanupTimer = setInterval(() => this.cleanup(), DEFAULT_CLEANUP_INTERVAL_MS);
     if (this.cleanupTimer.unref) {
       this.cleanupTimer.unref();
     }
+  }
+
+  getSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  getMaxSessions(): number {
+    return this.maxSessions;
+  }
+
+  getMaxPendingPermissionsPerSession(): number {
+    return this.maxPendingPermissionsPerSession;
+  }
+
+  hasCapacityFor(additionalSessions: number): boolean {
+    if (additionalSessions <= 0) return true;
+    return this.sessions.size + additionalSessions <= this.maxSessions;
   }
 
   create(params: {
@@ -213,8 +264,10 @@ export class SessionManager {
     this.finishAllPending(
       sessionId,
       { behavior: "deny", message: "Session deleted", interrupt: true },
-      "cleanup"
+      "cleanup",
+      { restoreRunning: false }
     );
+    this.drainingSessions.delete(sessionId);
     this.runtime.delete(sessionId);
     return this.sessions.delete(sessionId);
   }
@@ -297,8 +350,57 @@ export class SessionManager {
     const state = this.runtime.get(sessionId);
     const info = this.sessions.get(sessionId);
     if (!state || !info) return false;
+    if (info.status !== "running" && info.status !== "waiting_permission") {
+      try {
+        finish({
+          behavior: "deny",
+          message: `Session is not accepting permission requests (status: ${info.status}).`,
+          interrupt: true,
+        });
+      } catch {
+        // ignore finish errors
+      }
+      return false;
+    }
+    if (this.isDraining(sessionId)) {
+      try {
+        finish({
+          behavior: "deny",
+          message: "Session is finishing pending permission requests.",
+          interrupt: true,
+        });
+      } catch {
+        // ignore finish errors
+      }
+      return false;
+    }
 
     if (!state.pendingPermissions.has(req.requestId)) {
+      if (state.pendingPermissions.size >= this.maxPendingPermissionsPerSession) {
+        const deny: PermissionResult = {
+          behavior: "deny",
+          message: "Too many pending permission requests for this session.",
+          interrupt: false,
+        };
+        this.pushEvent(sessionId, {
+          type: "permission_result",
+          data: {
+            requestId: req.requestId,
+            toolName: req.toolName,
+            behavior: "deny",
+            source: "policy",
+            message: deny.message,
+            interrupt: deny.interrupt,
+          },
+          timestamp: new Date().toISOString(),
+        });
+        try {
+          finish(deny);
+        } catch {
+          // ignore finish errors
+        }
+        return false;
+      }
       const inferredExpiresAt = new Date(Date.now() + timeoutMs).toISOString();
       const record: PermissionRequestRecord = {
         ...req,
@@ -410,6 +512,11 @@ export class SessionManager {
     if (finalResult.behavior === "deny") {
       eventData.message = finalResult.message;
       eventData.interrupt = finalResult.interrupt;
+    } else {
+      const allow = finalResult as Record<string, unknown>;
+      if (allow.updatedInput !== undefined) eventData.updatedInput = allow.updatedInput;
+      if (allow.updatedPermissions !== undefined)
+        eventData.updatedPermissions = allow.updatedPermissions;
     }
 
     this.pushEvent(sessionId, {
@@ -424,7 +531,11 @@ export class SessionManager {
       // ignore finish errors
     }
 
-    if (info.status === "waiting_permission" && state.pendingPermissions.size === 0) {
+    if (
+      info.status === "waiting_permission" &&
+      state.pendingPermissions.size === 0 &&
+      !this.isDraining(sessionId)
+    ) {
       info.status = "running";
       info.lastActiveAt = new Date().toISOString();
     }
@@ -432,11 +543,50 @@ export class SessionManager {
     return true;
   }
 
-  finishAllPending(sessionId: string, result: PermissionResult, source: FinishSource): void {
+  finishAllPending(
+    sessionId: string,
+    result: PermissionResult,
+    source: FinishSource,
+    opts?: { restoreRunning?: boolean }
+  ): void {
     const state = this.runtime.get(sessionId);
     if (!state) return;
-    for (const requestId of Array.from(state.pendingPermissions.keys())) {
-      this.finishRequest(sessionId, requestId, result, source);
+    if (state.pendingPermissions.size === 0) return;
+
+    this.beginDraining(sessionId);
+    try {
+      // Drain until empty so requests created during finish callbacks are also resolved.
+      while (state.pendingPermissions.size > 0) {
+        const next = state.pendingPermissions.keys().next();
+        if (next.done || typeof next.value !== "string") break;
+
+        const requestId = next.value;
+        const handled = this.finishRequest(sessionId, requestId, result, source);
+        if (!handled) {
+          const pending = state.pendingPermissions.get(requestId);
+          if (pending?.timeoutId) clearTimeout(pending.timeoutId);
+          state.pendingPermissions.delete(requestId);
+          try {
+            pending?.finish(result);
+          } catch {
+            // ignore finish errors
+          }
+        }
+      }
+    } finally {
+      this.endDraining(sessionId);
+    }
+
+    const restoreRunning = opts?.restoreRunning ?? true;
+    const info = this.sessions.get(sessionId);
+    if (
+      restoreRunning &&
+      info &&
+      info.status === "waiting_permission" &&
+      state.pendingPermissions.size === 0
+    ) {
+      info.status = "running";
+      info.lastActiveAt = new Date().toISOString();
     }
   }
 
@@ -449,14 +599,19 @@ export class SessionManager {
         this.finishAllPending(
           id,
           { behavior: "deny", message: "Session expired", interrupt: true },
-          "cleanup"
+          "cleanup",
+          { restoreRunning: false }
         );
         // Invalid timestamp — remove the session
+        this.drainingSessions.delete(id);
         this.sessions.delete(id);
         this.runtime.delete(id);
       } else if (info.status === "running" && now - lastActive > this.runningSessionMaxMs) {
         // Stuck running session — abort and mark as error
         if (info.abortController) info.abortController.abort();
+        info.cancelledAt = info.cancelledAt ?? new Date().toISOString();
+        info.cancelledReason = info.cancelledReason ?? "Session timed out";
+        info.cancelledSource = info.cancelledSource ?? "cleanup";
         info.status = "error";
         info.lastActiveAt = new Date().toISOString();
       } else if (
@@ -466,9 +621,13 @@ export class SessionManager {
         this.finishAllPending(
           id,
           { behavior: "deny", message: "Session timed out", interrupt: true },
-          "cleanup"
+          "cleanup",
+          { restoreRunning: false }
         );
         if (info.abortController) info.abortController.abort();
+        info.cancelledAt = info.cancelledAt ?? new Date().toISOString();
+        info.cancelledReason = info.cancelledReason ?? "Session timed out";
+        info.cancelledSource = info.cancelledSource ?? "cleanup";
         info.status = "error";
         info.lastActiveAt = new Date().toISOString();
       } else if (
@@ -479,8 +638,10 @@ export class SessionManager {
         this.finishAllPending(
           id,
           { behavior: "deny", message: "Session expired", interrupt: true },
-          "cleanup"
+          "cleanup",
+          { restoreRunning: false }
         );
+        this.drainingSessions.delete(id);
         this.sessions.delete(id);
         this.runtime.delete(id);
       }
@@ -535,7 +696,8 @@ export class SessionManager {
       this.finishAllPending(
         info.sessionId,
         { behavior: "deny", message: "Server shutting down", interrupt: true },
-        "destroy"
+        "destroy",
+        { restoreRunning: false }
       );
       // M6 fix: explicitly abort any session that has an active consumer,
       // regardless of whether it is "running" or "waiting_permission".
@@ -635,5 +797,22 @@ export class SessionManager {
 
   private static clearTerminalEvents(buffer: EventBuffer): void {
     buffer.events = buffer.events.filter((e) => e.type !== "result" && e.type !== "error");
+  }
+
+  private isDraining(sessionId: string): boolean {
+    return (this.drainingSessions.get(sessionId) ?? 0) > 0;
+  }
+
+  private beginDraining(sessionId: string): void {
+    this.drainingSessions.set(sessionId, (this.drainingSessions.get(sessionId) ?? 0) + 1);
+  }
+
+  private endDraining(sessionId: string): void {
+    const current = this.drainingSessions.get(sessionId) ?? 0;
+    if (current <= 1) {
+      this.drainingSessions.delete(sessionId);
+      return;
+    }
+    this.drainingSessions.set(sessionId, current - 1);
   }
 }

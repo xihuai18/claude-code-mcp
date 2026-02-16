@@ -24,8 +24,17 @@ export interface SessionResult {
 
 export function executeClaudeCodeSession(
   input: ClaudeCodeSessionInput,
-  sessionManager: SessionManager
+  sessionManager: SessionManager,
+  requestSignal?: AbortSignal
 ): SessionResult {
+  if (requestSignal?.aborted) {
+    return {
+      sessions: [],
+      message: `Error [${ErrorCode.CANCELLED}]: request was cancelled.`,
+      isError: true,
+    };
+  }
+
   const toSessionJson = (s: SessionInfo) =>
     input.includeSensitive ? sessionManager.toSensitiveJSON(s) : sessionManager.toPublicJSON(s);
 

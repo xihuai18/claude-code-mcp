@@ -4,6 +4,13 @@
   "description": "MCP server that runs Claude Code as tools — start coding agents, poll their progress, and control permissions from any MCP client",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "bin": {
     "claude-code-mcp": "dist/index.js"
   },
@@ -11,9 +18,10 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.tests.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "npm run build && vitest run --config e2e/vitest.config.ts",
     "prepublishOnly": "npm run build",
     "lint": "eslint src/ tests/",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
@@ -56,6 +64,7 @@
     "LICENSE",
     "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md",
+    "NOTICE.md",
     "README.md",
     "SECURITY.md",
     "CHANGELOG.md"

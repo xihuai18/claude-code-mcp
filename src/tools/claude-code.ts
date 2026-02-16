@@ -9,15 +9,24 @@ import type {
   SandboxSettings,
   SessionStartResult,
   SettingSource,
+  ThinkingConfig,
 } from "../types.js";
-import { ErrorCode, DEFAULT_SETTING_SOURCES } from "../types.js";
+import { ErrorCode } from "../types.js";
 import { consumeQuery } from "./query-consumer.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 import { computeResumeToken, getResumeSecret } from "../utils/resume-token.js";
 import { raceWithAbort } from "../utils/race-with-abort.js";
 import { buildOptions } from "../utils/build-options.js";
+import { toSessionCreateParams } from "../utils/session-create.js";
+import {
+  normalizeWindowsPathArray,
+  normalizeWindowsPathLike,
+} from "../utils/normalize-windows-path.js";
 
-/** Low-frequency / SDK-passthrough options grouped under `advanced`. */
+/**
+ * Low-frequency / SDK-passthrough options grouped under `advanced`.
+ * `effort` and `thinking` are promoted to top-level (advanced aliases are kept for compatibility).
+ */
 export interface ClaudeCodeAdvancedOptions {
   tools?: string[] | { type: "preset"; preset: "claude_code" };
   persistSession?: boolean;
@@ -25,14 +34,13 @@ export interface ClaudeCodeAdvancedOptions {
   agents?: Record<string, AgentDefinition>;
   agent?: string;
   maxBudgetUsd?: number;
+  /** @deprecated Use top-level `effort` instead. */
   effort?: EffortLevel;
   betas?: string[];
   additionalDirectories?: string[];
   outputFormat?: { type: "json_schema"; schema: Record<string, unknown> };
-  thinking?:
-    | { type: "adaptive" }
-    | { type: "enabled"; budgetTokens: number }
-    | { type: "disabled" };
+  /** @deprecated Use top-level `thinking` instead. */
+  thinking?: ThinkingConfig;
   pathToClaudeCodeExecutable?: string;
   mcpServers?: Record<string, McpServerConfig>;
   sandbox?: SandboxSettings;
@@ -53,6 +61,8 @@ export interface ClaudeCodeInput {
   disallowedTools?: string[];
   maxTurns?: number;
   model?: string;
+  effort?: EffortLevel;
+  thinking?: ThinkingConfig;
   systemPrompt?: string | { type: "preset"; preset: "claude_code"; append?: string };
   /** Timeout waiting for permission decision (default 60000ms) */
   permissionRequestTimeoutMs?: number;
@@ -81,6 +91,14 @@ export async function executeClaudeCode(
     };
   }
 
+  if (!sessionManager.hasCapacityFor(1)) {
+    return {
+      sessionId: "",
+      status: "error",
+      error: `Error [${ErrorCode.RESOURCE_EXHAUSTED}]: Too many sessions (limit: ${sessionManager.getMaxSessions()}).`,
+    };
+  }
+
   const abortController = new AbortController();
   const adv = input.advanced ?? {};
 
@@ -96,6 +114,21 @@ export async function executeClaudeCode(
     model: input.model,
     systemPrompt: input.systemPrompt,
     ...adv,
+    effort: input.effort ?? adv.effort,
+    thinking: input.thinking ?? adv.thinking,
+  };
+  const normalizedFlat = {
+    ...flat,
+    cwd: normalizeWindowsPathLike(flat.cwd),
+    additionalDirectories:
+      flat.additionalDirectories !== undefined
+        ? normalizeWindowsPathArray(flat.additionalDirectories)
+        : undefined,
+    debugFile: flat.debugFile !== undefined ? normalizeWindowsPathLike(flat.debugFile) : undefined,
+    pathToClaudeCodeExecutable:
+      flat.pathToClaudeCodeExecutable !== undefined
+        ? normalizeWindowsPathLike(flat.pathToClaudeCodeExecutable)
+        : undefined,
   };
 
   try {
@@ -103,7 +136,7 @@ export async function executeClaudeCode(
       mode: "start",
       prompt: input.prompt,
       abortController,
-      options: buildOptions(flat),
+      options: buildOptions(normalizedFlat),
       permissionRequestTimeoutMs,
       sessionInitTimeoutMs,
       sessionManager,
@@ -111,38 +144,14 @@ export async function executeClaudeCode(
       onInit: (init) => {
         // Idempotent: on transient retry the SDK may re-send init for the same session.
         if (sessionManager.get(init.session_id)) return;
-        sessionManager.create({
-          sessionId: init.session_id,
-          cwd,
-          model: input.model,
-          permissionMode: "default",
-          allowedTools: input.allowedTools,
-          disallowedTools: input.disallowedTools,
-          tools: adv.tools,
-          maxTurns: input.maxTurns,
-          systemPrompt: input.systemPrompt,
-          agents: adv.agents as Record<string, AgentDefinition> | undefined,
-          maxBudgetUsd: adv.maxBudgetUsd,
-          effort: adv.effort,
-          betas: adv.betas,
-          additionalDirectories: adv.additionalDirectories,
-          outputFormat: adv.outputFormat,
-          thinking: adv.thinking,
-          persistSession: adv.persistSession,
-          pathToClaudeCodeExecutable: adv.pathToClaudeCodeExecutable,
-          agent: adv.agent,
-          mcpServers: adv.mcpServers,
-          sandbox: adv.sandbox,
-          fallbackModel: adv.fallbackModel,
-          enableFileCheckpointing: adv.enableFileCheckpointing,
-          includePartialMessages: adv.includePartialMessages,
-          strictMcpConfig: adv.strictMcpConfig,
-          settingSources: adv.settingSources ?? DEFAULT_SETTING_SOURCES,
-          debug: adv.debug,
-          debugFile: adv.debugFile,
-          env: adv.env,
-          abortController,
-        });
+        sessionManager.create(
+          toSessionCreateParams({
+            sessionId: init.session_id,
+            source: normalizedFlat,
+            permissionMode: "default",
+            abortController,
+          })
+        );
       },
     });
 

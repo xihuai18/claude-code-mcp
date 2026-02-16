@@ -7,10 +7,97 @@ import path from "node:path";
 
 // Always use win32 path semantics in this module so that the logic works
 // correctly even when the test-suite runs on a non-Windows CI host.
-const { join, dirname, normalize } = path.win32;
+const { join, dirname, normalize, isAbsolute } = path.win32;
+const LONG_PATH_PREFIX = "\\\\?\\";
+const UNC_LONG_PATH_PREFIX = "\\\\?\\UNC\\";
 
 export function isWindows(): boolean {
   return process.platform === "win32";
+}
+
+function normalizeMaybeQuotedPath(raw: string): string {
+  return normalize(raw.trim().replace(/^"|"$/g, ""));
+}
+
+function existsSyncSafe(candidate: string): boolean {
+  try {
+    return existsSync(candidate);
+  } catch {
+    return false;
+  }
+}
+
+function ensureLongPathPrefix(normalized: string): string {
+  if (!normalized || normalized.startsWith(LONG_PATH_PREFIX)) return normalized;
+  if (!isAbsolute(normalized)) return normalized;
+  if (normalized.startsWith("\\\\")) {
+    return `${UNC_LONG_PATH_PREFIX}${normalized.slice(2)}`;
+  }
+  return `${LONG_PATH_PREFIX}${normalized}`;
+}
+
+function existsPath(raw?: string): boolean {
+  if (!raw) return false;
+  const normalized = normalizeMaybeQuotedPath(raw);
+  if (existsSyncSafe(normalized)) return true;
+  const longPath = ensureLongPathPrefix(normalized);
+  if (longPath === normalized) return false;
+  return existsSyncSafe(longPath);
+}
+
+function tryWhere(exe: string): string[] {
+  try {
+    const output = execSync(`where ${exe}`, {
+      encoding: "utf8",
+      timeout: 2000,
+      windowsHide: true,
+    });
+    return output
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((p) => normalizeMaybeQuotedPath(p));
+  } catch {
+    return [];
+  }
+}
+
+function pathEntries(): string[] {
+  const raw = process.env.PATH;
+  if (typeof raw !== "string" || raw.trim() === "") return [];
+  return raw
+    .split(path.delimiter)
+    .map((p) => p.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean)
+    .map((p) => normalizeMaybeQuotedPath(p));
+}
+
+function tryFromPath(exeNames: string[]): string[] {
+  const results: string[] = [];
+  for (const dir of pathEntries()) {
+    for (const exe of exeNames) {
+      const full = normalize(path.win32.join(dir, exe));
+      if (existsPath(full)) results.push(full);
+    }
+  }
+  return results;
+}
+
+function firstExisting(candidates: string[]): string | null {
+  for (const p of candidates) {
+    if (p && existsPath(p)) return p;
+  }
+  return null;
+}
+
+function isWindowsSystemBash(pathLike: string): boolean {
+  const p = normalizeMaybeQuotedPath(pathLike).toLowerCase();
+  return (
+    p.endsWith("\\windows\\system32\\bash.exe") ||
+    p.endsWith("\\windows\\syswow64\\bash.exe") ||
+    p.includes("\\windows\\system32\\bash.exe") ||
+    p.includes("\\windows\\syswow64\\bash.exe")
+  );
 }
 
 /**
@@ -24,20 +111,29 @@ export function findGitBash(): string | null {
   const envPathRaw = process.env.CLAUDE_CODE_GIT_BASH_PATH;
   if (envPathRaw && envPathRaw.trim() !== "") {
     // Users sometimes include quotes in JSON/env config.
-    const envPath = normalize(envPathRaw.trim().replace(/^"|"$/g, ""));
-    if (existsSync(envPath)) return envPath;
-    return null; // env var set but path doesn't exist
+    const envPath = normalizeMaybeQuotedPath(envPathRaw);
+    if (existsPath(envPath)) return envPath;
+    // Env var set but path doesn't exist — continue best-effort detection
   }
 
-  try {
-    const output = execSync("where git", { encoding: "utf8" });
-    const gitCandidates = output
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+  // Common Git for Windows install locations (works even if PATH is missing).
+  const programFilesRoots = [
+    process.env.ProgramW6432,
+    process.env.ProgramFiles,
+    process.env["ProgramFiles(x86)"],
+  ].filter((v): v is string => typeof v === "string" && v.trim() !== "");
+  const defaultCandidates: string[] = [];
+  for (const root of programFilesRoots) {
+    const base = join(normalizeMaybeQuotedPath(root), "Git");
+    defaultCandidates.push(join(base, "bin", "bash.exe"));
+    defaultCandidates.push(join(base, "usr", "bin", "bash.exe"));
+  }
+  const fromDefault = firstExisting(defaultCandidates);
+  if (fromDefault) return fromDefault;
 
-    for (const gitPathRaw of gitCandidates) {
-      const gitPath = normalize(gitPathRaw.replace(/^"|"$/g, ""));
+  try {
+    const gitCandidates = [...tryFromPath(["git.exe", "git.cmd", "git.bat"]), ...tryWhere("git")];
+    for (const gitPath of gitCandidates) {
       if (!gitPath) continue;
 
       const gitDir = dirname(gitPath);
@@ -72,13 +168,21 @@ export function findGitBash(): string | null {
       }
 
       for (const bashPath of bashCandidates) {
-        const normalized = normalize(bashPath);
-        if (existsSync(normalized)) return normalized;
+        const normalizedPath = normalize(bashPath);
+        if (existsPath(normalizedPath)) return normalizedPath;
       }
     }
   } catch {
     // `where git` failed — git not in PATH
   }
+
+  // If bash.exe is already on PATH, use it (avoid the WSL system bash.exe).
+  const fromWhereBash = firstExisting(
+    [...tryFromPath(["bash.exe"]), ...tryWhere("bash")].filter(
+      (p) => p.toLowerCase().endsWith("\\bash.exe") && !isWindowsSystemBash(p)
+    )
+  );
+  if (fromWhereBash) return fromWhereBash;
 
   return null;
 }
@@ -89,9 +193,26 @@ export function findGitBash(): string | null {
 export function checkWindowsBashAvailability(): void {
   if (!isWindows()) return;
 
+  const envPathRaw = process.env.CLAUDE_CODE_GIT_BASH_PATH;
+  const envPath =
+    envPathRaw && envPathRaw.trim() !== "" ? normalizeMaybeQuotedPath(envPathRaw) : null;
+  const envValid = !!(envPath && existsPath(envPath));
+
   const bashPath = findGitBash();
   if (bashPath) {
-    console.error(`[windows] Git Bash detected: ${bashPath}`);
+    // Ensure child processes can reliably locate bash.exe even when started
+    // from GUI clients that don't inherit a full PATH environment.
+    if (!envValid) {
+      process.env.CLAUDE_CODE_GIT_BASH_PATH = bashPath;
+      if (envPathRaw && envPathRaw.trim() !== "") {
+        console.error(
+          `[windows] WARNING: CLAUDE_CODE_GIT_BASH_PATH is set to "${envPathRaw}" but the file does not exist.`
+        );
+      }
+      console.error(`[windows] Git Bash detected: ${bashPath} (set CLAUDE_CODE_GIT_BASH_PATH)`);
+    } else {
+      console.error(`[windows] Git Bash detected: ${bashPath}`);
+    }
     return;
   }
 
@@ -120,11 +241,11 @@ const WINDOWS_BASH_HINT =
  */
 export function enhanceWindowsError(errorMessage: string): string {
   if (!isWindows()) return errorMessage;
-  if (
-    errorMessage.includes("git-bash") ||
-    errorMessage.includes("bash.exe") ||
-    errorMessage.includes("CLAUDE_CODE_GIT_BASH_PATH")
-  ) {
+  const lower = errorMessage.toLowerCase();
+  const looksLikeMissingBash =
+    (lower.includes("enoent") && (lower.includes("bash") || lower.includes("git-bash"))) ||
+    lower.includes("claude code on windows requires git-bash");
+  if (looksLikeMissingBash || lower.includes("claude_code_git_bash_path")) {
     return errorMessage + WINDOWS_BASH_HINT;
   }
   return errorMessage;

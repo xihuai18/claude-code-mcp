@@ -247,7 +247,14 @@ export interface PermissionRequestRecord {
 
 export type FinishFn = (result: PermissionResult) => void;
 
-export type FinishSource = "respond" | "timeout" | "cancel" | "cleanup" | "destroy" | "signal";
+export type FinishSource =
+  | "respond"
+  | "timeout"
+  | "cancel"
+  | "cleanup"
+  | "destroy"
+  | "signal"
+  | "policy";
 
 export interface SessionStartResult {
   sessionId: string;
@@ -308,6 +315,7 @@ export enum ErrorCode {
   SESSION_BUSY = "SESSION_BUSY",
   PERMISSION_REQUEST_NOT_FOUND = "PERMISSION_REQUEST_NOT_FOUND",
   PERMISSION_DENIED = "PERMISSION_DENIED",
+  RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED",
   TIMEOUT = "TIMEOUT",
   CANCELLED = "CANCELLED",
   INTERNAL = "INTERNAL",

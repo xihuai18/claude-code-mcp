@@ -26,7 +26,17 @@ export type ConsumeQueryMode = "start" | "resume" | "disk-resume";
 const MAX_TRANSIENT_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
 
+const DEFAULT_PERMISSION_REQUEST_TIMEOUT_MS = 60_000;
+export const MAX_PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60_000;
+
+export const MAX_PREINIT_BUFFER_MESSAGES = 200;
+
 export type ErrorClass = "abort" | "transient" | "fatal";
+
+export function clampPermissionRequestTimeoutMs(ms: number): number {
+  if (!Number.isFinite(ms) || ms <= 0) return DEFAULT_PERMISSION_REQUEST_TIMEOUT_MS;
+  return Math.min(ms, MAX_PERMISSION_REQUEST_TIMEOUT_MS);
+}
 
 export function classifyError(err: unknown, abortSignal: AbortSignal): ErrorClass {
   if (abortSignal.aborted) return "abort";
@@ -105,12 +115,19 @@ function describeTool(toolName: string, toolCache?: ToolDiscoveryCache): string 
 }
 
 function sdkResultToAgentResult(result: SDKResultMessage): AgentResult {
+  const sessionTotalTurns = (result as unknown as { session_total_turns?: unknown })
+    .session_total_turns;
+  const sessionTotalCostUsd = (result as unknown as { session_total_cost_usd?: unknown })
+    .session_total_cost_usd;
+
   const base = {
     sessionId: result.session_id,
     durationMs: result.duration_ms,
     durationApiMs: result.duration_api_ms,
     numTurns: result.num_turns,
     totalCostUsd: result.total_cost_usd,
+    sessionTotalTurns: typeof sessionTotalTurns === "number" ? sessionTotalTurns : undefined,
+    sessionTotalCostUsd: typeof sessionTotalCostUsd === "number" ? sessionTotalCostUsd : undefined,
     stopReason: result.stop_reason,
     usage: result.usage,
     modelUsage: result.modelUsage,
@@ -242,6 +259,9 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
   };
 
   let initTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  const permissionRequestTimeoutMs = clampPermissionRequestTimeoutMs(
+    params.permissionRequestTimeoutMs
+  );
 
   const canUseTool: CanUseTool = async (toolName, input, options) => {
     const sessionId = await getSessionId();
@@ -277,7 +297,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
       .toString(16)
       .slice(2)}`;
     const createdAt = new Date().toISOString();
-    const timeoutMs = params.permissionRequestTimeoutMs;
+    const timeoutMs = permissionRequestTimeoutMs;
     const expiresAt = new Date(Date.now() + timeoutMs).toISOString();
     const record: PermissionRequestRecord = {
       requestId,
@@ -316,13 +336,17 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
         sessionId,
         record,
         finish,
-        params.permissionRequestTimeoutMs
+        permissionRequestTimeoutMs
       );
 
       // If the session was deleted/missing, resolve immediately with deny
       // to prevent the Promise from hanging forever.
       if (!registered) {
-        finish({ behavior: "deny", message: "Session no longer exists.", interrupt: true });
+        finish({
+          behavior: "deny",
+          message: "Session no longer exists.",
+          interrupt: true,
+        });
         return;
       }
 
@@ -370,6 +394,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
 
   const done = (async (): Promise<void> => {
     const preInit: SDKMessage[] = [];
+    let preInitDropped = 0;
 
     if (shouldWaitForInit) {
       initTimeoutId = setTimeout(() => {
@@ -400,6 +425,14 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
               resolveSessionId(activeSessionId);
               if (initTimeoutId) clearTimeout(initTimeoutId);
 
+              if (preInitDropped > 0) {
+                params.sessionManager.pushEvent(activeSessionId, {
+                  type: "progress",
+                  data: { type: "pre_init_dropped", dropped: preInitDropped },
+                  timestamp: new Date().toISOString(),
+                });
+              }
+
               for (const buffered of preInit) {
                 const event = messageToEvent(buffered);
                 if (!event) continue;
@@ -417,15 +450,37 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
 
           if (shouldWaitForInit && !sessionIdResolved) {
             preInit.push(message);
+            if (preInit.length > MAX_PREINIT_BUFFER_MESSAGES) {
+              preInit.shift();
+              preInitDropped++;
+            }
             continue;
           }
 
           if (message.type === "result") {
             const sessionId = message.session_id ?? (await getSessionId());
             const agentResult = sdkResultToAgentResult(message);
+            const current = params.sessionManager.get(sessionId);
+            const previousTotalTurns = current?.totalTurns ?? 0;
+            const previousTotalCostUsd = current?.totalCostUsd ?? 0;
+            const computedTotalTurns = previousTotalTurns + agentResult.numTurns;
+            const computedTotalCostUsd = previousTotalCostUsd + agentResult.totalCostUsd;
+            const sessionTotalTurns =
+              typeof agentResult.sessionTotalTurns === "number"
+                ? Math.max(agentResult.sessionTotalTurns, computedTotalTurns)
+                : computedTotalTurns;
+            const sessionTotalCostUsd =
+              typeof agentResult.sessionTotalCostUsd === "number"
+                ? Math.max(agentResult.sessionTotalCostUsd, computedTotalCostUsd)
+                : computedTotalCostUsd;
+            const resultWithSessionTotals: AgentResult = {
+              ...agentResult,
+              sessionTotalTurns,
+              sessionTotalCostUsd,
+            };
             const stored: StoredAgentResult = {
               type: agentResult.isError ? "error" : "result",
-              result: agentResult,
+              result: resultWithSessionTotals,
               createdAt: new Date().toISOString(),
             };
             params.sessionManager.setResult(sessionId, stored);
@@ -434,22 +489,21 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
             params.sessionManager.clearTerminalEvents(sessionId);
             params.sessionManager.pushEvent(sessionId, {
               type: agentResult.isError ? "error" : "result",
-              data: agentResult,
+              data: resultWithSessionTotals,
               timestamp: new Date().toISOString(),
             });
 
-            const current = params.sessionManager.get(sessionId);
             if (current && current.status !== "cancelled") {
               params.sessionManager.update(sessionId, {
                 status: agentResult.isError ? "error" : "idle",
-                totalTurns: agentResult.numTurns,
-                totalCostUsd: agentResult.totalCostUsd,
+                totalTurns: sessionTotalTurns,
+                totalCostUsd: sessionTotalCostUsd,
                 abortController: undefined,
               });
             } else if (current) {
               params.sessionManager.update(sessionId, {
-                totalTurns: agentResult.numTurns,
-                totalCostUsd: agentResult.totalCostUsd,
+                totalTurns: sessionTotalTurns,
+                totalCostUsd: sessionTotalCostUsd,
                 abortController: undefined,
               });
             }

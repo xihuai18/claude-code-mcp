@@ -18,6 +18,7 @@ import type {
   ToolsConfig,
 } from "../types.js";
 import { DEFAULT_SETTING_SOURCES } from "../types.js";
+import { normalizeWindowsPathArray, normalizeWindowsPathLike } from "./normalize-windows-path.js";
 
 /** Superset of fields that any of the three call-sites may provide. */
 export interface OptionSource {
@@ -58,7 +59,7 @@ export interface OptionSource {
  * SDK defaults are preserved for omitted fields.
  */
 export function buildOptions(src: OptionSource): Partial<Options> {
-  const opts: Partial<Options> = { cwd: src.cwd };
+  const opts: Partial<Options> = { cwd: normalizeWindowsPathLike(src.cwd) };
 
   if (src.allowedTools !== undefined) opts.allowedTools = src.allowedTools;
   if (src.disallowedTools !== undefined) opts.disallowedTools = src.disallowedTools;
@@ -71,13 +72,13 @@ export function buildOptions(src: OptionSource): Partial<Options> {
   if (src.effort !== undefined) opts.effort = src.effort;
   if (src.betas !== undefined) opts.betas = src.betas as Options["betas"];
   if (src.additionalDirectories !== undefined)
-    opts.additionalDirectories = src.additionalDirectories;
+    opts.additionalDirectories = normalizeWindowsPathArray(src.additionalDirectories);
   if (src.outputFormat !== undefined) opts.outputFormat = src.outputFormat;
   if (src.thinking !== undefined) opts.thinking = src.thinking;
   if (src.persistSession !== undefined) opts.persistSession = src.persistSession;
   if (src.resumeSessionAt !== undefined) opts.resumeSessionAt = src.resumeSessionAt;
   if (src.pathToClaudeCodeExecutable !== undefined)
-    opts.pathToClaudeCodeExecutable = src.pathToClaudeCodeExecutable;
+    opts.pathToClaudeCodeExecutable = normalizeWindowsPathLike(src.pathToClaudeCodeExecutable);
   if (src.agent !== undefined) opts.agent = src.agent;
   if (src.mcpServers !== undefined) opts.mcpServers = src.mcpServers as Options["mcpServers"];
   if (src.sandbox !== undefined) opts.sandbox = src.sandbox;
@@ -90,7 +91,7 @@ export function buildOptions(src: OptionSource): Partial<Options> {
   if (src.settingSources !== undefined) opts.settingSources = src.settingSources;
   else opts.settingSources = DEFAULT_SETTING_SOURCES;
   if (src.debug !== undefined) opts.debug = src.debug;
-  if (src.debugFile !== undefined) opts.debugFile = src.debugFile;
+  if (src.debugFile !== undefined) opts.debugFile = normalizeWindowsPathLike(src.debugFile);
   if (src.env !== undefined) opts.env = { ...process.env, ...src.env };
 
   return opts;
