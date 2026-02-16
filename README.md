@@ -4,13 +4,14 @@
 [![license](https://img.shields.io/npm/l/@leo000001/claude-code-mcp.svg)](https://github.com/xihuai18/claude-code-mcp/blob/HEAD/LICENSE)
 [![node](https://img.shields.io/node/v/@leo000001/claude-code-mcp.svg)](https://nodejs.org)
 
-MCP server that wraps [Claude Code (Claude Agent SDK)](https://docs.anthropic.com/en/docs/claude-code/overview) as tools, enabling any MCP client to invoke Claude Code for autonomous coding tasks.
+MCP server that wraps [Claude Code (Claude Agent SDK)](https://docs.anthropic.com/en/docs/claude-code/overview) as tools, enabling any MCP client to invoke Claude Code for autonomous coding tasks. Designed for local use — the MCP server and client are expected to run on the same machine.
 
 Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sdk/) design philosophy — minimum tools, maximum capability.
 
 ## Features
 
 - **4 tools** covering the full agent lifecycle: start, continue, check/poll, manage
+- **Read-only MCP resources** for server info and internal tool catalog snapshots
 - **Session management** with resume and fork support
 - **Local settings loaded by default** — automatically reads `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`, and `CLAUDE.md` so the agent behaves like your local Claude Code CLI
 - **Async permissions** — allow/deny lists + explicit approvals via `claude_code_check`
@@ -20,9 +21,12 @@ Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sd
 - **Auto-cleanup** — 30-minute idle timeout for expired sessions
 - **Security** — callers control tool permissions via allow/deny lists + explicit permission decisions
 
+See `CHANGELOG.md` for release history.
+
 ## Prerequisites
 
 - **Node.js >= 18** is required.
+- **Same-platform deployment** — this MCP server is designed to run on the same machine as the MCP client. It communicates via stdio (child process), reads local Claude configuration files from `~/.claude/`, and accesses the local file system directly. Remote deployment is not supported.
 
 This MCP server uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) package, which **bundles its own Claude Code CLI** (`cli.js`). It does not use the `claude` binary from your system PATH.
 
@@ -54,6 +58,14 @@ Add to your MCP client configuration (Claude Desktop, Cursor, etc.):
     }
   }
 }
+```
+
+> Some clients cache tool definitions at connect-time. This server emits `notifications/tools/list_changed` (and `resources/list_changed`) after connect and after runtime tool discovery so clients can refresh the `claude_code` tool description.
+
+### Anthropic Claude Code CLI (as an MCP client)
+
+```bash
+claude mcp add --transport stdio claude-code -- npx -y @leo000001/claude-code-mcp
 ```
 
 ### OpenAI Codex CLI
@@ -96,26 +108,26 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `disallowedTools`            | string[]         | No       | Forbidden tool names. Default: `[]` (none). SDK behavior: disallowed tools are removed from the model's context. Takes precedence over `allowedTools` and will be denied even if later approved interactively |
 | `maxTurns`                   | number           | No       | Maximum number of agent reasoning steps. Each step may involve one or more tool calls. Default: SDK/Claude Code default                                                                                       |
 | `model`                      | string           | No       | Model to use (e.g. `"claude-sonnet-4-5-20250929"`). Default: SDK/Claude Code default                                                                                                                          |
+| `effort`                     | string           | No       | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`. Default: SDK/Claude Code default                                                                                                                                                 |
+| `thinking`                   | object           | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default                                                                                             |
 | `systemPrompt`               | string \| object | No       | Override the agent's system prompt. Default: SDK/Claude Code default. Pass a string for full replacement, or `{ type: "preset", preset: "claude_code", append?: "..." }` to extend the default prompt         |
-| `permissionRequestTimeoutMs` | number           | No       | Timeout in milliseconds waiting for permission decisions. Default: `60000`                                                                                                                                    |
+| `permissionRequestTimeoutMs` | number           | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min)                                                                                                            |
 | `advanced`                   | object           | No       | Advanced/low-frequency parameters (see below)                                                                                                                                                                 |
 
 <details>
-<summary><code>advanced</code> object parameters (22 low-frequency parameters)</summary>
+<summary><code>advanced</code> object parameters (20 low-frequency parameters)</summary>
 
 | Parameter                             | Type               | Description                                                                                                                                                                                                                            |
 | ------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `advanced.tools`                      | string[] \| object | Define the base tool set. Default: SDK/Claude Code default toolset. Array of tool name strings, or `{ type: "preset", preset: "claude_code" }` for the default toolset. `allowedTools`/`disallowedTools` further filter on top of this |
 | `advanced.persistSession`             | boolean            | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                                                                                                      |
-| `advanced.sessionInitTimeoutMs`       | number             | Timeout in milliseconds waiting for `system/init`. Default: `10000`                                                                                                                                                                    |
+| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`                                                                                                                                                                    |
 | `advanced.agents`                     | object             | Define custom sub-agents the main agent can delegate tasks to. Default: none. SDK default: if a sub-agent omits `tools`, it inherits all tools from the parent.                                                                        |
 | `advanced.agent`                      | string             | Name of a custom agent (defined in `agents`) to use as the primary agent. Default: omitted                                                                                                                                             |
 | `advanced.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                                                                                                                |
-| `advanced.effort`                     | string             | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`. Default: SDK/Claude Code default                                                                                                                                                 |
 | `advanced.betas`                      | string[]           | Beta features (e.g. `["context-1m-2025-08-07"]`). Default: none                                                                                                                                                                        |
 | `advanced.additionalDirectories`      | string[]           | Additional directories the agent can access beyond cwd. Default: none                                                                                                                                                                  |
 | `advanced.outputFormat`               | object             | Structured output: `{ type: "json_schema", schema: {...} }`. Default: omitted (plain text)                                                                                                                                             |
-| `advanced.thinking`                   | object             | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default                                                                                             |
 | `advanced.pathToClaudeCodeExecutable` | string             | Path to the Claude Code executable. Default: SDK-bundled Claude Code (cli.js)                                                                                                                                                          |
 | `advanced.mcpServers`                 | object             | MCP server configurations (key: server name, value: server config). Default: none                                                                                                                                                      |
 | `advanced.sandbox`                    | object             | Sandbox configuration for isolating shell command execution (e.g., Docker container settings). Default: SDK/Claude Code default                                                                                                        |
@@ -127,6 +139,8 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `advanced.debug`                      | boolean            | Enable debug mode for verbose logging. Default: `false`                                                                                                                                                                                |
 | `advanced.debugFile`                  | string             | Write debug logs to a specific file path (implicitly enables debug mode). Default: omitted                                                                                                                                             |
 | `advanced.env`                        | object             | Environment variables to merge with process.env and pass to the Claude Code process (user values take precedence). Default: inherit process.env                                                                                        |
+
+Deprecated aliases: `advanced.effort` and `advanced.thinking` are still accepted for compatibility, but prefer top-level `effort` / `thinking` (top-level wins if both are set).
 
 </details>
 
@@ -156,8 +170,10 @@ Continue an existing session by sending a follow-up message. The agent retains f
 | `sessionId`                  | string  | Yes      | Session ID from a previous `claude_code` call                                                                        |
 | `prompt`                     | string  | Yes      | Follow-up prompt                                                                                                     |
 | `forkSession`                | boolean | No       | Create a branched copy of this session. Default: `false`                                                             |
-| `permissionRequestTimeoutMs` | number  | No       | Timeout in milliseconds waiting for permission decisions. Default: `60000`                                           |
-| `sessionInitTimeoutMs`       | number  | No       | Timeout in milliseconds waiting for fork `system/init`. Default: `10000`                                             |
+| `effort`                     | string  | No       | Effort level override for this run (and for future replies when not forking). Default: SDK/Claude Code default      |
+| `thinking`                   | object  | No       | Thinking mode override for this run (and for future replies when not forking). Default: SDK/Claude Code default     |
+| `permissionRequestTimeoutMs` | number  | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000`                      |
+| `sessionInitTimeoutMs`       | number  | No       | Fork init timeout in milliseconds (only when `forkSession=true`). Default: `10000`                                   |
 | `diskResumeConfig`           | object  | No       | Disk resume parameters (see below). Used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` and in-memory session is missing |
 
 <details>
@@ -211,7 +227,7 @@ Gotchas:
 - Permission approvals have a timeout (default 60s via `permissionRequestTimeoutMs`) and will auto-deny; watch `actions[].expiresAt` / `actions[].remainingMs`.
 - `Read` has a per-call size cap in practice (often ~256KB); for large files use `offset`/`limit` or chunk with `Grep`.
 - `Edit` with `replace_all=true` is substring replacement; if no match is found the tool returns a clear error.
-- `NotebookEdit` expects native Windows paths (e.g. `D:\path\file.ipynb`); this server normalizes MSYS paths like `/d/...` when possible.
+- On Windows, this server normalizes common MSYS-style paths (e.g. `/d/...`, `/mnt/c/...`, `/cygdrive/c/...`, `//server/share/...`) for `cwd`, `additionalDirectories`, and tool inputs that include `file_path`.
 - `TeamDelete` may require members to reach `shutdown_approved` (otherwise you may see "active member" errors); cleanup can be asynchronous during shutdown.
 - Skills may become available later in the same session (early calls may show "Unknown", later succeed after skills are loaded/registered).
 - Some internal features (e.g. ToolSearch) may not appear in `availableTools` (derived from SDK `system/init.tools`).
@@ -304,13 +320,13 @@ start = await mcp.call_tool("claude_code", {
     "prompt": "Fix the authentication bug in src/auth.ts",
     "cwd": "/path/to/project",
     "allowedTools": ["Read", "Edit", "Bash", "Glob", "Grep"],
+    "effort": "high",
     "advanced": {
-        "effort": "high",
         "maxBudgetUsd": 5.0
     }
 })
 session_id = json.loads(start)["sessionId"]
-cursor = None
+cursor = 0
 
 # 2) Poll until idle/error/cancelled
 while True:
@@ -354,7 +370,7 @@ Claude Code on Windows requires git-bash (https://git-scm.com/downloads/win).
 
 This means the spawned CLI process cannot locate `bash.exe`. Your locally installed `claude` command may work fine — the issue is that the MCP server's child process may not inherit your shell environment.
 
-**Fix: set `CLAUDE_CODE_GIT_BASH_PATH` in your MCP server config.**
+`claude-code-mcp` will try to auto-detect Git Bash from common install locations and set `CLAUDE_CODE_GIT_BASH_PATH` for child processes. If you still see this error, set `CLAUDE_CODE_GIT_BASH_PATH` explicitly in your MCP server config:
 
 For JSON-based MCP clients (Claude Desktop, Cursor, etc.):
 
@@ -407,6 +423,7 @@ setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
   - Use `disallowedTools` to hard-block tools; they are denied even if later approved via `claude_code_check`.
 - `maxTurns` and `advanced.maxBudgetUsd` prevent runaway execution.
 - Sessions auto-expire after 30 minutes of inactivity.
+- Vulnerability reporting: see `SECURITY.md`.
 
 ## Environment Variables
 
@@ -417,6 +434,8 @@ All environment variables are optional. They are set on the MCP server process (
 | `CLAUDE_CODE_GIT_BASH_PATH`         | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                          | Auto-detected  |
 | `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
 | `CLAUDE_CODE_MCP_RESUME_SECRET`     | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | _(unset)_      |
+| `CLAUDE_CODE_MCP_MAX_SESSIONS`      | Maximum number of in-memory sessions (set `0` to disable the limit)                                              | `128`          |
+| `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS` | Maximum number of outstanding permission requests per session (set `0` to disable the limit)                | `64`           |
 
 ### How to configure
 
@@ -471,10 +490,12 @@ npm test             # Run tests with vitest
 npm run dev          # Watch mode build
 ```
 
+For an end-to-end local test plan (third-party CLI/client integration + real coding tasks), see `docs/E2E_LOCAL_TEST_PLAN.md`.
+
 ## Architecture
 
 ```
-MCP Client ←→ (stdio/JSON-RPC) ←→ MCP Server
+MCP Client ←→ (stdio/JSON-RPC) ←→ MCP Server     [same machine]
                                       ├── Session Manager (Map<id, state>)
                                       └── Claude Agent SDK (query())
 ```
@@ -494,6 +515,7 @@ MCP server validation/policy errors are returned as `Error [CODE]: message` wher
 - `SESSION_BUSY` — session currently running
 - `PERMISSION_DENIED` — operation not allowed by server policy
 - `PERMISSION_REQUEST_NOT_FOUND` — permission request ID not found (already finished or expired)
+- `RESOURCE_EXHAUSTED` — resource limit reached (e.g. max sessions or max pending permissions)
 - `TIMEOUT` — operation timed out
 - `CANCELLED` — session was cancelled
 - `INTERNAL` — unexpected error or protocol mismatch
@@ -510,3 +532,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 - [Security Policy](SECURITY.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Third-party Notices](NOTICE.md)

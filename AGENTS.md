@@ -1,10 +1,10 @@
 # Repo Agent Instructions (claude-code-mcp)
 
-This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK / Claude Code CLI. Package name: `@leo000001/claude-code-mcp`.
+This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK / Claude Code CLI. Package name: `@leo000001/claude-code-mcp`. The MCP server and client are expected to run on the same machine (same platform).
 
 ## Project Philosophy & Design Goals
 
-本项目的核心设计理念可以概括为：**利用用户本地 Claude 配置，用最少工具和最少配置，实现最大的 Claude Code SDK 能力调用，同时保证完全无阻塞和完善的权限管理。**
+本项目的核心设计理念可以概括为：**利用用户本地 Claude 配置，用最少工具和最少配置，实现最大的 Claude Code SDK 能力调用，同时保证完全无阻塞和完善的权限管理。** 前提假设：MCP 服务端和客户端运行在同一台机器上（同一平台），通过 stdio 通信，共享本地文件系统和 Claude 配置。
 
 ### 1. 利用用户本地 Claude 配置（Zero-Config Local Integration）
 
@@ -51,7 +51,7 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 本项目将 Claude Agent SDK 的 `Options` 接口几乎完整地暴露为工具参数（通过 `src/utils/build-options.ts` 统一构建）。高频参数保留在顶层，低频参数折叠到嵌套对象中（`claude_code` 的 `advanced`、`claude_code_reply` 的 `diskResumeConfig`、`claude_code_check` 的 `pollOptions`/`permissionOptions`），包括：
 
-- **模型控制**：`model`、`advanced.fallbackModel`、`advanced.effort`、`advanced.thinking`、`advanced.betas`
+- **模型控制**：`model`、`effort`、`thinking`、`advanced.fallbackModel`、`advanced.betas`
 - **工具控制**：`advanced.tools`（可见性）、`allowedTools`/`disallowedTools`（审批策略）
 - **系统提示**：`systemPrompt`（完全替换或 preset + append 扩展）
 - **子 Agent**：`advanced.agents`（定义自定义子 agent，含 prompt/tools/model/mcpServers）
@@ -178,6 +178,7 @@ mcp_demo/                     # Copy-paste MCP client config examples
 ## Architecture
 
 - **4 MCP tools**: `claude_code`, `claude_code_reply`, `claude_code_session`, `claude_code_check` — all registered in `src/server.ts`.
+- **Same-platform assumption**: the MCP server and client run on the same machine. The server communicates via stdio, reads local `~/.claude/` configuration, and accesses the local file system directly.
 - **Async execution**: `claude_code` and `claude_code_reply` start asynchronously and return `{ sessionId, status: "running", pollInterval }`. Use `claude_code_check` to poll events and fetch the final result.
 - **Query consumer** (`src/tools/query-consumer.ts`): shared background logic for consuming SDK `query()` streams. Both `claude_code` (start) and `claude_code_reply` (resume/disk-resume) delegate to `consumeQuery()`.
 - **Tool discovery** (`src/tools/tool-discovery.ts`): maintains a `TOOL_CATALOG` of known Claude Code internal tools with descriptions and categories. Merges runtime `system/init` tool lists with the static catalog. Generates dynamic `claude_code` tool descriptions. `ToolDiscoveryCache` updates on first session init and triggers `tools/list_changed`.

@@ -35,7 +35,7 @@ npm install
 
 - Keep PRs focused on a single change
 - Include tests for new functionality
-- Update documentation (README, DESIGN.md) if the public API changes
+- Update documentation (README, docs/DESIGN.md) if the public API changes
 - Ensure CI passes before requesting review
 
 ## Reporting Issues
@@ -43,3 +43,12 @@ npm install
 - Use GitHub Issues for bug reports and feature requests
 - Include reproduction steps for bugs
 - For security vulnerabilities, see [SECURITY.md](SECURITY.md)
+
+## Release Checklist
+
+1. Update `CHANGELOG.md` with the upcoming version and confirm `package.json` reflects that version.
+2. Run `npm run format:check`, `npm run lint`, `npm run typecheck` (now covers `src` + `tests`), and `npm test` to prove the working tree is clean.
+3. Build the bundle (`npm run build`) and verify `dist/` contains the expected entry points.
+4. Refresh any documentation (README/CONTRIBUTING/docs) that describe public behavior or APIs touched by the release.
+5. Ensure `NOTICE.md` lists the third-party components bundled in the release and contains links or pointers to their licenses.
+6. Double-check `files`, `bin`, and other package metadata so the published package only ships the intended assets.

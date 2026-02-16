@@ -1,6 +1,6 @@
 # mcp_demo
 
-This folder contains small, copy/paste-friendly examples for integrating this MCP server into common clients.
+This folder contains small, copy/paste-friendly examples for integrating this MCP server into common clients. The MCP server and client are expected to run on the same machine (stdio transport).
 
 ## Claude Desktop / Cursor (JSON config)
 
@@ -13,6 +13,12 @@ This folder contains small, copy/paste-friendly examples for integrating this MC
     }
   }
 }
+```
+
+## Anthropic Claude Code CLI
+
+```bash
+claude mcp add --transport stdio claude-code -- npx -y @leo000001/claude-code-mcp
 ```
 
 ## OpenAI Codex CLI
@@ -69,3 +75,5 @@ If you see the error about missing `git-bash`, set `CLAUDE_CODE_GIT_BASH_PATH`:
   }
 }
 ```
+
+For a full end-to-end local test plan (permissions/polling/session lifecycle + real coding tasks), see `docs/E2E_LOCAL_TEST_PLAN.md`.

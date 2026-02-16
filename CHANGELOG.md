@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+### Improvements
+
+- Add `CLAUDE_CODE_MCP_MAX_SESSIONS` (default: `128`) to cap in-memory session count and reduce risk of memory exhaustion.
+- Add `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS` (default: `64`) to cap outstanding permission requests per session.
+- Promote `effort` and `thinking` to top-level parameters on `claude_code` and `claude_code_reply` (deprecated aliases: `advanced.effort`, `advanced.thinking`).
+- Tool responses now include `structuredContent` (in addition to JSON text) for easier MCP client consumption.
+- Emit `tools/list_changed` and `resources/list_changed` once after connect; update `claude_code` tool description dynamically when runtime tool discovery changes.
+- Align declared MCP capabilities with implemented primitives (`logging`, `tools`, `resources`) and remove prompt primitive exposure.
+- Add unit tests for `build-options.ts` and `race-with-abort.ts`.
+
+### Bug Fixes
+
+- Fork resume: restore original session state before creating the forked session record to avoid a brief `AbortController` sharing window.
+- Session totals: prevent `totalTurns`/`totalCostUsd` from being overwritten when SDK-provided session totals look incremental.
+- Permission audit: include allow-side `updatedInput`/`updatedPermissions` in `permission_result` events.
+
+### Refactors
+
+- Extract shared Zod schema fields for `advanced` and `diskResumeConfig` in `src/server.ts`.
+- Deduplicate `SessionManager.create()` call payloads via a shared helper.
+- Remove `server.close` monkey-patch; perform `sessionManager.destroy()` in the shutdown flow.
+
+### Documentation
+
+- Changelog: move released 2.x items out of `Unreleased` and add missing 2.0.0–2.0.3 entries.
+- SECURITY: update supported versions table for 2.x.
+- Docs: clarify same-platform assumption (MCP server and client run on the same machine) across README, AGENTS, SECURITY, and mcp_demo.
+
+## 2.0.3 (2026-02-15)
+
+### Improvements
+
+- Version bump only.
+
+## 2.0.2 (2026-02-15)
+
+### Features
+
+- MCP resources: `server-info`, `internal-tools`, and `gotchas`
+- Permission workflow: include timeout/expiration metadata in permission actions; support `updatedInput` normalization
+
+### Bug Fixes
+
+- Windows: normalize MSYS-style paths for `NotebookEdit` where possible
+
+## 2.0.1 (2026-02-15)
+
+### Improvements
+
+- Refined server schema descriptions/default annotations to reduce token overhead for calling models
+
+## 2.0.0 (2026-02-15)
+
 ### Breaking Changes
 
 - `claude_code` and `claude_code_reply` now start asynchronously and return `{ sessionId, status: "running", pollInterval }`. Use `claude_code_check` to poll events and fetch the final `result`.
@@ -11,7 +64,6 @@
   - `claude_code`: 22 low-frequency params moved into `advanced` object (e.g. `effort` → `advanced.effort`, `tools` → `advanced.tools`, `agents` → `advanced.agents`, `env` → `advanced.env`)
   - `claude_code_reply`: 28 disk-resume params moved into `diskResumeConfig` object (e.g. `resumeToken` → `diskResumeConfig.resumeToken`, `cwd` → `diskResumeConfig.cwd`)
   - `claude_code_check`: 9 poll control params moved into `pollOptions` object (e.g. `includeTools` → `pollOptions.includeTools`); 2 permission response params moved into `permissionOptions` object (e.g. `updatedInput` → `permissionOptions.updatedInput`)
-  - Schema descriptions for nested object fields have been compacted (self-explanatory fields no longer carry `.describe()` text; object-level descriptions enhanced as summaries) to reduce token overhead for calling models
 
 ### Features
 
@@ -28,10 +80,8 @@
 - `claude_code_check`: minimal mode filters out noisy progress events (`tool_progress`, `auth_status`); use `includeProgressEvents: true` to restore
 - `claude_code_check`: minimal mode omits `lastEventId`/`lastToolUseId` from top-level response and `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd` from AgentResult
 - `claude_code_check`: includes lightweight session diagnostics (`cancelledAt`/`cancelledReason`/`cancelledSource`, `lastEventId`, `lastToolUseId`)
-- `claude_code_check`: permission actions now include `timeoutMs`, `expiresAt`, and best-effort `remainingMs`
 - Permission result events now include `toolName`, and denial details (`message`, `interrupt`) when applicable
 - Disk resume security: disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` + `resumeToken`
-- MCP resources: server info, internal tool catalog, and gotchas
 
 ## 1.6.0 (2026-02-12)
 
