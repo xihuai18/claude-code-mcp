@@ -178,19 +178,23 @@ export function createServerContext(serverCwd: string): {
     .optional()
     .describe("Default: none");
 
-  const startResultSchema = z.object({
-    sessionId: z.string(),
-    status: z.enum(["running", "error"]),
-    pollInterval: z.number().optional(),
-    resumeToken: z.string().optional(),
-    error: z.string().optional(),
-  });
+  const startResultSchema = z
+    .object({
+      sessionId: z.string(),
+      status: z.enum(["running", "error"]),
+      pollInterval: z.number().optional(),
+      resumeToken: z.string().optional(),
+      error: z.string().optional(),
+    })
+    .passthrough();
 
-  const sessionResultSchema = z.object({
-    sessions: z.array(z.record(z.string(), z.unknown())),
-    message: z.string().optional(),
-    isError: z.boolean().optional(),
-  });
+  const sessionResultSchema = z
+    .object({
+      sessions: z.array(z.record(z.string(), z.unknown())),
+      message: z.string().optional(),
+      isError: z.boolean().optional(),
+    })
+    .passthrough();
 
   const checkEventSchema = z
     .object({
@@ -287,14 +291,19 @@ export function createServerContext(serverCwd: string): {
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        const errorResult = {
+          sessionId: "",
+          status: "error" as const,
+          error: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+        };
         return {
           content: [
             {
               type: "text" as const,
-              text: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+              text: JSON.stringify(errorResult, null, 2),
             },
           ],
-          structuredContent: { error: `Error [${LocalErrorCode.INTERNAL}]: ${message}` },
+          structuredContent: errorResult as unknown as Record<string, unknown>,
           isError: true,
         };
       }
@@ -346,14 +355,19 @@ export function createServerContext(serverCwd: string): {
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        const errorResult = {
+          sessionId: "",
+          status: "error" as const,
+          error: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+        };
         return {
           content: [
             {
               type: "text" as const,
-              text: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+              text: JSON.stringify(errorResult, null, 2),
             },
           ],
-          structuredContent: { error: `Error [${LocalErrorCode.INTERNAL}]: ${message}` },
+          structuredContent: errorResult as unknown as Record<string, unknown>,
           isError: true,
         };
       }
@@ -393,14 +407,19 @@ export function createServerContext(serverCwd: string): {
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        const errorResult = {
+          sessions: [],
+          message: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+          isError: true,
+        };
         return {
           content: [
             {
               type: "text" as const,
-              text: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+              text: JSON.stringify(errorResult, null, 2),
             },
           ],
-          structuredContent: { error: `Error [${LocalErrorCode.INTERNAL}]: ${message}` },
+          structuredContent: errorResult as unknown as Record<string, unknown>,
           isError: true,
         };
       }
@@ -488,14 +507,21 @@ export function createServerContext(serverCwd: string): {
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        const errorResult = {
+          sessionId: args.sessionId ?? "",
+          status: "error",
+          events: [] as unknown[],
+          isError: true,
+          error: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+        };
         return {
           content: [
             {
               type: "text" as const,
-              text: `Error [${LocalErrorCode.INTERNAL}]: ${message}`,
+              text: JSON.stringify(errorResult, null, 2),
             },
           ],
-          structuredContent: { error: `Error [${LocalErrorCode.INTERNAL}]: ${message}` },
+          structuredContent: errorResult as unknown as Record<string, unknown>,
           isError: true,
         };
       }
