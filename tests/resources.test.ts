@@ -3,15 +3,18 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServerContext } from "../src/server.js";
 
-async function withClientServer<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-  const { server, sessionManager } = createServerContext("/tmp");
+async function withClientServer<T>(
+  fn: (client: Client, ctx: ReturnType<typeof createServerContext>) => Promise<T>
+): Promise<T> {
+  const ctx = createServerContext("/tmp");
+  const { server, sessionManager } = ctx;
   const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
   try {
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    return await fn(client);
+    return await fn(client, ctx);
   } finally {
     await client.close();
     sessionManager.destroy();
@@ -93,6 +96,35 @@ describe("Resources", () => {
           ? gotchasContent.text
           : "";
       expect(gotchasText).toContain("gotchas");
+    });
+  });
+
+  it("should return updated internal-tools content after runtime discovery", async () => {
+    await withClientServer(async (client, ctx) => {
+      const first = await client.readResource({ uri: "claude-code-mcp:///internal-tools" });
+      const firstContent = first.contents[0];
+      const firstText =
+        firstContent && "text" in firstContent && typeof firstContent.text === "string"
+          ? firstContent.text
+          : "{}";
+      const firstParsed = JSON.parse(firstText) as {
+        tools?: Array<{ name?: string }>;
+      };
+      expect(Array.isArray(firstParsed.tools)).toBe(true);
+
+      ctx.toolCache.updateFromInit(["Read", "Write", "NewRuntimeTool"]);
+
+      const second = await client.readResource({ uri: "claude-code-mcp:///internal-tools" });
+      const secondContent = second.contents[0];
+      const secondText =
+        secondContent && "text" in secondContent && typeof secondContent.text === "string"
+          ? secondContent.text
+          : "{}";
+      const secondParsed = JSON.parse(secondText) as {
+        tools?: Array<{ name?: string }>;
+      };
+      const names = (secondParsed.tools ?? []).map((t) => t.name);
+      expect(names).toContain("NewRuntimeTool");
     });
   });
 });

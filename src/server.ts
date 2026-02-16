@@ -192,19 +192,13 @@ export function createServerContext(serverCwd: string): {
     .optional()
     .describe("Disk resume (needs CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1, resumeToken + cwd)");
 
-  const startResultSchema = z.union([
-    z.object({
-      sessionId: z.string(),
-      status: z.literal("running"),
-      pollInterval: z.number(),
-      resumeToken: z.string().optional(),
-    }),
-    z.object({
-      sessionId: z.string(),
-      status: z.literal("error"),
-      error: z.string(),
-    }),
-  ]);
+  const startResultSchema = z.object({
+    sessionId: z.string(),
+    status: z.enum(["running", "error"]),
+    pollInterval: z.number().optional(),
+    resumeToken: z.string().optional(),
+    error: z.string().optional(),
+  });
 
   const sessionResultSchema = z.object({
     sessions: z.array(z.record(z.string(), z.unknown())),

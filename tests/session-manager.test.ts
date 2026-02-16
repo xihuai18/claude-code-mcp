@@ -544,5 +544,86 @@ describe("SessionManager", () => {
       expect(finish).toHaveBeenCalledTimes(1);
       expect(finish.mock.calls[0]?.[0]).toMatchObject({ behavior: "deny" });
     });
+
+    it("should reject new permission requests for terminal sessions", () => {
+      const ac = new AbortController();
+      manager.create({ sessionId: "term", cwd: "/tmp", abortController: ac });
+      expect(manager.cancel("term")).toBe(true);
+
+      const finish = vi.fn();
+      const ok = manager.setPendingPermission(
+        "term",
+        {
+          requestId: "r1",
+          toolName: "Bash",
+          input: { cmd: "echo hi" },
+          summary: "s1",
+          toolUseID: "tu1",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+
+      expect(ok).toBe(false);
+      expect(manager.getPendingPermissionCount("term")).toBe(0);
+      expect(manager.get("term")!.status).toBe("cancelled");
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(finish.mock.calls[0]?.[0]).toMatchObject({
+        behavior: "deny",
+        interrupt: true,
+      });
+    });
+
+    it("should drain all pending requests even if finish callbacks try to enqueue more", () => {
+      manager.create({ sessionId: "drain", cwd: "/tmp" });
+
+      const finish2 = vi.fn();
+      const finish1 = vi.fn(() => {
+        manager.setPendingPermission(
+          "drain",
+          {
+            requestId: "r2",
+            toolName: "Bash",
+            input: { cmd: "echo 2" },
+            summary: "s2",
+            toolUseID: "tu2",
+            createdAt: new Date().toISOString(),
+          },
+          finish2,
+          60_000
+        );
+      });
+
+      manager.setPendingPermission(
+        "drain",
+        {
+          requestId: "r1",
+          toolName: "Bash",
+          input: { cmd: "echo 1" },
+          summary: "s1",
+          toolUseID: "tu1",
+          createdAt: new Date().toISOString(),
+        },
+        finish1,
+        60_000
+      );
+
+      manager.finishAllPending(
+        "drain",
+        { behavior: "deny", message: "cleanup", interrupt: true },
+        "cleanup"
+      );
+
+      expect(finish1).toHaveBeenCalledTimes(1);
+      // Re-entrant setPendingPermission should be denied immediately while draining.
+      expect(finish2).toHaveBeenCalledTimes(1);
+      expect(finish2.mock.calls[0]?.[0]).toMatchObject({
+        behavior: "deny",
+        interrupt: true,
+      });
+      expect(manager.getPendingPermissionCount("drain")).toBe(0);
+      expect(manager.get("drain")!.status).toBe("running");
+    });
   });
 });

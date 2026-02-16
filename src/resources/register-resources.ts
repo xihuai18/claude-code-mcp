@@ -26,45 +26,49 @@ export function registerResources(
   server: McpServer,
   deps: { toolCache: ToolDiscoveryCache }
 ): void {
-  // "Static resources only": keep URIs stable and keep resource payloads stable across reads.
-  // This intentionally snapshots any dynamic dependencies at registration time.
-  const toolCatalogSnapshot = deps.toolCache.getTools();
-
   const serverInfoUri = new URL(RESOURCE_URIS.serverInfo);
-  const serverInfoText = JSON.stringify(
-    {
-      name: "claude-code-mcp",
-      node: process.version,
-      platform: process.platform,
-      arch: process.arch,
-      resources: Object.values(RESOURCE_URIS),
-      toolCatalogCount: toolCatalogSnapshot.length,
-    },
-    null,
-    2
-  );
   server.registerResource(
     "server_info",
     serverInfoUri.toString(),
     {
       title: "Server Info",
-      description: "Static server metadata snapshot (version/platform/runtime).",
+      description: "Server metadata (version/platform/runtime).",
       mimeType: "application/json",
     },
-    () => asTextResource(serverInfoUri, serverInfoText, "application/json")
+    () =>
+      asTextResource(
+        serverInfoUri,
+        JSON.stringify(
+          {
+            name: "claude-code-mcp",
+            node: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            resources: Object.values(RESOURCE_URIS),
+            toolCatalogCount: deps.toolCache.getTools().length,
+          },
+          null,
+          2
+        ),
+        "application/json"
+      )
   );
 
   const toolsUri = new URL(RESOURCE_URIS.internalTools);
-  const internalToolsText = JSON.stringify({ tools: toolCatalogSnapshot }, null, 2);
   server.registerResource(
     "internal_tools",
     toolsUri.toString(),
     {
       title: "Internal Tools",
-      description: "Claude Code internal tool catalog snapshot (static + runtime-discovered).",
+      description: "Claude Code internal tool catalog (runtime-aware).",
       mimeType: "application/json",
     },
-    () => asTextResource(toolsUri, internalToolsText, "application/json")
+    () =>
+      asTextResource(
+        toolsUri,
+        JSON.stringify({ tools: deps.toolCache.getTools() }, null, 2),
+        "application/json"
+      )
   );
 
   const gotchasUri = new URL(RESOURCE_URIS.gotchas);
