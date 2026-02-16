@@ -32,7 +32,7 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 | `claude_code_session` | 管理 session（list/get/cancel）      | 同步                 |
 | `claude_code_check`   | 轮询事件 + 处理权限请求              | 同步                 |
 
-不暴露额外的配置工具（已移除 `claude_code_configure`）、不暴露内部工具代理、不暴露 resources/prompts。所有能力通过这 4 个工具的参数组合实现。
+不暴露额外的配置工具（已移除 `claude_code_configure`）、不暴露内部工具代理。核心调用能力通过这 4 个工具实现，另提供少量只读 resources 作为补充信息。
 
 ### 3. 最少配置（Minimum Configuration）
 
@@ -314,7 +314,7 @@ MCP 基于 JSON-RPC 2.0，三种消息类型：
 | 能力          | 说明                                      | 本项目使用 |
 | ------------- | ----------------------------------------- | ---------- |
 | `tools`       | 暴露可调用工具（`listChanged` 子字段）    | ✅          |
-| `resources`   | 提供可读资源（`subscribe`/`listChanged`） | ❌          |
+| `resources`   | 提供可读资源（`subscribe`/`listChanged`） | ✅          |
 | `prompts`     | 提供提示词模板（`listChanged`）           | ❌          |
 | `logging`     | 可发送 `notifications/message`            | 计划中     |
 | `completions` | 参数自动补全                              | ❌          |

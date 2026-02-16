@@ -11,7 +11,7 @@ Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sd
 ## Features
 
 - **4 tools** covering the full agent lifecycle: start, continue, check/poll, manage
-- **Read-only MCP resources** for server info and internal tool catalog snapshots
+- **Read-only MCP resources** for server info and internal tool catalog
 - **Session management** with resume and fork support
 - **Local settings loaded by default** — automatically reads `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`, and `CLAUDE.md` so the agent behaves like your local Claude Code CLI
 - **Async permissions** — allow/deny lists + explicit approvals via `claude_code_check`
@@ -60,7 +60,7 @@ Add to your MCP client configuration (Claude Desktop, Cursor, etc.):
 }
 ```
 
-> Some clients cache tool definitions at connect-time. This server emits `notifications/tools/list_changed` (and `resources/list_changed`) after connect and after runtime tool discovery so clients can refresh the `claude_code` tool description.
+> Some clients cache tool definitions at connect-time. This server emits `notifications/tools/list_changed` after runtime tool discovery so clients can refresh the `claude_code` tool description.
 
 ### Anthropic Claude Code CLI (as an MCP client)
 
@@ -236,8 +236,8 @@ Gotchas:
 
 If your MCP client supports resources, this server exposes a couple of **read-only** MCP resources:
 
-- `claude-code-mcp:///server-info` (JSON): static server metadata (version/platform/runtime)
-- `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (static + runtime-discovered)
+- `claude-code-mcp:///server-info` (JSON): server metadata (version/platform/runtime)
+- `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (runtime-aware)
 - `claude-code-mcp:///gotchas` (Markdown): practical limits/gotchas
 
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
