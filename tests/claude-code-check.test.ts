@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SessionManager } from "../src/session/manager.js";
 import { ToolDiscoveryCache } from "../src/tools/tool-discovery.js";
 import { executeClaudeCodeCheck } from "../src/tools/claude-code-check.js";
-import type { CheckResult, PermissionRequestRecord } from "../src/types.js";
+import type { CheckResult, PermissionRequestRecord, PermissionUpdate } from "../src/types.js";
 
 describe("executeClaudeCodeCheck", () => {
   let manager: SessionManager;
@@ -167,7 +167,7 @@ describe("executeClaudeCodeCheck", () => {
       blockedPath: "/tmp",
       toolUseID: "tu-full",
       agentID: "agent-x",
-      suggestions: [{ scope: "s1" }],
+      suggestions: [{ scope: "s1" } as unknown as PermissionUpdate],
       description: "Detailed description",
       createdAt: new Date().toISOString(),
     };

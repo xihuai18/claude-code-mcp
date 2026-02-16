@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createServer } from "../src/server.js";
+import { createServerContext } from "../src/server.js";
 
 async function withClientServer<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-  const server = createServer("/tmp");
+  const { server, sessionManager } = createServerContext("/tmp");
   const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
@@ -14,6 +14,7 @@ async function withClientServer<T>(fn: (client: Client) => Promise<T>): Promise<
     return await fn(client);
   } finally {
     await client.close();
+    sessionManager.destroy();
     await server.close();
   }
 }
@@ -53,7 +54,12 @@ describe("Resources", () => {
 
       const infoRes = await client.readResource({ uri: "claude-code-mcp:///server-info" });
       expect(infoRes.contents[0]?.mimeType).toBe("application/json");
-      const info = JSON.parse(infoRes.contents[0]?.text ?? "{}") as {
+      const infoContent = infoRes.contents[0];
+      const infoText =
+        infoContent && "text" in infoContent && typeof infoContent.text === "string"
+          ? infoContent.text
+          : "{}";
+      const info = JSON.parse(infoText) as {
         name?: unknown;
         resources?: unknown;
       };
@@ -71,12 +77,22 @@ describe("Resources", () => {
 
       const toolsRes = await client.readResource({ uri: "claude-code-mcp:///internal-tools" });
       expect(toolsRes.contents[0]?.mimeType).toBe("application/json");
-      const parsed = JSON.parse(toolsRes.contents[0]?.text ?? "{}") as { tools?: unknown };
+      const toolsContent = toolsRes.contents[0];
+      const toolsText =
+        toolsContent && "text" in toolsContent && typeof toolsContent.text === "string"
+          ? toolsContent.text
+          : "{}";
+      const parsed = JSON.parse(toolsText) as { tools?: unknown };
       expect(Array.isArray(parsed.tools)).toBe(true);
 
       const gotchasRes = await client.readResource({ uri: "claude-code-mcp:///gotchas" });
       expect(gotchasRes.contents[0]?.mimeType).toBe("text/markdown");
-      expect(gotchasRes.contents[0]?.text).toContain("gotchas");
+      const gotchasContent = gotchasRes.contents[0];
+      const gotchasText =
+        gotchasContent && "text" in gotchasContent && typeof gotchasContent.text === "string"
+          ? gotchasContent.text
+          : "";
+      expect(gotchasText).toContain("gotchas");
     });
   });
 });

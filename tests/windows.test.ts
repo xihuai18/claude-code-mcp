@@ -55,8 +55,81 @@ describe("windows utils", () => {
     expect(bash).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
   });
 
+  it("findGitBash ignores WSL bash.exe and falls back to git-derived locations", () => {
+    delete process.env.CLAUDE_CODE_GIT_BASH_PATH;
+    delete process.env.ProgramW6432;
+    delete process.env.ProgramFiles;
+    delete process.env["ProgramFiles(x86)"];
+
+    execSyncMock.mockImplementation((cmd) => {
+      if (String(cmd).toLowerCase().includes("where bash")) {
+        return "C:\\Windows\\System32\\bash.exe\r\n";
+      }
+      if (String(cmd).toLowerCase().includes("where git")) {
+        return "C:\\Program Files\\Git\\cmd\\git.exe\r\n";
+      }
+      return "";
+    });
+
+    existsSyncMock.mockImplementation((p) => {
+      const s = String(p).replace(/\//g, "\\");
+      return (
+        s === "C:\\Windows\\System32\\bash.exe" || s === "C:\\Program Files\\Git\\bin\\bash.exe"
+      );
+    });
+
+    expect(findGitBash()).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
+  });
+
+  it("findGitBash prefers git-derived bash.exe over other bash.exe in PATH", () => {
+    delete process.env.CLAUDE_CODE_GIT_BASH_PATH;
+    delete process.env.ProgramW6432;
+    delete process.env.ProgramFiles;
+    delete process.env["ProgramFiles(x86)"];
+
+    execSyncMock.mockImplementation((cmd) => {
+      if (String(cmd).toLowerCase().includes("where bash")) {
+        return "C:\\msys64\\usr\\bin\\bash.exe\r\n";
+      }
+      if (String(cmd).toLowerCase().includes("where git")) {
+        return "C:\\Program Files\\Git\\cmd\\git.exe\r\n";
+      }
+      return "";
+    });
+
+    existsSyncMock.mockImplementation((p) => {
+      const s = String(p).replace(/\//g, "\\");
+      return (
+        s === "C:\\msys64\\usr\\bin\\bash.exe" || s === "C:\\Program Files\\Git\\bin\\bash.exe"
+      );
+    });
+
+    expect(findGitBash()).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
+  });
+
+  it("findGitBash falls back to default ProgramFiles location even if PATH is missing", () => {
+    delete process.env.CLAUDE_CODE_GIT_BASH_PATH;
+    process.env.ProgramFiles = "C:\\Program Files";
+    delete process.env.ProgramW6432;
+    delete process.env["ProgramFiles(x86)"];
+
+    existsSyncMock.mockImplementation((p) => {
+      const s = String(p).replace(/\//g, "\\");
+      return s === "C:\\Program Files\\Git\\bin\\bash.exe";
+    });
+
+    expect(findGitBash()).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
+    expect(execSyncMock).not.toHaveBeenCalled();
+  });
+
   it("enhanceWindowsError appends hint for bash-related errors", () => {
     const msg = enhanceWindowsError("spawn bash.exe ENOENT");
+    expect(msg).toContain("Git Bash");
+    expect(msg).toContain("CLAUDE_CODE_GIT_BASH_PATH");
+  });
+
+  it("enhanceWindowsError appends hint for 'spawn bash ENOENT' errors", () => {
+    const msg = enhanceWindowsError("Error: spawn bash ENOENT");
     expect(msg).toContain("Git Bash");
     expect(msg).toContain("CLAUDE_CODE_GIT_BASH_PATH");
   });

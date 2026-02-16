@@ -28,6 +28,7 @@ import { computeResumeToken } from "../src/utils/resume-token.js";
 
 const mockQuery = vi.mocked(query);
 type QueryReturn = ReturnType<typeof query>;
+type QueryParams = Parameters<typeof query>[0];
 
 async function waitUntil(fn: () => boolean, maxTicks = 50): Promise<void> {
   for (let i = 0; i < maxTicks; i++) {
@@ -94,14 +95,16 @@ describe("executeClaudeCode (async)", () => {
           permission_denials: [],
           structured_output: { ok: true },
         };
-      })() as QueryReturn
+      })() as unknown as QueryReturn
     );
 
     const start = await executeClaudeCode({ prompt: "Fix the bug" }, manager, "/tmp", toolCache);
 
     expect(start.status).toBe("running");
     expect(start.sessionId).toBe("sess-123");
-    expect(start.pollInterval).toBe(3000);
+    if (start.status === "running") {
+      expect(start.pollInterval).toBe(3000);
+    }
 
     await waitUntil(() => manager.get("sess-123")?.status === "idle");
     expect(manager.get("sess-123")!.status).toBe("idle");
@@ -109,6 +112,18 @@ describe("executeClaudeCode (async)", () => {
     const stored = manager.getResult("sess-123");
     expect(stored?.type).toBe("result");
     expect(stored?.result.result).toBe("Fixed the bug!");
+  });
+
+  it("should return an error when session limit is reached", async () => {
+    manager = new SessionManager({ maxSessions: 1 });
+    manager.create({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      permissionMode: "default",
+    });
+    const start = await executeClaudeCode({ prompt: "Fix the bug" }, manager, "/tmp", toolCache);
+    expect(start.status).toBe("error");
+    expect((start as { error?: string }).error).toContain("RESOURCE_EXHAUSTED");
   });
 
   it("should pass option fields through to query()", async () => {
@@ -147,18 +162,21 @@ describe("executeClaudeCode (async)", () => {
           modelUsage: {},
           permission_denials: [],
         };
-      })() as QueryReturn
+      })() as unknown as QueryReturn
     );
 
     await executeClaudeCode(
       {
         prompt: "Test",
+        effort: "max",
+        thinking: { type: "adaptive" },
         advanced: {
           additionalDirectories: ["/extra"],
           persistSession: false,
-          thinking: { type: "adaptive" },
           outputFormat: { type: "json_schema", schema: { type: "object" } },
-          effort: "max",
+          // Deprecated aliases should not override top-level.
+          effort: "low",
+          thinking: { type: "disabled" },
           env: { TEST_ENV: "1" },
         },
       },
@@ -182,53 +200,18 @@ describe("executeClaudeCode (async)", () => {
   it("should return error on invalid cwd", async () => {
     const start = await executeClaudeCode({ prompt: "Test", cwd: "" }, manager, "/tmp", toolCache);
     expect(start.status).toBe("error");
-    expect(start.error).toContain("INVALID_ARGUMENT");
+    if (start.status === "error") {
+      expect(start.error).toContain("INVALID_ARGUMENT");
+    }
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
   it("should return TIMEOUT when init is not received within sessionInitTimeoutMs", async () => {
     vi.useFakeTimers();
     try {
-      mockQuery.mockImplementation(
-        ({ options }: { options: { abortController: AbortController } }) => {
-          const ac = options.abortController;
-          return (async function* () {
-            const abortPromise = new Promise<void>((_resolve, reject) => {
-              ac.signal.addEventListener(
-                "abort",
-                () => {
-                  const e = new Error("The operation was aborted");
-                  e.name = "AbortError";
-                  reject(e);
-                },
-                { once: true }
-              );
-            });
-            await abortPromise;
-            yield; // unreachable
-          })();
-        }
-      );
-
-      const promise = executeClaudeCode(
-        { prompt: "Test", advanced: { sessionInitTimeoutMs: 10 } },
-        manager,
-        "/tmp",
-        toolCache
-      );
-      await vi.advanceTimersByTimeAsync(10);
-      const start = await promise;
-      expect(start.status).toBe("error");
-      expect(start.error).toContain("TIMEOUT");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("should return CANCELLED when the MCP tool call is cancelled before init", async () => {
-    mockQuery.mockImplementation(
-      ({ options }: { options: { abortController: AbortController } }) => {
-        const ac = options.abortController;
+      mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
+        const ac = (params.options as unknown as { abortController: AbortController })
+          .abortController;
         return (async function* () {
           const abortPromise = new Promise<void>((_resolve, reject) => {
             ac.signal.addEventListener(
@@ -243,9 +226,46 @@ describe("executeClaudeCode (async)", () => {
           });
           await abortPromise;
           yield; // unreachable
-        })();
+        })() as unknown as QueryReturn;
+      });
+
+      const promise = executeClaudeCode(
+        { prompt: "Test", advanced: { sessionInitTimeoutMs: 10 } },
+        manager,
+        "/tmp",
+        toolCache
+      );
+      await vi.advanceTimersByTimeAsync(10);
+      const start = await promise;
+      expect(start.status).toBe("error");
+      if (start.status === "error") {
+        expect(start.error).toContain("TIMEOUT");
       }
-    );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should return CANCELLED when the MCP tool call is cancelled before init", async () => {
+    mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
+      const ac = (params.options as unknown as { abortController: AbortController })
+        .abortController;
+      return (async function* () {
+        const abortPromise = new Promise<void>((_resolve, reject) => {
+          ac.signal.addEventListener(
+            "abort",
+            () => {
+              const e = new Error("The operation was aborted");
+              e.name = "AbortError";
+              reject(e);
+            },
+            { once: true }
+          );
+        });
+        await abortPromise;
+        yield; // unreachable
+      })() as unknown as QueryReturn;
+    });
 
     const request = new AbortController();
     const promise = executeClaudeCode(
@@ -259,11 +279,14 @@ describe("executeClaudeCode (async)", () => {
 
     const start = await promise;
     expect(start.status).toBe("error");
-    expect(start.error).toContain("CANCELLED");
+    if (start.status === "error") {
+      expect(start.error).toContain("CANCELLED");
+    }
   });
 
   it("should surface permission requests via SessionManager and continue after finishRequest", async () => {
-    mockQuery.mockImplementation(({ options }: { options: { canUseTool: CanUseTool } }) => {
+    mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
+      const options = params.options as unknown as { canUseTool: CanUseTool };
       return (async function* () {
         yield {
           type: "system",
@@ -309,7 +332,7 @@ describe("executeClaudeCode (async)", () => {
           modelUsage: {},
           permission_denials: [],
         };
-      })();
+      })() as unknown as QueryReturn;
     });
 
     const start = await executeClaudeCode({ prompt: "Test" }, manager, "/tmp", toolCache);
@@ -367,7 +390,7 @@ describe("executeClaudeCodeReply (async)", () => {
           modelUsage: {},
           permission_denials: [],
         };
-      })() as QueryReturn
+      })() as unknown as QueryReturn
     );
 
     const reply = await executeClaudeCodeReply(
@@ -391,7 +414,9 @@ describe("executeClaudeCodeReply (async)", () => {
       toolCache
     );
     expect(res.status).toBe("error");
-    expect(res.error).toContain("SESSION_NOT_FOUND");
+    if (res.status === "error") {
+      expect(res.error).toContain("SESSION_NOT_FOUND");
+    }
   });
 
   it("should disk-resume when enabled and session is missing", async () => {
@@ -416,7 +441,7 @@ describe("executeClaudeCodeReply (async)", () => {
             modelUsage: {},
             permission_denials: [],
           };
-        })() as QueryReturn
+        })() as unknown as QueryReturn
       );
 
       const res = await executeClaudeCodeReply(
@@ -448,7 +473,9 @@ describe("executeClaudeCodeReply (async)", () => {
         toolCache
       );
       expect(res.status).toBe("error");
-      expect(res.error).toContain("PERMISSION_DENIED");
+      if (res.status === "error") {
+        expect(res.error).toContain("PERMISSION_DENIED");
+      }
     } finally {
       vi.unstubAllEnvs();
     }
@@ -468,7 +495,9 @@ describe("executeClaudeCodeReply (async)", () => {
         toolCache
       );
       expect(res.status).toBe("error");
-      expect(res.error).toContain("PERMISSION_DENIED");
+      if (res.status === "error") {
+        expect(res.error).toContain("PERMISSION_DENIED");
+      }
     } finally {
       vi.unstubAllEnvs();
     }
@@ -483,7 +512,9 @@ describe("executeClaudeCodeReply (async)", () => {
       toolCache
     );
     expect(res.status).toBe("error");
-    expect(res.error).toContain("SESSION_BUSY");
+    if (res.status === "error") {
+      expect(res.error).toContain("SESSION_BUSY");
+    }
   });
 
   it("should resume an idle session", async () => {
@@ -508,7 +539,7 @@ describe("executeClaudeCodeReply (async)", () => {
           modelUsage: {},
           permission_denials: [],
         };
-      })() as QueryReturn
+      })() as unknown as QueryReturn
     );
 
     const res = await executeClaudeCodeReply(
@@ -521,8 +552,66 @@ describe("executeClaudeCodeReply (async)", () => {
     expect(manager.get("idle")!.status).toBe("idle");
   });
 
+  it("should pass effort/thinking overrides to query() and persist them on non-fork replies", async () => {
+    manager.create({
+      sessionId: "idle-opts",
+      cwd: "/tmp",
+      permissionMode: "default",
+      effort: "low",
+      thinking: { type: "disabled" },
+    });
+    manager.update("idle-opts", { status: "idle" });
+
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "idle-opts",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn
+    );
+
+    const res = await executeClaudeCodeReply(
+      {
+        sessionId: "idle-opts",
+        prompt: "Hi",
+        effort: "max",
+        thinking: { type: "adaptive" },
+      },
+      manager,
+      toolCache
+    );
+    expect(res.status).toBe("running");
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const call = mockQuery.mock.calls[0]![0] as { options: Record<string, unknown> };
+    expect(call.options.effort).toBe("max");
+    expect(call.options.thinking).toEqual({ type: "adaptive" });
+
+    expect(manager.get("idle-opts")!.effort).toBe("max");
+    expect(manager.get("idle-opts")!.thinking).toEqual({ type: "adaptive" });
+  });
+
   it("should handle fork by returning the new sessionId and keeping the original idle", async () => {
-    manager.create({ sessionId: "orig", cwd: "/tmp" });
+    manager.create({
+      sessionId: "orig",
+      cwd: "/tmp",
+      permissionMode: "default",
+      effort: "low",
+      thinking: { type: "disabled" },
+    });
     manager.update("orig", { status: "idle" });
 
     mockQuery.mockReturnValue(
@@ -560,11 +649,18 @@ describe("executeClaudeCodeReply (async)", () => {
           modelUsage: {},
           permission_denials: [],
         };
-      })() as QueryReturn
+      })() as unknown as QueryReturn
     );
 
     const res = await executeClaudeCodeReply(
-      { sessionId: "orig", prompt: "Hi", forkSession: true, sessionInitTimeoutMs: 1000 },
+      {
+        sessionId: "orig",
+        prompt: "Hi",
+        forkSession: true,
+        sessionInitTimeoutMs: 1000,
+        effort: "max",
+        thinking: { type: "adaptive" },
+      },
       manager,
       toolCache
     );
@@ -572,7 +668,11 @@ describe("executeClaudeCodeReply (async)", () => {
     expect(res.sessionId).toBe("forked");
 
     expect(manager.get("orig")!.status).toBe("idle");
+    expect(manager.get("orig")!.effort).toBe("low");
+    expect(manager.get("orig")!.thinking).toEqual({ type: "disabled" });
     expect(manager.get("forked")).toBeDefined();
+    expect(manager.get("forked")!.effort).toBe("max");
+    expect(manager.get("forked")!.thinking).toEqual({ type: "adaptive" });
 
     await waitUntil(() => manager.get("forked")?.status === "idle");
   });
@@ -616,7 +716,7 @@ describe("executeClaudeCodeReply (async)", () => {
           modelUsage: {},
           permission_denials: [],
         };
-      })() as QueryReturn
+      })() as unknown as QueryReturn
     );
 
     const res = await executeClaudeCodeReply(
@@ -625,6 +725,8 @@ describe("executeClaudeCodeReply (async)", () => {
       toolCache
     );
     expect(res.status).toBe("error");
-    expect(res.error).toContain("INTERNAL");
+    if (res.status === "error") {
+      expect(res.error).toContain("INTERNAL");
+    }
   });
 });

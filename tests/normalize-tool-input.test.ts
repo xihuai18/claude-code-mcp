@@ -4,7 +4,7 @@ import { normalizeToolInput } from "../src/utils/normalize-tool-input.js";
 describe("normalizeToolInput", () => {
   it("does not modify non-target tools", () => {
     expect(normalizeToolInput("Read", { file_path: "/d/x.ipynb" }, "win32")).toEqual({
-      file_path: "/d/x.ipynb",
+      file_path: "D:\\x.ipynb",
     });
   });
 

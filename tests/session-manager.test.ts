@@ -490,5 +490,59 @@ describe("SessionManager", () => {
       expect(finish).toHaveBeenCalledTimes(1);
       expect(finish.mock.calls[0]?.[0]?.behavior).toBe("deny");
     });
+
+    it("should cap pending permissions per session", () => {
+      manager.destroy();
+      manager = new SessionManager({ maxPendingPermissionsPerSession: 2 });
+      manager.create({ sessionId: "cap", cwd: "/tmp" });
+
+      const finish = vi.fn();
+      const ok1 = manager.setPendingPermission(
+        "cap",
+        {
+          requestId: "r1",
+          toolName: "Bash",
+          input: { cmd: "echo 1" },
+          summary: "s1",
+          toolUseID: "tu1",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+      const ok2 = manager.setPendingPermission(
+        "cap",
+        {
+          requestId: "r2",
+          toolName: "Bash",
+          input: { cmd: "echo 2" },
+          summary: "s2",
+          toolUseID: "tu2",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+      const ok3 = manager.setPendingPermission(
+        "cap",
+        {
+          requestId: "r3",
+          toolName: "Bash",
+          input: { cmd: "echo 3" },
+          summary: "s3",
+          toolUseID: "tu3",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+
+      expect(ok1).toBe(true);
+      expect(ok2).toBe(true);
+      expect(ok3).toBe(false);
+      expect(manager.getPendingPermissionCount("cap")).toBe(2);
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(finish.mock.calls[0]?.[0]).toMatchObject({ behavior: "deny" });
+    });
   });
 });
