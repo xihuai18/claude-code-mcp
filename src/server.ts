@@ -175,7 +175,7 @@ export function createServerContext(serverCwd: string): {
         .describe("Init timeout (ms). Default: 10000"),
     })
     .optional()
-    .describe("Low-frequency options. Default: none");
+    .describe("Default: none");
 
   const diskResumeConfigSchema = z
     .object({
@@ -190,7 +190,7 @@ export function createServerContext(serverCwd: string): {
       ...diskResumeOptionFieldsSchemaShape,
     })
     .optional()
-    .describe("Disk resume (needs CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1, resumeToken + cwd)");
+    .describe("Disk resume config. Default: none");
 
   const startResultSchema = z.object({
     sessionId: z.string(),
@@ -322,11 +322,8 @@ export function createServerContext(serverCwd: string): {
   server.registerTool(
     "claude_code_reply",
     {
-      description: `Send a follow-up to an existing session. The agent retains full context. Returns immediately — poll with claude_code_check.
-
-Supports forking (forkSession=true) to branch without modifying the original session.
-
-Disk resume: if the session is gone from memory, set CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1 and pass diskResumeConfig with resumeToken + cwd.`,
+      description:
+        "Send a follow-up to an existing session. Returns immediately; use claude_code_check to poll.",
       inputSchema: {
         sessionId: z.string().describe("Session ID from claude_code"),
         prompt: z.string().describe("Follow-up message"),
@@ -389,11 +386,7 @@ Disk resume: if the session is gone from memory, set CLAUDE_CODE_MCP_ALLOW_DISK_
   server.registerTool(
     "claude_code_session",
     {
-      description: `List, inspect, or cancel sessions.
-
-- list: All sessions with status, cost, turns, settings.
-- get: Full details (pass sessionId). includeSensitive=true for cwd/systemPrompt/agents.
-- cancel: Stop a running session (pass sessionId).`,
+      description: "List, inspect, or cancel sessions.",
       inputSchema: {
         action: z.enum(SESSION_ACTIONS),
         sessionId: z.string().optional().describe("Required for 'get' and 'cancel'"),
@@ -443,11 +436,7 @@ Disk resume: if the session is gone from memory, set CLAUDE_CODE_MCP_ALLOW_DISK_
   server.registerTool(
     "claude_code_check",
     {
-      description: `Poll session events or respond to permission requests.
-
-action="poll" — Get events since last cursor (pass nextCursor from previous poll for incremental updates). Returns events, status, and pending permission requests (in "actions" array). Minimal mode strips verbose fields and filters noisy progress events.
-
-action="respond_permission" — Approve/deny a pending request (pass requestId + decision). Also returns latest poll state, so no separate poll needed.`,
+      description: "Poll session events or respond to permission requests.",
       inputSchema: {
         action: z.enum(CHECK_ACTIONS),
         sessionId: z.string().describe("Target session ID"),

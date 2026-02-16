@@ -130,20 +130,13 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   const categories = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
 
   let desc =
-    "Start a new Claude Code agent session.\n\n" +
-    "Launches an autonomous coding agent that can read/write files, run commands, search code, and more. " +
-    "Returns immediately with a sessionId — poll with claude_code_check for events and results.\n\n" +
+    "Start a Claude Code agent session. Returns immediately with a sessionId.\n\n" +
     "Workflow:\n" +
     '1. claude_code → { sessionId, status: "running", pollInterval }\n' +
     '2. claude_code_check (action="poll") → progress events + final result\n' +
     '3. claude_code_check (action="respond_permission") → approve/deny tool calls\n\n';
 
-  desc +=
-    "Key defaults: settingSources=['user','project','local'] (loads all settings + CLAUDE.md). " +
-    "Permission prompts auto-deny on timeout; check actions[].expiresAt/remainingMs.\n\n";
-  desc +=
-    "Internal tools (use allowedTools/disallowedTools to control; " +
-    "authoritative list via claude_code_check includeTools=true):\n";
+  desc += "Internal tools (authoritative list: claude_code_check pollOptions.includeTools=true):\n";
 
   for (const category of categories) {
     desc += `\n[${category}]\n`;
@@ -153,10 +146,7 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   }
 
   desc +=
-    "\nSecurity: Only allow tools you yourself are authorized to perform. " +
-    "When in doubt, leave allowedTools/disallowedTools empty and review each request via claude_code_check.\n\n";
-  desc +=
-    "allowedTools = auto-approve (no prompts). disallowedTools = permanently block. " +
-    'Unlisted tools pause the session ("waiting_permission") until approved/denied.\n';
+    "\nPermission control: allowedTools auto-approves, disallowedTools always denies. " +
+    "Other tool calls require approval via claude_code_check.\n";
   return desc;
 }
