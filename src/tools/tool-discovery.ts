@@ -130,13 +130,9 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   const categories = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
 
   let desc =
-    "Start a Claude Code agent session. Returns immediately with a sessionId.\n\n" +
-    "Workflow:\n" +
-    '1. claude_code → { sessionId, status: "running", pollInterval }\n' +
-    '2. claude_code_check (action="poll") → progress events + final result\n' +
-    '3. claude_code_check (action="respond_permission") → approve/deny tool calls\n\n';
-
-  desc += "Internal tools (authoritative list: claude_code_check pollOptions.includeTools=true):\n";
+    "Start a Claude Code session and return sessionId.\n" +
+    "Use claude_code_check to poll events/results and handle permissions.\n\n";
+  desc += "Internal tools (authoritative list: includeTools=true in claude_code_check):\n";
 
   for (const category of categories) {
     desc += `\n[${category}]\n`;
@@ -146,7 +142,6 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   }
 
   desc +=
-    "\nPermission control: allowedTools auto-approves, disallowedTools always denies. " +
-    "Other tool calls require approval via claude_code_check.\n";
+    "\nPermission control: allowedTools auto-approves; disallowedTools always denies; others require approval.\n";
   return desc;
 }

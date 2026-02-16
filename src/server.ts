@@ -240,15 +240,12 @@ export function createServerContext(serverCwd: string): {
     {
       description: buildInternalToolsDescription(toolCache.getTools()),
       inputSchema: {
-        prompt: z.string().describe("Task or question"),
+        prompt: z.string().describe("Prompt"),
         cwd: z.string().optional().describe("Working dir. Default: server cwd"),
-        allowedTools: z.array(z.string()).optional().describe("Auto-approved tools. Default: []"),
-        disallowedTools: z
-          .array(z.string())
-          .optional()
-          .describe("Blocked tools (overrides allowedTools). Default: []"),
+        allowedTools: z.array(z.string()).optional().describe("Default: []"),
+        disallowedTools: z.array(z.string()).optional().describe("Default: []"),
         maxTurns: z.number().int().positive().optional().describe("Default: SDK"),
-        model: z.string().optional().describe("Model. Default: SDK"),
+        model: z.string().optional().describe("Default: SDK"),
         effort: effortOptionSchema.describe("Default: SDK"),
         thinking: thinkingOptionSchema.describe("Default: SDK"),
         systemPrompt: systemPromptSchema.optional().describe("Default: SDK"),
@@ -311,9 +308,9 @@ export function createServerContext(serverCwd: string): {
       description:
         "Send a follow-up to an existing session. Returns immediately; use claude_code_check to poll.",
       inputSchema: {
-        sessionId: z.string().describe("Session ID from claude_code"),
-        prompt: z.string().describe("Follow-up message"),
-        forkSession: z.boolean().optional().describe("Fork into new session. Default: false"),
+        sessionId: z.string().describe("Session ID"),
+        prompt: z.string().describe("Prompt"),
+        forkSession: z.boolean().optional().describe("Default: false"),
         effort: effortOptionSchema.describe("Default: SDK"),
         thinking: thinkingOptionSchema.describe("Default: SDK"),
         sessionInitTimeoutMs: z.number().int().positive().optional().describe("Default: 10000"),
@@ -370,11 +367,8 @@ export function createServerContext(serverCwd: string): {
       description: "List, inspect, or cancel sessions.",
       inputSchema: {
         action: z.enum(SESSION_ACTIONS),
-        sessionId: z.string().optional().describe("Required for 'get' and 'cancel'"),
-        includeSensitive: z
-          .boolean()
-          .optional()
-          .describe("Include sensitive fields. Default: false"),
+        sessionId: z.string().optional().describe("Required for get/cancel"),
+        includeSensitive: z.boolean().optional().describe("Default: false"),
       },
       outputSchema: sessionResultSchema,
       annotations: {
@@ -420,20 +414,20 @@ export function createServerContext(serverCwd: string): {
       description: "Poll session events or respond to permission requests.",
       inputSchema: {
         action: z.enum(CHECK_ACTIONS),
-        sessionId: z.string().describe("Target session ID"),
-        cursor: z.number().int().nonnegative().optional().describe("Event offset. Default: 0"),
+        sessionId: z.string().describe("Session ID"),
+        cursor: z.number().int().nonnegative().optional().describe("Default: 0"),
         responseMode: z.enum(CHECK_RESPONSE_MODES).optional().describe("Default: 'minimal'"),
         maxEvents: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Max events. Default: 200 (minimal), unlimited (full)"),
+          .describe("Default: 200 (minimal), unlimited (full)"),
 
-        requestId: z.string().optional().describe("Permission request ID (from actions[])"),
+        requestId: z.string().optional().describe("Permission request ID"),
         decision: z.enum(["allow", "deny"]).optional().describe("Decision"),
         denyMessage: z.string().optional().describe("Default: 'Permission denied by caller'"),
-        interrupt: z.boolean().optional().describe("Halt session on deny. Default: false"),
+        interrupt: z.boolean().optional().describe("Default: false"),
 
         pollOptions: z
           .object({
@@ -457,7 +451,7 @@ export function createServerContext(serverCwd: string): {
               .describe("Default: full=true, minimal=false"),
           })
           .optional()
-          .describe("Override responseMode defaults"),
+          .describe("Default: none"),
 
         permissionOptions: z
           .object({
