@@ -192,4 +192,117 @@ describe("MCP Server", () => {
       await server.close();
     }
   });
+
+  it("keeps MCP tools callable after cancel then poll", async () => {
+    type QueryReturn = ReturnType<typeof query>;
+    mockQuery.mockImplementationOnce((params) => {
+      const ac = (params.options as { abortController?: AbortController }).abortController;
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-cancel-regression",
+          uuid: "u-init-cancel",
+          cwd: "/tmp",
+          tools: ["Read", "Write"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+        await new Promise<void>((resolve) => {
+          if (!ac || ac.signal.aborted) {
+            resolve();
+            return;
+          }
+          ac.signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      })() as unknown as QueryReturn;
+    });
+
+    const parsePayload = (
+      res: Awaited<ReturnType<Client["callTool"]>>
+    ): {
+      sessionId?: string;
+      status?: string;
+      sessions?: Array<{ status?: string }>;
+      [k: string]: unknown;
+    } => {
+      const normalized = res as {
+        structuredContent?: unknown;
+        content?: Array<{ text?: unknown }>;
+      };
+      if (normalized.structuredContent && typeof normalized.structuredContent === "object") {
+        return normalized.structuredContent as {
+          sessionId?: string;
+          status?: string;
+          sessions?: Array<{ status?: string }>;
+          [k: string]: unknown;
+        };
+      }
+      const first = Array.isArray(normalized.content) ? normalized.content[0] : undefined;
+      const text = typeof first?.text === "string" ? first.text : "{}";
+      return JSON.parse(text) as {
+        sessionId?: string;
+        status?: string;
+        sessions?: Array<{ status?: string }>;
+        [k: string]: unknown;
+      };
+    };
+
+    const server = createServer("/tmp");
+    const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const start = parsePayload(
+        await client.callTool({
+          name: "claude_code",
+          arguments: {
+            prompt: "wait for cancellation",
+            maxTurns: 3,
+            advanced: { sessionInitTimeoutMs: 5000 },
+          },
+        })
+      );
+      expect(start.status).toBe("running");
+      expect(start.sessionId).toBe("sess-cancel-regression");
+
+      const cancel = parsePayload(
+        await client.callTool({
+          name: "claude_code_session",
+          arguments: { action: "cancel", sessionId: start.sessionId },
+        })
+      );
+      expect(cancel.sessions?.[0]?.status).toBe("cancelled");
+
+      const polled = parsePayload(
+        await client.callTool({
+          name: "claude_code_check",
+          arguments: { action: "poll", sessionId: start.sessionId, responseMode: "full" },
+        })
+      );
+      expect(polled.status).toBe("cancelled");
+
+      // Regression expectation: after cancel->poll, transport and other tools remain usable.
+      const resources = await client.listResources();
+      expect(resources.resources.length).toBeGreaterThan(0);
+
+      const listed = parsePayload(
+        await client.callTool({ name: "claude_code_session", arguments: { action: "list" } })
+      );
+      expect(Array.isArray(listed.sessions)).toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
 });

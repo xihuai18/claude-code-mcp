@@ -11,7 +11,7 @@ Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sd
 ## Features
 
 - **4 tools** covering the full agent lifecycle: start, continue, check/poll, manage
-- **Read-only MCP resources** for server info and internal tool catalog
+- **Read-only MCP resources** for server info, internal tool catalog, and compatibility diagnostics
 - **Session management** with resume and fork support
 - **Local settings loaded by default** — automatically reads `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`, and `CLAUDE.md` so the agent behaves like your local Claude Code CLI
 - **Async permissions** — allow/deny lists + explicit approvals via `claude_code_check`
@@ -239,6 +239,7 @@ If your MCP client supports resources, this server exposes a couple of **read-on
 - `claude-code-mcp:///server-info` (JSON): server metadata (version/platform/runtime)
 - `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (runtime-aware)
 - `claude-code-mcp:///gotchas` (Markdown): practical limits/gotchas
+- `claude-code-mcp:///compat-report` (JSON): compatibility report (transport/platform assumptions, runtime warnings, guidance)
 
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
 
@@ -273,7 +274,7 @@ Poll session events/results and approve/deny pending permission requests.
 | `permissionOptions` | object  | No                     | Advanced permission response options (see below)                                                               |
 
 <details>
-<summary><code>pollOptions</code> object parameters (9 fine-grained poll controls)</summary>
+<summary><code>pollOptions</code> object parameters (10 fine-grained poll controls)</summary>
 
 | Parameter                             | Type    | Description                                                                                                                                                                             |
 | ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -286,6 +287,7 @@ Poll session events/results and approve/deny pending permission requests.
 | `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: true in full mode, false in minimal mode)                                                                                                   |
 | `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`, `true` in `"full"`                               |
 | `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`, `true` in `"full"`                                          |
+| `pollOptions.maxBytes`                | number  | Approximate max JSON bytes for `events` in this response. When exceeded, events are truncated and `truncatedFields` includes `"events_bytes"`. Default: unlimited                         |
 
 </details>
 
@@ -299,7 +301,7 @@ Poll session events/results and approve/deny pending permission requests.
 
 </details>
 
-**Returns (poll and respond_permission):** `{ sessionId, status, pollInterval?, cursorResetTo?, truncated?, truncatedFields?, events, nextCursor?, availableTools?, actions?, result?, cancelledAt?, cancelledReason?, cancelledSource?, lastEventId?, lastToolUseId? }`
+**Returns (poll and respond_permission):** `{ sessionId, status, pollInterval?, cursorResetTo?, truncated?, truncatedFields?, events, nextCursor?, availableTools?, toolValidation?, compatWarnings?, actions?, result?, cancelledAt?, cancelledReason?, cancelledSource?, lastEventId?, lastToolUseId? }`
 
 Notes:
 
@@ -308,6 +310,8 @@ Notes:
 - If `cursorResetTo` is present, your `cursor` was too old (events were evicted); reset your cursor to `cursorResetTo`.
 - For safety, de-duplicate events by `event.id` on the client side.
 - If `truncated=true`, the server intentionally limited the payload (e.g. `maxEvents`) — continue polling with `nextCursor`.
+- `toolValidation` reports whether configured `allowedTools`/`disallowedTools` match runtime-discovered tool names.
+- `compatWarnings` surfaces compatibility hints (for example, unresolved tool names or path/platform mismatch signals).
 - Permission `actions[]` include `timeoutMs`, `expiresAt`, and best-effort `remainingMs` to help callers avoid auto-deny timeouts.
 - `permission_result` event data is `{ requestId, toolName, behavior, source, message?, interrupt? }` (denial details only present for `deny`).
 - In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy progress events (`tool_progress`, `auth_status`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
@@ -489,6 +493,26 @@ npm run typecheck    # Type check with tsc
 npm test             # Run tests with vitest
 npm run dev          # Watch mode build
 ```
+
+### E2E regression commands
+
+```bash
+# Run cancel->poll regression loop (single mode)
+npm run e2e:stdio:cancel
+
+# Run waiting_permission + cancel regression loop
+npm run e2e:stdio:cancel:wp
+
+# Run both modes and output one summary report
+npm run e2e:stdio:runner
+```
+
+### E2E notes (Codex and other clients)
+
+- Some clients do not expose `tools/list` directly in the chat loop. In those clients, treat "tool is callable" as the primary discovery signal, and use `tools/list` only when available.
+- `allowedTools: ["Read", "Write"]` does not guarantee the model will never attempt `Bash`. For deterministic smoke tests, add `disallowedTools: ["Bash"]` and state "do not use Bash" in the prompt.
+- For `claude_code_session(action="get", includeSensitive=true)`, only assert fields that were actually configured. Optional fields that were never set may be omitted.
+- If a client reports `Transport closed` during E2E cleanup, reconnect the MCP server first, then run `claude_code_session(action="list")` and cancel any remaining `running` / `waiting_permission` sessions.
 
 For an end-to-end local test plan (third-party CLI/client integration + real coding tasks), see `docs/E2E_LOCAL_TEST_PLAN.md`.
 

@@ -10,6 +10,7 @@ import type {
   PermissionDecision,
   PermissionResult,
   PermissionUpdate,
+  SessionInfo,
   SessionEventType,
   SessionStatus,
 } from "../types.js";
@@ -28,6 +29,7 @@ export interface PollOptions {
   includeStructuredOutput?: boolean;
   includeTerminalEvents?: boolean;
   includeProgressEvents?: boolean;
+  maxBytes?: number;
 }
 
 /** Advanced permission response options. */
@@ -150,6 +152,113 @@ function toEvents(
   });
 }
 
+function uniqSorted(values: string[] | undefined): string[] {
+  if (!Array.isArray(values) || values.length === 0) return [];
+  const filtered = values
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  return Array.from(new Set(filtered)).sort((a, b) => a.localeCompare(b));
+}
+
+function detectPathCompatibilityWarnings(session: SessionInfo | undefined): string[] {
+  if (!session) return [];
+  const cwd = session.cwd;
+  if (typeof cwd !== "string" || cwd.trim() === "") return [];
+
+  const warnings: string[] = [];
+  if (process.platform === "win32" && cwd.startsWith("/") && !cwd.startsWith("//")) {
+    warnings.push(
+      `cwd '${cwd}' looks POSIX-style on Windows. Consider using a Windows path (e.g. C:\\\\repo) to avoid path compatibility issues.`
+    );
+  }
+  if (process.platform !== "win32" && /^[a-zA-Z]:[\\/]/.test(cwd)) {
+    warnings.push(
+      `cwd '${cwd}' looks Windows-style on ${process.platform}. This may indicate cross-platform path mismatch (for example WSL boundary).`
+    );
+  }
+  if (process.platform !== "win32" && cwd.startsWith("\\\\")) {
+    warnings.push(
+      `cwd '${cwd}' looks like a Windows UNC path on ${process.platform}. Confirm MCP client/server run on the same platform.`
+    );
+  }
+  return warnings;
+}
+
+function computeToolValidation(
+  session: SessionInfo | undefined,
+  initTools: string[] | undefined
+): { summary?: CheckResult["toolValidation"]; warnings: string[] } {
+  if (!session) return { summary: undefined, warnings: [] };
+  const allowedTools = uniqSorted(session.allowedTools);
+  const disallowedTools = uniqSorted(session.disallowedTools);
+  if (allowedTools.length === 0 && disallowedTools.length === 0) {
+    return { summary: undefined, warnings: [] };
+  }
+
+  if (!Array.isArray(initTools) || initTools.length === 0) {
+    return {
+      summary: {
+        runtimeToolsKnown: false,
+        unknownAllowedTools: [],
+        unknownDisallowedTools: [],
+      },
+      warnings: [
+        "Runtime tool list is not available yet; unknown allowedTools/disallowedTools names cannot be validated until system/init tools arrive.",
+      ],
+    };
+  }
+
+  const runtime = new Set(
+    initTools
+      .filter((name): name is string => typeof name === "string")
+      .map((name) => name.trim())
+      .filter(Boolean)
+  );
+  const unknownAllowedTools = allowedTools.filter((name) => !runtime.has(name));
+  const unknownDisallowedTools = disallowedTools.filter((name) => !runtime.has(name));
+  const warnings: string[] = [];
+  if (unknownAllowedTools.length > 0) {
+    warnings.push(
+      `Unknown allowedTools (not present in runtime tools): ${unknownAllowedTools.join(", ")}.`
+    );
+  }
+  if (unknownDisallowedTools.length > 0) {
+    warnings.push(
+      `Unknown disallowedTools (not present in runtime tools): ${unknownDisallowedTools.join(", ")}.`
+    );
+  }
+  return {
+    summary: {
+      runtimeToolsKnown: true,
+      unknownAllowedTools,
+      unknownDisallowedTools,
+    },
+    warnings,
+  };
+}
+
+function byteLength(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+function capEventsByBytes<T>(events: T[], maxBytes?: number): { events: T[]; truncated: boolean } {
+  if (!Number.isFinite(maxBytes) || typeof maxBytes !== "number" || maxBytes <= 0) {
+    return { events, truncated: false };
+  }
+  const budget = Math.floor(maxBytes);
+  const kept: T[] = [];
+  let bytes = 2; // "[]"
+  for (const evt of events) {
+    const evtBytes = byteLength(evt);
+    const separatorBytes = kept.length === 0 ? 0 : 1; // ","
+    if (bytes + separatorBytes + evtBytes > budget) break;
+    kept.push(evt);
+    bytes += separatorBytes + evtBytes;
+  }
+  return { events: kept, truncated: kept.length < events.length };
+}
+
 function buildResult(
   sessionManager: SessionManager,
   toolCache: ToolDiscoveryCache | undefined,
@@ -166,6 +275,7 @@ function buildResult(
   const includeStructuredOutput = po.includeStructuredOutput ?? responseMode === "full";
   const includeTerminalEvents = po.includeTerminalEvents ?? responseMode === "full";
   const includeProgressEvents = po.includeProgressEvents ?? responseMode === "full";
+  const maxBytes = po.maxBytes;
   const maxEvents = input.maxEvents ?? (responseMode === "minimal" ? 200 : undefined);
 
   const sessionId = input.sessionId;
@@ -186,7 +296,7 @@ function buildResult(
     maxEvents !== undefined && rawEvents.length > maxEvents
       ? rawEvents.slice(0, maxEvents)
       : rawEvents;
-  const nextCursor =
+  let nextCursor =
     maxEvents !== undefined && rawEvents.length > maxEvents
       ? windowEvents.length > 0
         ? windowEvents[windowEvents.length - 1].id + 1
@@ -225,8 +335,28 @@ function buildResult(
   const stored =
     status === "idle" || status === "error" ? sessionManager.getResult(sessionId) : undefined;
 
-  const initTools = includeTools ? sessionManager.getInitTools(sessionId) : undefined;
+  const initTools = sessionManager.getInitTools(sessionId);
   const availableTools = includeTools && initTools ? discoverToolsFromInit(initTools) : undefined;
+  const toolValidation = computeToolValidation(session, initTools);
+  const compatWarnings = Array.from(
+    new Set([...toolValidation.warnings, ...detectPathCompatibilityWarnings(session)])
+  );
+
+  const shapedEvents = toEvents(outputEvents, {
+    includeUsage,
+    includeModelUsage,
+    includeStructuredOutput,
+    slim: responseMode === "minimal",
+  });
+  const cappedEvents = capEventsByBytes(shapedEvents, maxBytes);
+  if (cappedEvents.truncated) {
+    truncated = true;
+    truncatedFields.push("events_bytes");
+    nextCursor =
+      cappedEvents.events.length > 0
+        ? cappedEvents.events[cappedEvents.events.length - 1].id + 1
+        : (cursorResetTo ?? input.cursor ?? 0);
+  }
 
   return {
     sessionId,
@@ -235,14 +365,11 @@ function buildResult(
     cursorResetTo,
     truncated: truncated ? true : undefined,
     truncatedFields: truncatedFields.length > 0 ? truncatedFields : undefined,
-    events: toEvents(outputEvents, {
-      includeUsage,
-      includeModelUsage,
-      includeStructuredOutput,
-      slim: responseMode === "minimal",
-    }),
+    events: cappedEvents.events,
     nextCursor,
     availableTools,
+    toolValidation: toolValidation.summary,
+    compatWarnings: compatWarnings.length > 0 ? compatWarnings : undefined,
     actions:
       includeActions && status === "waiting_permission"
         ? pending.map((req) => {

@@ -46,6 +46,7 @@ describe("Resources", () => {
       const uris = await safeListResources(client);
       expect(uris.sort()).toEqual(
         [
+          "claude-code-mcp:///compat-report",
           "claude-code-mcp:///gotchas",
           "claude-code-mcp:///internal-tools",
           "claude-code-mcp:///server-info",
@@ -70,6 +71,7 @@ describe("Resources", () => {
       expect(Array.isArray(info.resources)).toBe(true);
       expect((info.resources as string[]).slice().sort()).toEqual(
         [
+          "claude-code-mcp:///compat-report",
           "claude-code-mcp:///server-info",
           "claude-code-mcp:///internal-tools",
           "claude-code-mcp:///gotchas",
@@ -96,6 +98,20 @@ describe("Resources", () => {
           ? gotchasContent.text
           : "";
       expect(gotchasText).toContain("gotchas");
+
+      const compatRes = await client.readResource({ uri: "claude-code-mcp:///compat-report" });
+      expect(compatRes.contents[0]?.mimeType).toBe("application/json");
+      const compatContent = compatRes.contents[0];
+      const compatText =
+        compatContent && "text" in compatContent && typeof compatContent.text === "string"
+          ? compatContent.text
+          : "{}";
+      const compat = JSON.parse(compatText) as {
+        samePlatformRequired?: unknown;
+        transport?: unknown;
+      };
+      expect(compat.samePlatformRequired).toBe(true);
+      expect(compat.transport).toBe("stdio");
     });
   });
 

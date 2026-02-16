@@ -8,6 +8,7 @@ export const RESOURCE_URIS = {
   serverInfo: `${RESOURCE_SCHEME}:///server-info`,
   internalTools: `${RESOURCE_SCHEME}:///internal-tools`,
   gotchas: `${RESOURCE_SCHEME}:///gotchas`,
+  compatReport: `${RESOURCE_SCHEME}:///compat-report`,
 } as const;
 
 function asTextResource(uri: URL, text: string, mimeType: string): ReadResourceResult {
@@ -97,5 +98,55 @@ export function registerResources(
         ].join("\n"),
         "text/markdown"
       )
+  );
+
+  const compatReportUri = new URL(RESOURCE_URIS.compatReport);
+  server.registerResource(
+    "compat_report",
+    compatReportUri.toString(),
+    {
+      title: "Compatibility Report",
+      description: "Compatibility diagnostics for MCP clients and local runtime assumptions.",
+      mimeType: "application/json",
+    },
+    () => {
+      const runtimeWarnings: string[] = [];
+      if (process.platform === "win32" && !process.env.CLAUDE_CODE_GIT_BASH_PATH) {
+        runtimeWarnings.push(
+          "CLAUDE_CODE_GIT_BASH_PATH is not set. Auto-detection exists, but explicit path is more reliable for GUI-launched MCP clients."
+        );
+      }
+      return asTextResource(
+        compatReportUri,
+        JSON.stringify(
+          {
+            transport: "stdio",
+            samePlatformRequired: true,
+            runtime: {
+              node: process.version,
+              platform: process.platform,
+              arch: process.arch,
+            },
+            features: {
+              resources: true,
+              toolsListChanged: true,
+              resourcesListChanged: true,
+              prompts: false,
+              completions: false,
+            },
+            guidance: [
+              "Some clients cache tool descriptions at connect time. Prefer claude_code_check(pollOptions.includeTools=true) for runtime-authoritative tool lists.",
+              "Use allowedTools/disallowedTools only with exact runtime tool names.",
+              "This server assumes MCP client and server run on the same machine/platform.",
+            ],
+            toolCatalogCount: deps.toolCache.getTools().length,
+            runtimeWarnings,
+          },
+          null,
+          2
+        ),
+        "application/json"
+      );
+    }
   );
 }

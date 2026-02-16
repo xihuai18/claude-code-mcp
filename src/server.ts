@@ -226,6 +226,14 @@ export function createServerContext(serverCwd: string): {
       events: z.array(checkEventSchema),
       nextCursor: z.number().optional(),
       availableTools: z.array(z.record(z.string(), z.unknown())).optional(),
+      toolValidation: z
+        .object({
+          runtimeToolsKnown: z.boolean(),
+          unknownAllowedTools: z.array(z.string()),
+          unknownDisallowedTools: z.array(z.string()),
+        })
+        .optional(),
+      compatWarnings: z.array(z.string()).optional(),
       actions: z.array(checkActionSchema).optional(),
       result: z.unknown().optional(),
       cancelledAt: z.string().optional(),
@@ -468,6 +476,7 @@ export function createServerContext(serverCwd: string): {
               .boolean()
               .optional()
               .describe("Default: full=true, minimal=false"),
+            maxBytes: z.number().int().positive().optional().describe("Default: unlimited"),
           })
           .optional()
           .describe("Default: none"),

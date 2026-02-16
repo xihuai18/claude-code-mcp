@@ -245,7 +245,10 @@ export class SessionManager {
     if (info.status === "waiting_permission") {
       this.finishAllPending(
         sessionId,
-        { behavior: "deny", message: "Session cancelled", interrupt: true },
+        // `cancel()` already aborts the running query below. Avoid sending an additional
+        // interrupt=true control response while the stream is being torn down, which can race
+        // into SDK-level "Operation aborted" write errors on stdio clients.
+        { behavior: "deny", message: "Session cancelled", interrupt: false },
         "cancel"
       );
     }

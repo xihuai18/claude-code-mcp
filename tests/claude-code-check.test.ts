@@ -430,4 +430,94 @@ describe("executeClaudeCodeCheck", () => {
     expect(second.events.length).toBeGreaterThan(0);
     expect(second.events.some((e) => (e.data as { idx?: number }).idx === 0)).toBe(false);
   });
+
+  it("returns tool validation diagnostics against runtime tools", () => {
+    manager.create({
+      sessionId: "s-tool-validate",
+      cwd: "/tmp",
+      allowedTools: ["Read", "NoSuchTool"],
+      disallowedTools: ["Write", "MissingDenyTool"],
+    });
+    manager.setInitTools("s-tool-validate", ["Read", "Write", "Grep"]);
+    manager.update("s-tool-validate", { status: "idle" });
+
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-tool-validate" },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.toolValidation).toEqual({
+      runtimeToolsKnown: true,
+      unknownAllowedTools: ["NoSuchTool"],
+      unknownDisallowedTools: ["MissingDenyTool"],
+    });
+    expect(polled.compatWarnings).toContain(
+      "Unknown allowedTools (not present in runtime tools): NoSuchTool."
+    );
+    expect(polled.compatWarnings).toContain(
+      "Unknown disallowedTools (not present in runtime tools): MissingDenyTool."
+    );
+  });
+
+  it("marks tool validation as deferred when runtime tools are not available yet", () => {
+    manager.create({
+      sessionId: "s-tool-unknown",
+      cwd: "/tmp",
+      allowedTools: ["Read"],
+    });
+    manager.update("s-tool-unknown", { status: "running" });
+
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-tool-unknown" },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.toolValidation).toEqual({
+      runtimeToolsKnown: false,
+      unknownAllowedTools: [],
+      unknownDisallowedTools: [],
+    });
+    expect(polled.compatWarnings).toContain(
+      "Runtime tool list is not available yet; unknown allowedTools/disallowedTools names cannot be validated until system/init tools arrive."
+    );
+  });
+
+  it("supports pollOptions.maxBytes to cap events payload size", () => {
+    manager.create({ sessionId: "s-max-bytes", cwd: "/tmp" });
+    for (let i = 0; i < 10; i++) {
+      manager.pushEvent("s-max-bytes", {
+        type: "progress",
+        data: { type: "status", idx: i, payload: "x".repeat(80) },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-max-bytes", pollOptions: { maxBytes: 220 } },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.truncated).toBe(true);
+    expect(polled.truncatedFields).toContain("events_bytes");
+    expect(polled.events.length).toBeLessThan(10);
+    expect(polled.events.length).toBeGreaterThanOrEqual(0);
+    expect(typeof polled.nextCursor).toBe("number");
+
+    const second = executeClaudeCodeCheck(
+      {
+        action: "poll",
+        sessionId: "s-max-bytes",
+        cursor: polled.nextCursor,
+        pollOptions: { maxBytes: 220 },
+      },
+      manager,
+      toolCache
+    ) as CheckResult;
+    // nextCursor should not skip unseen events when maxBytes truncation occurs.
+    expect(second.events.length).toBeGreaterThanOrEqual(0);
+    expect(second.events.some((e) => (e.data as { idx?: number }).idx === 0)).toBe(false);
+  });
 });

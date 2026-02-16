@@ -146,7 +146,7 @@
 | `permissionOptions` | object | 否 | 高级权限响应选项（见下方折叠表） |
 
 <details>
-<summary><code>pollOptions</code> 对象参数（9 个细粒度 poll 控制）</summary>
+<summary><code>pollOptions</code> 对象参数（10 个细粒度 poll 控制）</summary>
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -159,6 +159,7 @@
 | `pollOptions.includeStructuredOutput` | boolean | 包含 result.structuredOutput（full=true, minimal=false） |
 | `pollOptions.includeTerminalEvents` | boolean | 包含终端 result/error 事件（full=true, minimal=false） |
 | `pollOptions.includeProgressEvents` | boolean | 包含进度事件 tool_progress/auth_status（full=true, minimal=false） |
+| `pollOptions.maxBytes` | number | 单次返回 events 的近似 JSON 字节上限；超出时截断并在 `truncatedFields` 标记 `events_bytes` |
 
 </details>
 
@@ -172,7 +173,7 @@
 
 </details>
 
-**返回值**：统一事件流结构 `{ sessionId, status, pollInterval?, cursorResetTo?, events, nextCursor?, actions?, availableTools?, result? }`。
+**返回值**：统一事件流结构 `{ sessionId, status, pollInterval?, cursorResetTo?, truncated?, truncatedFields?, events, nextCursor?, availableTools?, toolValidation?, compatWarnings?, actions?, result? }`。
 
 > minimal 模式（默认）下：assistant 消息精简（去除 usage/model/id/cache_control）；过滤 tool_progress/auth_status 进度事件；省略 lastEventId/lastToolUseId；AgentResult 省略 durationApiMs/sessionTotalTurns/sessionTotalCostUsd。使用 `responseMode: "full"` 或单独的 `include*` 标志可恢复。
 >

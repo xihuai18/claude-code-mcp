@@ -282,6 +282,12 @@ export interface CheckResult {
   }>;
   nextCursor?: number;
   availableTools?: ToolInfo[];
+  toolValidation?: {
+    runtimeToolsKnown: boolean;
+    unknownAllowedTools: string[];
+    unknownDisallowedTools: string[];
+  };
+  compatWarnings?: string[];
   actions?: Array<{
     type: "permission";
     requestId: string;

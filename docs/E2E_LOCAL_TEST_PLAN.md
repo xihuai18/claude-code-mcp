@@ -95,6 +95,8 @@
 - `nextCursor`
 - `cursorResetTo`
 - `truncated`
+- `toolValidation`
+- `compatWarnings`
 
 ---
 
@@ -109,14 +111,15 @@
 给模型的指令模板：
 
 ```text
-请先调用 tools/list，确认存在 4 个工具：claude_code、claude_code_reply、claude_code_check、claude_code_session。
-然后调用 resources/list，并至少读取一个资源（建议 claude-code-mcp:///server-info）。
+请先通过客户端工具注册表或可调用性确认 4 个工具：claude_code、claude_code_reply、claude_code_check、claude_code_session。
+如果客户端支持 tools/list，再调用 tools/list 做二次确认。
+然后调用 resources/list，并至少读取一个资源（建议 claude-code-mcp:///server-info 和 claude-code-mcp:///compat-report）。
 请输出你读到的关键字段。
 ```
 
 通过判据：
 
-1. `tools/list` 能看到 4 个工具。
+1. 能确认 4 个工具都可调用（可通过客户端工具注册表、直接调用、或 tools/list）。
 2. `resources/read` 成功返回内容。
 
 失败恢复：
@@ -133,7 +136,9 @@
 - `cwd`: 指向独立测试工作目录
 - `maxTurns`: `6`
 - `advanced.maxBudgetUsd`: `0.2`
-- `allowedTools`: `["Read", "Write"]`（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
+- `allowedTools`: `["Read", "Write"]`
+- `disallowedTools`: `["Bash"]`（避免模型偏向调用 Bash 导致额外权限请求）
+- prompt 中明确要求“不要调用 Bash”（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
 
 给模型的任务 prompt 示例：
 
@@ -206,7 +211,7 @@
 
 1. `list` 返回会话列表。
 2. `get(includeSensitive=false)` 不泄露敏感字段。
-3. `get(includeSensitive=true)` 可看到 `cwd/systemPrompt/agents/additionalDirectories`（仍不应暴露 `env/mcpServers/sandbox` 等敏感内容）。
+3. `get(includeSensitive=true)` 对已设置字段可见；未设置字段可不存在（仍不应暴露 `env/mcpServers/sandbox` 等敏感内容）。
 4. `cancel` 后状态进入 `cancelled`。
 
 失败恢复：
@@ -255,6 +260,7 @@
 对所有 status 为 running 或 waiting_permission 的 session，逐个调用 action=cancel。
 然后对每个被取消 session 再做一次 poll，确认终态。
 最后再调用一次 claude_code_session action=list，确认已无 running/waiting_permission。
+如果过程中出现 Transport closed，请先重连 MCP server，再继续执行 list/cancel/poll 清理。
 ```
 
 通过判据：
@@ -317,6 +323,10 @@
    - 严格按 `nextCursor` 递增；遇 `cursorResetTo` 立即重置。
 5. 结果缺少关键信息。
    - 用 `claude_code_check` 的 `responseMode=full` 再读取终态信息。
+6. 出现 `Transport closed`。
+   - 先重连 MCP server，再优先执行 `claude_code_session(action=list)`。
+   - 对 `running/waiting_permission` 会话继续做 `cancel + poll` 清理。
+   - 在报告中记录 `transport_health` 与是否完成重连后的清理验收。
 
 ---
 
@@ -361,8 +371,9 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 #### 模板 1：先发现工具与资源
 
 ```text
-请先调用 tools/list，确认 claude_code、claude_code_reply、claude_code_check、claude_code_session 四个工具都可见。
-然后调用 resources/list 并读取 claude-code-mcp:///server-info。
+请先通过客户端工具注册表或可调用性确认 claude_code、claude_code_reply、claude_code_check、claude_code_session 四个工具。
+如果客户端支持 tools/list，再调用 tools/list 做二次确认。
+然后调用 resources/list，并读取 claude-code-mcp:///server-info 与 claude-code-mcp:///compat-report。
 输出关键字段和你的结论。
 ```
 
