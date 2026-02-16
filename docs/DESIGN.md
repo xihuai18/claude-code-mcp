@@ -29,6 +29,7 @@
 | `model`           | string   | 否   | 模型选择                                                    |
 | `systemPrompt`    | string / object | 否 | 自定义系统提示 (字符串或 preset 对象)                       |
 | `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000 |
+| `sessionInitTimeoutMs` | number | 否 | `advanced.sessionInitTimeoutMs` 的兼容别名（不推荐在 `claude_code` 中作为主配置） |
 | `advanced`        | object   | 否   | 低频高级参数（见下方折叠表）                                |
 
 <details>
@@ -38,7 +39,7 @@
 | --- | --- | --- |
 | `advanced.tools` | string[] / object | 可用工具集 (工具名数组或 preset) |
 | `advanced.persistSession` | boolean | 是否将会话历史持久化到磁盘（`~/.claude/projects/`，默认 true；设为 false 可禁用） |
-| `advanced.sessionInitTimeoutMs` | number | 等待 `system/init` 的超时 (毫秒)，默认 10000 |
+| `advanced.sessionInitTimeoutMs` | number | 等待 `system/init` 的超时 (毫秒)，默认 10000（`claude_code` 推荐配置位置） |
 | `advanced.agents` | object | 子 Agent 定义 |
 | `advanced.agent` | string | 主线程 agent 名称（应用自定义 agent 系统提示、工具限制和模型） |
 | `advanced.maxBudgetUsd` | number | 最大费用限制 (USD) |
@@ -178,6 +179,12 @@
 > minimal 模式（默认）下：assistant 消息精简（去除 usage/model/id/cache_control）；过滤 tool_progress/auth_status 进度事件；省略 lastEventId/lastToolUseId；AgentResult 省略 durationApiMs/sessionTotalTurns/sessionTotalCostUsd。使用 `responseMode: "full"` 或单独的 `include*` 标志可恢复。
 >
 > 权限请求 `actions[]` 会包含 `timeoutMs` / `expiresAt` / `remainingMs`（尽力计算）用于调用方展示倒计时；到期后会自动 deny。
+>
+> `compatWarnings` 属于兼容性提示（warning），默认不阻断会话执行（例如 unknown allowed/disallowed tool 名称）。
+>
+> `events=[]` 且 `nextCursor` 不变可能是正常瞬态空轮询；建议按同一 cursor 重试最多 3 次后再判定异常。
+>
+> Windows 场景下，若权限请求中出现 `/home/user/...` 路径，建议改用当前 `cwd` 下的绝对 Windows 路径（如 `C:\\repo\\...`），以减少越界权限请求。
 
 ## 3. 架构
 

@@ -41,6 +41,7 @@
 5. 为防跑飞，建议每次 `claude_code` 使用：
    - `maxTurns: 6-12`
    - `advanced.maxBudgetUsd: 0.2-1.0`
+   - `advanced.sessionInitTimeoutMs: 10000-20000`（`claude_code` 推荐位置；不要依赖顶层 `sessionInitTimeoutMs`）
 6. 权限循环准备：
    - 明确如何记录 `requestId` 与预期决策（allow/deny）。
    - 明确权限请求默认超时 `permissionRequestTimeoutMs=60000`，到期会自动 deny。
@@ -84,6 +85,7 @@
 - 后续 poll 始终带上上次返回的 `nextCursor`。
 - 如果返回 `cursorResetTo`，立即重置本地 cursor 并继续。
 - 如果某轮未返回 `nextCursor`，用上次成功 cursor 重试 1 次并写入日志。
+- 如果出现 `nextCursor` 不变且 `events` 为空，允许按同一 cursor 重试最多 3 次；超过上限再标记 `poll_stall_suspected`。
 - 如果 `status=waiting_permission`，必须处理 `actions[]`，禁止无限 poll。
 
 关键观测字段（每轮都要记录）：
@@ -136,8 +138,10 @@
 - `cwd`: 指向独立测试工作目录
 - `maxTurns`: `6`
 - `advanced.maxBudgetUsd`: `0.2`
+- `advanced.sessionInitTimeoutMs`: `15000`（`claude_code` 的推荐写法）
 - `allowedTools`: `["Read", "Write"]`
 - `disallowedTools`: `["Bash"]`（避免模型偏向调用 Bash 导致额外权限请求）
+- 不建议使用顶层 `sessionInitTimeoutMs` 作为主配置（该字段仅用于兼容，优先使用 `advanced.sessionInitTimeoutMs`）
 - prompt 中明确要求“不要调用 Bash”（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
 
 给模型的任务 prompt 示例：
@@ -158,6 +162,7 @@
 1. 若长期停在 `running`，检查是否遗漏 cursor 更新。
 2. 若停在 `waiting_permission`，立即处理 `actions[]`。
 3. 若 `error`，记录 `result.errorSubtype` 和关键 event。
+4. 若出现 `Unknown disallowedTools`，归类为 `compat warning`（非阻断）；仅在闭环失败时判定为 failed。
 
 ### 5.3 用例 C：权限闭环（allow 与 deny）
 
@@ -179,6 +184,7 @@
 如果出现第二个 requestId，再执行 deny（interrupt=false）。
 每次 respond_permission 后，请确认 events 里出现 permission_result。
 如果请求快过期（默认 60000ms），优先处理剩余时间最短的 requestId。
+在 Windows 上，优先使用当前 cwd 下的绝对 Windows 路径（如 `C:\\repo\\...`），避免使用 `/home/user/...`。
 随后继续 poll 到终态，并汇报 permission_result 事件。
 ```
 
@@ -233,6 +239,7 @@
 ```text
 目标：让本目录测试命令通过。
 先运行测试复现失败；再定位根因并做最小修复；最后再次运行测试确认通过。
+Windows 场景请优先使用当前 cwd 下的绝对 Windows 路径，避免 `/home/user/...` 风格路径。
 不要做无关重构。
 输出：失败原因、修改点、复测结果。
 ```
@@ -384,6 +391,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 随后持续调用 claude_code_check(action=poll) 直到终态。
 每次轮询都要打印 status、nextCursor、actions 数量。
 如果返回 cursorResetTo，请先重置 cursor 再继续 poll。
+如果出现 nextCursor 不变且 events 为空，按同一 cursor 重试最多 3 次，再记录为疑似异常。
 终态时输出 result。
 ```
 
@@ -394,6 +402,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 请读取 actions[] 中的 requestId，并调用 claude_code_check(action=respond_permission, requestId=..., decision=...)。
 先执行一次 allow；若后续还有请求，再执行一次 deny(interrupt=false)。
 每次 respond_permission 后确认 permission_result；如临近超时（默认 60000ms）优先处理剩余时间最短的请求。
+Windows 场景优先使用当前 cwd 下的绝对 Windows 路径，不要使用 `/home/user/...` 路径。
 然后继续 poll 到终态，并说明 permission_result。
 ```
 

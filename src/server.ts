@@ -184,6 +184,7 @@ export function createServerContext(serverCwd: string): {
       status: z.enum(["running", "error"]),
       pollInterval: z.number().optional(),
       resumeToken: z.string().optional(),
+      compatWarnings: z.array(z.string()).optional(),
       error: z.string().optional(),
     })
     .passthrough();
@@ -267,6 +268,12 @@ export function createServerContext(serverCwd: string): {
           .positive()
           .optional()
           .describe("Default: 60000"),
+        sessionInitTimeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Deprecated, use advanced.sessionInitTimeoutMs. Default: 10000"),
         advanced: advancedOptionsSchema,
       },
       outputSchema: startResultSchema,

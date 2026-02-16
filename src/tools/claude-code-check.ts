@@ -8,6 +8,7 @@ import type {
   CheckResult,
   CheckResponseMode,
   PermissionDecision,
+  PermissionRequestRecord,
   PermissionResult,
   PermissionUpdate,
   SessionInfo,
@@ -185,6 +186,36 @@ function detectPathCompatibilityWarnings(session: SessionInfo | undefined): stri
   return warnings;
 }
 
+function isPosixHomePath(value: string): boolean {
+  return /^\/home\/[^/]+(?:\/|$)/.test(value);
+}
+
+function detectPendingPermissionPathWarnings(
+  pending: PermissionRequestRecord[],
+  session: SessionInfo | undefined
+): string[] {
+  if (process.platform !== "win32" || pending.length === 0) return [];
+
+  const cwd = session?.cwd;
+  const cwdHint =
+    typeof cwd === "string" && cwd.trim() !== "" ? ` under cwd '${cwd}'` : " under the current cwd";
+
+  const warnings: string[] = [];
+  for (const req of pending) {
+    const candidates: string[] = [];
+    if (typeof req.blockedPath === "string") candidates.push(req.blockedPath);
+    const filePath = req.input.file_path;
+    if (typeof filePath === "string") candidates.push(filePath);
+
+    const badPath = candidates.find((p) => isPosixHomePath(p));
+    if (!badPath) continue;
+    warnings.push(
+      `Permission request '${req.requestId}' uses POSIX home path '${badPath}' on Windows. Prefer an absolute Windows path${cwdHint} to avoid out-of-bounds permission prompts.`
+    );
+  }
+  return warnings;
+}
+
 function computeToolValidation(
   session: SessionInfo | undefined,
   initTools: string[] | undefined
@@ -339,7 +370,11 @@ function buildResult(
   const availableTools = includeTools && initTools ? discoverToolsFromInit(initTools) : undefined;
   const toolValidation = computeToolValidation(session, initTools);
   const compatWarnings = Array.from(
-    new Set([...toolValidation.warnings, ...detectPathCompatibilityWarnings(session)])
+    new Set([
+      ...toolValidation.warnings,
+      ...detectPathCompatibilityWarnings(session),
+      ...detectPendingPermissionPathWarnings(pending, session),
+    ])
   );
 
   const shapedEvents = toEvents(outputEvents, {

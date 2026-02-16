@@ -66,6 +66,8 @@ export interface ClaudeCodeInput {
   systemPrompt?: string | { type: "preset"; preset: "claude_code"; append?: string };
   /** Timeout waiting for permission decision (default 60000ms) */
   permissionRequestTimeoutMs?: number;
+  /** @deprecated Use `advanced.sessionInitTimeoutMs` instead. */
+  sessionInitTimeoutMs?: number;
   /** Low-frequency SDK options. All fields are optional and have sensible defaults. */
   advanced?: ClaudeCodeAdvancedOptions;
 }
@@ -103,7 +105,22 @@ export async function executeClaudeCode(
   const adv = input.advanced ?? {};
 
   const permissionRequestTimeoutMs = input.permissionRequestTimeoutMs ?? 60_000;
-  const sessionInitTimeoutMs = adv.sessionInitTimeoutMs ?? 10_000;
+  const sessionInitTimeoutMs = adv.sessionInitTimeoutMs ?? input.sessionInitTimeoutMs ?? 10_000;
+  const compatWarnings: string[] = [];
+  if (input.sessionInitTimeoutMs !== undefined) {
+    compatWarnings.push(
+      "Top-level sessionInitTimeoutMs for claude_code is a compatibility alias; prefer advanced.sessionInitTimeoutMs."
+    );
+  }
+  if (
+    input.sessionInitTimeoutMs !== undefined &&
+    adv.sessionInitTimeoutMs !== undefined &&
+    input.sessionInitTimeoutMs !== adv.sessionInitTimeoutMs
+  ) {
+    compatWarnings.push(
+      `Both advanced.sessionInitTimeoutMs (${adv.sessionInitTimeoutMs}) and top-level sessionInitTimeoutMs (${input.sessionInitTimeoutMs}) were provided; using advanced.sessionInitTimeoutMs.`
+    );
+  }
 
   // Flatten top-level + advanced into a single object for buildOptions / sessionManager.
   const flat = {
@@ -165,6 +182,7 @@ export async function executeClaudeCode(
       status: "running",
       pollInterval: 3000,
       resumeToken: resumeSecret ? computeResumeToken(sessionId, resumeSecret) : undefined,
+      compatWarnings: compatWarnings.length > 0 ? compatWarnings : undefined,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

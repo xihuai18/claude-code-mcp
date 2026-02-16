@@ -261,6 +261,7 @@ export interface SessionStartResult {
   status: "running";
   pollInterval: number;
   resumeToken?: string;
+  compatWarnings?: string[];
 }
 
 export type StoredAgentResult =

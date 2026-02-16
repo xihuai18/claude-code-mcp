@@ -431,6 +431,27 @@ describe("executeClaudeCodeCheck", () => {
     expect(second.events.some((e) => (e.data as { idx?: number }).idx === 0)).toBe(false);
   });
 
+  it("keeps nextCursor unchanged when no new events are available", () => {
+    manager.create({ sessionId: "s-empty", cwd: "/tmp" });
+    manager.update("s-empty", { status: "running" });
+
+    const first = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-empty", cursor: 0 },
+      manager,
+      toolCache
+    ) as CheckResult;
+    expect(first.events).toHaveLength(0);
+    expect(first.nextCursor).toBe(0);
+
+    const second = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-empty", cursor: first.nextCursor },
+      manager,
+      toolCache
+    ) as CheckResult;
+    expect(second.events).toHaveLength(0);
+    expect(second.nextCursor).toBe(first.nextCursor);
+  });
+
   it("returns tool validation diagnostics against runtime tools", () => {
     manager.create({
       sessionId: "s-tool-validate",
@@ -482,6 +503,45 @@ describe("executeClaudeCodeCheck", () => {
     expect(polled.compatWarnings).toContain(
       "Runtime tool list is not available yet; unknown allowedTools/disallowedTools names cannot be validated until system/init tools arrive."
     );
+  });
+
+  it("warns for POSIX home paths in pending permission requests on Windows", () => {
+    const platformDesc = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "win32" });
+    try {
+      manager.create({ sessionId: "s-win-path", cwd: "D:\\repo" });
+      manager.setPendingPermission(
+        "s-win-path",
+        {
+          requestId: "r-home",
+          toolName: "Write",
+          input: { file_path: "/home/user/project/a.txt" },
+          summary: "Write file",
+          blockedPath: "/home/user/project/a.txt",
+          toolUseID: "tu-home",
+          createdAt: new Date().toISOString(),
+        },
+        vi.fn(),
+        60_000
+      );
+
+      const polled = executeClaudeCodeCheck(
+        { action: "poll", sessionId: "s-win-path" },
+        manager,
+        toolCache
+      ) as CheckResult;
+
+      expect(
+        polled.compatWarnings?.some((w) =>
+          w.includes(
+            "Permission request 'r-home' uses POSIX home path '/home/user/project/a.txt' on Windows."
+          )
+        )
+      ).toBe(true);
+      expect(polled.compatWarnings?.some((w) => w.includes("under cwd 'D:\\repo'"))).toBe(true);
+    } finally {
+      if (platformDesc) Object.defineProperty(process, "platform", platformDesc);
+    }
   });
 
   it("supports pollOptions.maxBytes to cap events payload size", () => {

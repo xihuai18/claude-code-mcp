@@ -112,6 +112,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `thinking`                   | object           | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default                                                                                             |
 | `systemPrompt`               | string \| object | No       | Override the agent's system prompt. Default: SDK/Claude Code default. Pass a string for full replacement, or `{ type: "preset", preset: "claude_code", append?: "..." }` to extend the default prompt         |
 | `permissionRequestTimeoutMs` | number           | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min)                                                                                                            |
+| `sessionInitTimeoutMs`       | number           | No       | **Compatibility alias** for `advanced.sessionInitTimeoutMs` (deprecated for `claude_code`). Default: `10000`. If both are provided, `advanced.sessionInitTimeoutMs` wins                                                                 |
 | `advanced`                   | object           | No       | Advanced/low-frequency parameters (see below)                                                                                                                                                                 |
 
 <details>
@@ -121,7 +122,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | ------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `advanced.tools`                      | string[] \| object | Define the base tool set. Default: SDK/Claude Code default toolset. Array of tool name strings, or `{ type: "preset", preset: "claude_code" }` for the default toolset. `allowedTools`/`disallowedTools` further filter on top of this |
 | `advanced.persistSession`             | boolean            | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                                                                                                      |
-| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`                                                                                                                                                                    |
+| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`. **Recommended location for `claude_code` callers.**                                                                                                                                    |
 | `advanced.agents`                     | object             | Define custom sub-agents the main agent can delegate tasks to. Default: none. SDK default: if a sub-agent omits `tools`, it inherits all tools from the parent.                                                                        |
 | `advanced.agent`                      | string             | Name of a custom agent (defined in `agents`) to use as the primary agent. Default: omitted                                                                                                                                             |
 | `advanced.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                                                                                                                |
@@ -150,6 +151,7 @@ Notes:
 
 - `resumeToken` is omitted by default, and is only returned when `CLAUDE_CODE_MCP_RESUME_SECRET` is set on the server.
 - On error: `{ sessionId: "", status: "error", error }`
+- If `sessionInitTimeoutMs` (top-level alias) is used, `claude_code` may return `compatWarnings` to guide migration to `advanced.sessionInitTimeoutMs`.
 
 Use `claude_code_check` to poll events and obtain the final `result`.
 
@@ -228,6 +230,7 @@ Gotchas:
 - `Read` has a per-call size cap in practice (often ~256KB); for large files use `offset`/`limit` or chunk with `Grep`.
 - `Edit` with `replace_all=true` is substring replacement; if no match is found the tool returns a clear error.
 - On Windows, this server normalizes common MSYS-style paths (e.g. `/d/...`, `/mnt/c/...`, `/cygdrive/c/...`, `//server/share/...`) for `cwd`, `additionalDirectories`, and tool inputs that include `file_path`.
+- On Windows, POSIX home paths like `/home/user/...` are **not** rewritten to drive paths; prefer absolute Windows paths under your current `cwd` to avoid out-of-bounds permission prompts.
 - `TeamDelete` may require members to reach `shutdown_approved` (otherwise you may see "active member" errors); cleanup can be asynchronous during shutdown.
 - Skills may become available later in the same session (early calls may show "Unknown", later succeed after skills are loaded/registered).
 - Some internal features (e.g. ToolSearch) may not appear in `availableTools` (derived from SDK `system/init.tools`).
@@ -310,8 +313,9 @@ Notes:
 - If `cursorResetTo` is present, your `cursor` was too old (events were evicted); reset your cursor to `cursorResetTo`.
 - For safety, de-duplicate events by `event.id` on the client side.
 - If `truncated=true`, the server intentionally limited the payload (e.g. `maxEvents`) — continue polling with `nextCursor`.
+- `nextCursor` can remain unchanged with `events=[]` during quiet intervals; this is normal transient behavior. Retry a few times (for example up to 3) before treating it as abnormal.
 - `toolValidation` reports whether configured `allowedTools`/`disallowedTools` match runtime-discovered tool names.
-- `compatWarnings` surfaces compatibility hints (for example, unresolved tool names or path/platform mismatch signals).
+- `compatWarnings` surfaces compatibility hints (for example, unresolved tool names or path/platform mismatch signals) and is **non-blocking**; treat it as advisory unless the session actually fails.
 - Permission `actions[]` include `timeoutMs`, `expiresAt`, and best-effort `remainingMs` to help callers avoid auto-deny timeouts.
 - `permission_result` event data is `{ requestId, toolName, behavior, source, message?, interrupt? }` (denial details only present for `deny`).
 - In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy progress events (`tool_progress`, `auth_status`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
