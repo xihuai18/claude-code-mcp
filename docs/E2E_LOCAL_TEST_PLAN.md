@@ -97,9 +97,10 @@
 - 如果 `status=waiting_permission`，必须处理 `actions[]`，禁止无限 poll。
 - Windows 下记录 `posix_path_incidents`（出现 `/home/...` 或其他明显 POSIX 绝对路径的次数）；建议阈值为 0，超过阈值记为质量不达标。
 - Windows 路径强制校验（仅 `process.platform === 'win32'`）：
-  - 每次 poll 返回的 `events` 中，若 `data` 包含工具调用参数（如 `file_path`、`command`、`cwd`），检查是否匹配 `/home/`、`/d/`、`/c/` 等 POSIX 风格路径。
-  - 若检测到 POSIX 路径，立即对该权限请求执行 `deny`，并在 prompt 中追加纠偏指令：`"你刚才使用了 POSIX 风格路径 {path}，请改写为 Windows 绝对路径（如 D:\\...）后重试。"`
-  - 若会话已无权限请求可 deny（工具已自动批准），则在最终报告中记录 `posix_path_incidents++` 并标记为质量不达标。
+  - 校验对象是 `actions[]` 中 `permission_request` 的最终执行参数（如 `input.file_path`、`input.command`），而非 `events` 中模型生成的 `tool_use` 文本。因为 server 或 SDK 可能已将路径规范化为 Windows 格式，仅凭 `tool_use` 文本判断会产生误杀。
+  - 若 `permission_request` 的最终执行参数仍包含 `/home/`、`/d/`、`/c/` 等 POSIX 风格路径，对该请求执行 `deny`，并在后续 `claude_code_reply` 或新 session 的 prompt 中追加纠偏指令：`"你刚才使用了 POSIX 风格路径 {path}，请改写为 Windows 绝对路径（如 D:\\...）后重试。"`
+  - 若工具已被 `allowedTools` 自动批准（无 `permission_request` 可拦截），则在最终报告中记录 `posix_path_incidents++` 并标记为质量不达标。
+  - 若 `tool_use` 文本为 POSIX 但 `permission_request.input` 已被规范化为 Windows 路径，不计为 incident，仅记录为 `posix_normalized_count`（信息性指标，不影响判定）。
 
 关键观测字段（每轮都要记录）：
 
@@ -154,6 +155,7 @@
 - `advanced.sessionInitTimeoutMs`: `15000`（`claude_code` 的推荐写法）
 - `allowedTools`: `["Read", "Write"]`
 - `strictAllowedTools`: `true`（建议开启，确保 `allowedTools` 是严格白名单语义；该参数在 `claude_code` 和 `diskResumeConfig` 中均可用，部分客户端可能不在 UI 中展示但实际可传递）
+  - 注意：`strictAllowedTools` 保证执行层拦截（未授权工具的 `tool_use` 会被 server 拒绝），但不保证模型不会先生成未授权工具的调用计划。评估时应以 `permission_result` / 实际执行结果为准，而非模型输出的 `tool_use` 文本。
 - `disallowedTools`: 仅当通过 `includeTools=true` 确认 Bash 在运行时工具列表中时才设置为 `["Bash"]`；否则省略该字段（避免 `Unknown disallowedTools: Bash` 告警）
 - 不建议使用顶层 `sessionInitTimeoutMs` 作为主配置（该字段仅用于兼容，优先使用 `advanced.sessionInitTimeoutMs`）
 - 即使 prompt 中明确要求“不要调用 Bash”，也应以策略约束（`strictAllowedTools` / `allowedTools` / `disallowedTools`）作为主判据（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
@@ -254,6 +256,8 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
 1. 使用独立测试项目目录（不要污染本仓库主目录）。
 2. 项目中存在可复现失败测试。可使用本仓库提供的内置 fixture 快速初始化：
 
+Bash / Git Bash：
+
 ```bash
 # 在测试工作目录下执行（如 D:\Lab\Test-Claude-Code-MCP\e2e_real_task）
 mkdir -p e2e_real_task && cd e2e_real_task
@@ -280,6 +284,38 @@ console.log("All tests passed");
 TESTJS
 ```
 
+PowerShell（Windows 原生终端）：
+
+```powershell
+# 在测试工作目录下执行（如 D:\Lab\Test-Claude-Code-MCP\e2e_real_task）
+New-Item -ItemType Directory -Force -Path e2e_real_task | Out-Null
+Set-Location e2e_real_task
+
+@'
+{
+  "name": "e2e-real-task",
+  "version": "1.0.0",
+  "scripts": { "test": "node test.js" }
+}
+'@ | Set-Content -Encoding UTF8 package.json
+
+@'
+function sum(a, b) {
+  return a - b; // BUG: should be a + b
+}
+module.exports = sum;
+'@ | Set-Content -Encoding UTF8 sum.js
+
+@'
+const sum = require("./sum");
+const assert = require("assert");
+assert.strictEqual(sum(1, 2), 3, "1 + 2 should equal 3");
+assert.strictEqual(sum(-1, 1), 0, "-1 + 1 should equal 0");
+assert.strictEqual(sum(0, 0), 0, "0 + 0 should equal 0");
+console.log("All tests passed");
+'@ | Set-Content -Encoding UTF8 test.js
+```
+
 上述 fixture 的预期行为：`npm test` 首次运行失败（`sum` 函数用了 `-` 而非 `+`），模型需将 `return a - b` 改为 `return a + b`，再次运行测试通过。
 
 如果不使用内置 fixture，也可自行准备满足"可复现失败"条件的项目，但必须在报告中说明项目来源。
@@ -300,7 +336,7 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
 2. 修改后测试命令退出码为 0。
 3. `result.isError=false`。
 4. 变更是最小必要改动。
-5. （增强必跑）在真实仓库子目录再执行 1 次最小修复闭环，避免仅玩具项目通过。
+5. （推荐）在真实仓库子目录再执行 1 次最小修复闭环，避免仅玩具项目通过。此项为推荐而非必跑，未执行不影响最低通过判定，但建议在报告中注明是否执行。
 
 失败恢复：
 
