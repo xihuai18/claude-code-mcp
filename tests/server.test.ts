@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createServer } from "../src/server.js";
+import { createServer, createServerContext } from "../src/server.js";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => {
@@ -127,6 +127,92 @@ describe("MCP Server", () => {
       expect(caps?.tasks).toBeUndefined();
     } finally {
       await client.close();
+      await server.close();
+    }
+  });
+
+  it("should expose interrupt and allow_for_session in tool schemas", async () => {
+    const server = createServer("/tmp");
+    const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const listed = await client.listTools();
+      const sessionTool = listed.tools.find((t) => t.name === "claude_code_session") as
+        | {
+            inputSchema?: {
+              properties?: {
+                action?: { enum?: unknown[] };
+              };
+            };
+          }
+        | undefined;
+      const checkTool = listed.tools.find((t) => t.name === "claude_code_check") as
+        | {
+            inputSchema?: {
+              properties?: {
+                decision?: { enum?: unknown[] };
+              };
+            };
+          }
+        | undefined;
+
+      expect(sessionTool?.inputSchema?.properties?.action?.enum).toContain("interrupt");
+      expect(checkTool?.inputSchema?.properties?.decision?.enum).toContain("allow_for_session");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("should support claude_code_session(action='interrupt') via MCP tool call", async () => {
+    const ctx = createServerContext("/tmp");
+    const { server, sessionManager } = ctx;
+    const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      sessionManager.create({ sessionId: "sess-interrupt", cwd: "/tmp" });
+
+      const res = await client.callTool({
+        name: "claude_code_session",
+        arguments: { action: "interrupt", sessionId: "sess-interrupt" },
+      });
+      const normalized = res as {
+        content?: Array<{ type?: string; text?: string }>;
+        structuredContent?: unknown;
+        isError?: boolean;
+      };
+      const textPayload =
+        normalized.content?.[0] && typeof normalized.content[0].text === "string"
+          ? normalized.content[0].text
+          : undefined;
+      const parsedText =
+        typeof textPayload === "string"
+          ? (() => {
+              try {
+                return JSON.parse(textPayload) as unknown;
+              } catch {
+                return undefined;
+              }
+            })()
+          : undefined;
+      const payload = (normalized.structuredContent ?? parsedText) as
+        | { message?: string; sessions?: Array<{ status?: string }> }
+        | undefined;
+
+      expect(normalized.isError).toBeFalsy();
+      expect(payload?.message).toContain("interrupted");
+      expect(payload?.sessions?.[0]?.status).toBe("running");
+    } finally {
+      await client.close();
+      sessionManager.destroy();
       await server.close();
     }
   });

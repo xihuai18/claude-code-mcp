@@ -142,6 +142,90 @@ describe("executeClaudeCodeCheck", () => {
     });
   });
 
+  it("supports decision=allow_for_session, preserves updates, and promotes tool to session allowlist", () => {
+    manager.create({ sessionId: "s1", cwd: "/tmp" });
+
+    const finish = vi.fn();
+    manager.setPendingPermission(
+      "s1",
+      {
+        requestId: "r-session",
+        toolName: " Read ",
+        input: { file_path: "/tmp/a.txt" },
+        summary: "Read file",
+        toolUseID: "tu-session",
+        createdAt: new Date().toISOString(),
+      },
+      finish,
+      60_000
+    );
+
+    const responded = executeClaudeCodeCheck(
+      {
+        action: "respond_permission",
+        sessionId: "s1",
+        requestId: "r-session",
+        decision: "allow_for_session",
+        permissionOptions: {
+          updatedInput: { file_path: "/tmp/b.txt" },
+          updatedPermissions: [{ scope: "existing" }],
+        },
+      },
+      manager,
+      toolCache
+    );
+
+    expect("isError" in responded).toBe(false);
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(finish.mock.calls[0]?.[0]?.behavior).toBe("allow");
+    expect(finish.mock.calls[0]?.[0]?.updatedInput).toEqual({ file_path: "/tmp/b.txt" });
+    expect(finish.mock.calls[0]?.[0]?.updatedPermissions).toEqual([
+      { scope: "existing" },
+      {
+        type: "addRules",
+        behavior: "allow",
+        destination: "session",
+        rules: [{ toolName: "Read" }],
+      },
+    ]);
+    expect(manager.get("s1")?.allowedTools).toContain("Read");
+  });
+
+  it("does not add tool to allowlist when allow_for_session targets a disallowed tool", () => {
+    manager.create({ sessionId: "s1", cwd: "/tmp", disallowedTools: [" Read "] });
+
+    const finish = vi.fn();
+    manager.setPendingPermission(
+      "s1",
+      {
+        requestId: "r-disallowed",
+        toolName: "Read",
+        input: { file_path: "/tmp/a.txt" },
+        summary: "Read file",
+        toolUseID: "tu-session",
+        createdAt: new Date().toISOString(),
+      },
+      finish,
+      60_000
+    );
+
+    const responded = executeClaudeCodeCheck(
+      {
+        action: "respond_permission",
+        sessionId: "s1",
+        requestId: "r-disallowed",
+        decision: "allow_for_session",
+      },
+      manager,
+      toolCache
+    );
+
+    expect("isError" in responded).toBe(false);
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(finish.mock.calls[0]?.[0]?.behavior).toBe("deny");
+    expect(manager.get("s1")?.allowedTools).toBeUndefined();
+  });
+
   it("should return PERMISSION_REQUEST_NOT_FOUND for unknown requestId", () => {
     manager.create({ sessionId: "s1", cwd: "/tmp" });
     manager.update("s1", { status: "waiting_permission" });

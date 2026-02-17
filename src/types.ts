@@ -23,7 +23,7 @@ export const AGENT_MODELS = ["sonnet", "opus", "haiku", "inherit"] as const;
 export type AgentModel = (typeof AGENT_MODELS)[number];
 
 /** Session management actions */
-export const SESSION_ACTIONS = ["list", "get", "cancel"] as const;
+export const SESSION_ACTIONS = ["list", "get", "cancel", "interrupt"] as const;
 export type SessionAction = (typeof SESSION_ACTIONS)[number];
 
 /** Session status */
@@ -118,6 +118,8 @@ export interface SessionInfo {
   /** Last seen tool use id (best-effort) */
   lastToolUseId?: string;
   abortController?: AbortController;
+  /** Runtime-only handle used to interrupt the active query turn. */
+  queryInterrupt?: () => void;
 }
 
 /** Session metadata safe to return by default (redacts paths and prompts) */
@@ -200,7 +202,7 @@ export type CheckAction = (typeof CHECK_ACTIONS)[number];
 export const CHECK_RESPONSE_MODES = ["minimal", "full", "delta_compact"] as const;
 export type CheckResponseMode = (typeof CHECK_RESPONSE_MODES)[number];
 
-export type PermissionDecision = "allow" | "deny";
+export type PermissionDecision = "allow" | "deny" | "allow_for_session";
 
 /**
  * Permission updates suggested by the SDK (shape is SDK-defined and may evolve).
@@ -274,6 +276,7 @@ export type FinishSource =
   | "respond"
   | "timeout"
   | "cancel"
+  | "interrupt"
   | "cleanup"
   | "destroy"
   | "signal"

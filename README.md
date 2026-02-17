@@ -245,6 +245,8 @@ If your MCP client supports resources, this server exposes a couple of **read-on
 - `claude-code-mcp:///server-info` (JSON): server metadata (version/platform/runtime + capabilities/limits)
 - `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (runtime-aware, includes permission/schema metadata)
 - `claude-code-mcp:///gotchas` (Markdown): practical limits/gotchas
+- `claude-code-mcp:///quickstart` (Markdown): minimal async start/poll/respond flow
+- `claude-code-mcp:///errors` (JSON): structured error-code catalog and remediation hints
 - `claude-code-mcp:///compat-report` (JSON): compatibility report (transport/platform assumptions, runtime warnings, guidance, recommended settings, tool count diagnostics)
 
 Resource templates:
@@ -257,12 +259,12 @@ Resource templates:
 
 ### `claude_code_session` — Manage sessions
 
-List, inspect, or cancel sessions.
+List, inspect, cancel, or interrupt sessions.
 
-| Parameter          | Type    | Required       | Description                                                                    |
-| ------------------ | ------- | -------------- | ------------------------------------------------------------------------------ |
-| `action`           | string  | Yes            | `"list"`, `"get"`, or `"cancel"`                                               |
-| `sessionId`        | string  | For get/cancel | Target session ID                                                              |
+| Parameter          | Type    | Required                  | Description                                                                    |
+| ------------------ | ------- | ------------------------- | ------------------------------------------------------------------------------ |
+| `action`           | string  | Yes                       | `"list"`, `"get"`, `"cancel"`, or `"interrupt"`                               |
+| `sessionId`        | string  | For get/cancel/interrupt  | Target session ID                                                              |
 | `includeSensitive` | boolean | No             | Include `cwd`/`systemPrompt`/`agents`/`additionalDirectories` (default: false) |
 
 **Returns:** `{ sessions, message?, isError? }`
@@ -281,7 +283,7 @@ Poll session events/results and approve/deny pending permission requests.
 | `responseMode`      | string  | No                     | `"minimal"` (default), `"delta_compact"` (lightweight polling), or `"full"` (verbose diagnostics)               |
 | `maxEvents`         | number  | No                     | Max events per poll (pagination via `nextCursor`). Default: `200` in `"minimal"`; unlimited in `"full"`/`"delta_compact"` |
 | `requestId`         | string  | For respond_permission | Permission request ID                                                                                          |
-| `decision`          | string  | For respond_permission | `"allow"` or `"deny"`                                                                                          |
+| `decision`          | string  | For respond_permission | `"allow"`, `"deny"`, or `"allow_for_session"`                                                                  |
 | `denyMessage`       | string  | No                     | Deny reason shown to Claude (`deny` only). Default: `"Permission denied by caller"`                            |
 | `interrupt`         | boolean | No                     | When true, denying also interrupts the whole agent (`deny` only). Default: `false`                             |
 | `pollOptions`       | object  | No                     | Fine-grained poll control options (see below)                                                                  |
@@ -310,8 +312,8 @@ Poll session events/results and approve/deny pending permission requests.
 
 | Parameter                              | Type   | Description                                                             |
 | -------------------------------------- | ------ | ----------------------------------------------------------------------- |
-| `permissionOptions.updatedInput`       | object | Modified tool input to run (`allow` only). Default: none                |
-| `permissionOptions.updatedPermissions` | array  | Permission rule updates suggested/applied (`allow` only). Default: none |
+| `permissionOptions.updatedInput`       | object | Modified tool input to run (`allow`/`allow_for_session` only). Default: none                |
+| `permissionOptions.updatedPermissions` | array  | Permission rule updates suggested/applied (`allow`/`allow_for_session` only). Default: none |
 
 </details>
 
@@ -320,6 +322,7 @@ Poll session events/results and approve/deny pending permission requests.
 Notes:
 
 - On error (e.g. invalid arguments, missing/expired session): `{ sessionId, isError: true, error }`
+- `respond_user_input` is not supported on this backend. Use `respond_permission` for interactive approvals.
 - Always treat `cursor` as an incremental position: store `nextCursor` and pass it back on the next poll to avoid replaying old events.
 - If `cursorResetTo` is present, your `cursor` was too old (events were evicted); reset your cursor to `cursorResetTo`.
 - For safety, de-duplicate events by `event.id` on the client side.
@@ -376,7 +379,7 @@ while True:
         final_result = data.get("result")
         break
 
-# 3) Manage sessions (list/get/cancel)
+# 3) Manage sessions (list/get/cancel/interrupt)
 result = await mcp.call_tool("claude_code_session", {"action": "list"})
 ```
 

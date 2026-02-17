@@ -39,6 +39,14 @@ function normalizePositiveNumber(value: number | undefined): number | undefined 
   return Math.trunc(value);
 }
 
+function normalizeToolPolicyNames(values: string[] | undefined): string[] {
+  if (!Array.isArray(values) || values.length === 0) return [];
+  return values
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value !== "");
+}
+
 type PendingPermission = {
   record: PermissionRequestRecord;
   finish: FinishFn;
@@ -189,6 +197,7 @@ export class SessionManager {
     debugFile?: SessionInfo["debugFile"];
     env?: SessionInfo["env"];
     abortController?: AbortController;
+    queryInterrupt?: SessionInfo["queryInterrupt"];
   }): SessionInfo {
     if (this.destroyed) {
       throw new Error("SessionManager is destroyed and no longer accepts new sessions.");
@@ -235,6 +244,7 @@ export class SessionManager {
       debugFile: params.debugFile,
       env: params.env,
       abortController: params.abortController,
+      queryInterrupt: params.queryInterrupt,
     };
     this.sessions.set(params.sessionId, info);
     this.runtime.set(params.sessionId, {
@@ -291,6 +301,7 @@ export class SessionManager {
     if (!info || info.status !== expectedStatus) return undefined;
     info.status = "running";
     info.abortController = abortController;
+    info.queryInterrupt = undefined;
     info.lastActiveAt = new Date().toISOString();
     // M5 fix: clear stale result/error events at the idle/error → running
     // transition so the new run's event stream starts clean.
@@ -314,6 +325,13 @@ export class SessionManager {
         "cancel"
       );
     }
+    if (info.queryInterrupt) {
+      try {
+        info.queryInterrupt();
+      } catch {
+        // ignore interrupt errors
+      }
+    }
     if (info.abortController) {
       info.abortController.abort();
     }
@@ -321,6 +339,45 @@ export class SessionManager {
     info.cancelledAt = new Date().toISOString();
     info.cancelledReason = opts?.reason ?? "Session cancelled";
     info.cancelledSource = opts?.source ?? "cancel";
+    info.queryInterrupt = undefined;
+    info.lastActiveAt = new Date().toISOString();
+    return true;
+  }
+
+  interrupt(sessionId: string, opts?: { reason?: string; source?: string }): boolean {
+    if (this.destroyed) return false;
+    const info = this.sessions.get(sessionId);
+    if (!info) return false;
+    if (info.status !== "running" && info.status !== "waiting_permission") return false;
+
+    if (info.status === "waiting_permission") {
+      this.finishAllPending(
+        sessionId,
+        { behavior: "deny", message: opts?.reason ?? "Session interrupted", interrupt: true },
+        "interrupt"
+      );
+    }
+
+    if (info.queryInterrupt) {
+      try {
+        info.queryInterrupt();
+      } catch {
+        // ignore interrupt errors
+      }
+    }
+    if (info.abortController) {
+      info.abortController.abort();
+    }
+
+    this.pushEvent(sessionId, {
+      type: "progress",
+      data: {
+        type: "interrupted",
+        reason: opts?.reason ?? "Session interrupted",
+        source: opts?.source ?? "interrupt",
+      },
+      timestamp: new Date().toISOString(),
+    });
     info.lastActiveAt = new Date().toISOString();
     return true;
   }
@@ -573,6 +630,31 @@ export class SessionManager {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  getPendingPermission(sessionId: string, requestId: string): PermissionRequestRecord | undefined {
+    if (this.destroyed) return undefined;
+    const state = this.runtime.get(sessionId);
+    return state?.pendingPermissions.get(requestId)?.record;
+  }
+
+  allowToolForSession(sessionId: string, toolName: string): boolean {
+    if (this.destroyed) return false;
+    const info = this.sessions.get(sessionId);
+    if (!info) return false;
+    const normalized = toolName.trim();
+    if (normalized === "") return false;
+    const disallowed = normalizeToolPolicyNames(info.disallowedTools);
+    if (disallowed.includes(normalized)) {
+      return false;
+    }
+    const allowed = Array.isArray(info.allowedTools) ? [...info.allowedTools] : [];
+    if (!allowed.includes(normalized)) {
+      allowed.push(normalized);
+      info.allowedTools = allowed;
+      info.lastActiveAt = new Date().toISOString();
+    }
+    return true;
+  }
+
   finishRequest(
     sessionId: string,
     requestId: string,
@@ -589,15 +671,12 @@ export class SessionManager {
 
     let finalResult = result;
     if (finalResult.behavior === "allow") {
-      const disallowed = info.disallowedTools;
-      if (
-        Array.isArray(disallowed) &&
-        disallowed.includes(pending.record.toolName) &&
-        pending.record.toolName.trim() !== ""
-      ) {
+      const disallowed = normalizeToolPolicyNames(info.disallowedTools);
+      const pendingToolName = pending.record.toolName.trim();
+      if (pendingToolName !== "" && disallowed.includes(pendingToolName)) {
         finalResult = {
           behavior: "deny",
-          message: `Tool '${pending.record.toolName}' is disallowed by session policy.`,
+          message: `Tool '${pendingToolName}' is disallowed by session policy.`,
           interrupt: false,
         };
       }
@@ -741,6 +820,7 @@ export class SessionManager {
         info.cancelledAt = info.cancelledAt ?? new Date().toISOString();
         info.cancelledReason = info.cancelledReason ?? "Session timed out";
         info.cancelledSource = info.cancelledSource ?? "cleanup";
+        info.queryInterrupt = undefined;
         info.status = "cancelled";
         info.lastActiveAt = new Date().toISOString();
       } else if (
@@ -757,6 +837,7 @@ export class SessionManager {
         info.cancelledAt = info.cancelledAt ?? new Date().toISOString();
         info.cancelledReason = info.cancelledReason ?? "Session timed out";
         info.cancelledSource = info.cancelledSource ?? "cleanup";
+        info.queryInterrupt = undefined;
         info.status = "cancelled";
         info.lastActiveAt = new Date().toISOString();
       } else if (
@@ -804,6 +885,7 @@ export class SessionManager {
     /* eslint-disable @typescript-eslint/no-unused-vars */
     const {
       abortController: _abortController,
+      queryInterrupt: _queryInterrupt,
       cwd: _cwd,
       systemPrompt: _systemPrompt,
       agents: _agents,
@@ -838,6 +920,7 @@ export class SessionManager {
       ) {
         info.abortController.abort();
       }
+      info.queryInterrupt = undefined;
       info.status = "cancelled";
       info.cancelledAt = info.cancelledAt ?? new Date().toISOString();
       info.cancelledReason = info.cancelledReason ?? "Server shutting down";

@@ -61,7 +61,7 @@ export interface ClaudeCodeCheckInput {
   denyMessage?: string;
   interrupt?: boolean;
 
-  /** Advanced permission response options (only with decision='allow'). */
+  /** Advanced permission response options (only with decision='allow'/'allow_for_session'). */
   permissionOptions?: PermissionResponseOptions;
 }
 
@@ -82,7 +82,7 @@ function toPermissionResult(params: {
   denyMessage?: string;
   interrupt?: boolean;
 }): PermissionResult {
-  if (params.decision === "allow") {
+  if (params.decision === "allow" || params.decision === "allow_for_session") {
     return {
       behavior: "allow",
       updatedInput: params.updatedInput,
@@ -94,6 +94,23 @@ function toPermissionResult(params: {
     message: params.denyMessage ?? "Permission denied by caller",
     interrupt: params.interrupt,
   };
+}
+
+function appendAllowForSessionUpdate(
+  updates: Array<Record<string, unknown>> | undefined,
+  toolName: string | undefined
+): Array<Record<string, unknown>> | undefined {
+  const normalizedToolName = toolName?.trim();
+  if (!normalizedToolName) return updates;
+  return [
+    ...(updates ?? []),
+    {
+      type: "addRules",
+      behavior: "allow",
+      destination: "session",
+      rules: [{ toolName: normalizedToolName }],
+    },
+  ];
 }
 
 /**
@@ -184,11 +201,28 @@ function detectPathCompatibilityWarnings(session: SessionInfo | undefined): stri
       `cwd '${cwd}' looks like a Windows UNC path on ${process.platform}. Confirm MCP client/server run on the same platform.`
     );
   }
+
+  // Check additionalDirectories for POSIX paths on Windows
+  if (process.platform === "win32" && Array.isArray(session.additionalDirectories)) {
+    for (const dir of session.additionalDirectories) {
+      if (typeof dir === "string" && dir.startsWith("/") && !dir.startsWith("//")) {
+        warnings.push(
+          `additionalDirectories contains POSIX-style path '${dir}' on Windows. Consider using a Windows path to avoid path compatibility issues.`
+        );
+      }
+    }
+  }
+
   return warnings;
 }
 
 function isPosixHomePath(value: string): boolean {
-  return /^\/home\/[^/]+(?:\/|$)/.test(value);
+  return /^\/home\/[^/\s]+(?:\/|$)/.test(value);
+}
+
+function extractPosixHomePath(value: string): string | undefined {
+  const match = value.match(/\/home\/[^/\s"'`]+(?:\/[^\s"'`]*)?/);
+  return match?.[0];
 }
 
 function detectPendingPermissionPathWarnings(
@@ -207,6 +241,28 @@ function detectPendingPermissionPathWarnings(
     if (typeof req.blockedPath === "string") candidates.push(req.blockedPath);
     const filePath = req.input.file_path;
     if (typeof filePath === "string") candidates.push(filePath);
+
+    // Check additional path-like fields in req.input (avoid content/body fields that may contain false positives)
+    const pathFields = [
+      "path",
+      "directory",
+      "folder",
+      "cwd",
+      "dest",
+      "destination",
+      "source",
+      "target",
+    ];
+    for (const field of pathFields) {
+      const val = req.input[field];
+      if (typeof val === "string") candidates.push(val);
+    }
+    // Also check command field for embedded POSIX home paths.
+    const command = req.input.command;
+    if (typeof command === "string") {
+      const embeddedPath = extractPosixHomePath(command);
+      if (embeddedPath) candidates.push(embeddedPath);
+    }
 
     const badPath = candidates.find((p) => isPosixHomePath(p));
     if (!badPath) continue;
@@ -536,13 +592,29 @@ export function executeClaudeCodeCheck(
       isError: true,
     };
   }
-  if (input.decision !== "allow" && input.decision !== "deny") {
+  if (
+    input.decision !== "allow" &&
+    input.decision !== "deny" &&
+    input.decision !== "allow_for_session"
+  ) {
     return {
       sessionId: input.sessionId,
-      error: `Error [${ErrorCode.INVALID_ARGUMENT}]: decision must be 'allow' or 'deny'.`,
+      error: `Error [${ErrorCode.INVALID_ARGUMENT}]: decision must be 'allow', 'deny', or 'allow_for_session'.`,
       isError: true,
     };
   }
+
+  const pendingRequest =
+    input.decision === "allow_for_session"
+      ? sessionManager.getPendingPermission(input.sessionId, input.requestId)
+      : undefined;
+  const updatedPermissions =
+    input.decision === "allow_for_session"
+      ? appendAllowForSessionUpdate(
+          input.permissionOptions?.updatedPermissions,
+          pendingRequest?.toolName
+        )
+      : input.permissionOptions?.updatedPermissions;
 
   const ok = sessionManager.finishRequest(
     input.sessionId,
@@ -550,7 +622,7 @@ export function executeClaudeCodeCheck(
     toPermissionResult({
       decision: input.decision,
       updatedInput: input.permissionOptions?.updatedInput,
-      updatedPermissions: input.permissionOptions?.updatedPermissions,
+      updatedPermissions,
       denyMessage: input.denyMessage,
       interrupt: input.interrupt,
     }),
@@ -562,6 +634,10 @@ export function executeClaudeCodeCheck(
       error: `Error [${ErrorCode.PERMISSION_REQUEST_NOT_FOUND}]: requestId '${input.requestId}' not found (already finished or expired).`,
       isError: true,
     };
+  }
+
+  if (input.decision === "allow_for_session" && pendingRequest?.toolName) {
+    sessionManager.allowToolForSession(input.sessionId, pendingRequest.toolName);
   }
 
   return buildResult(sessionManager, toolCache, input);

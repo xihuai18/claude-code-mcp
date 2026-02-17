@@ -167,6 +167,9 @@ export async function executeClaudeCode(
             source: normalizedFlat,
             permissionMode: "default",
             abortController,
+            queryInterrupt: () => {
+              handle.interrupt();
+            },
           })
         );
       },

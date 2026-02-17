@@ -9,6 +9,7 @@ export function toSessionCreateParams(input: {
   sessionId: string;
   source: OptionSource;
   abortController: AbortController;
+  queryInterrupt?: () => void;
   permissionMode?: PermissionMode;
 }): SessionCreateParams {
   const src = input.source;
@@ -43,5 +44,6 @@ export function toSessionCreateParams(input: {
     debugFile: src.debugFile,
     env: src.env,
     abortController: input.abortController,
+    queryInterrupt: input.queryInterrupt,
   };
 }

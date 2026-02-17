@@ -87,6 +87,87 @@ describe("SessionManager", () => {
     expect(manager.cancel("nope")).toBe(false);
   });
 
+  it("should interrupt a running session without transitioning to cancelled", () => {
+    const ac = new AbortController();
+    const queryInterrupt = vi.fn();
+    manager.create({
+      sessionId: "int-1",
+      cwd: "/tmp",
+      abortController: ac,
+      queryInterrupt,
+    });
+
+    const interrupted = manager.interrupt("int-1", { reason: "manual" });
+    expect(interrupted).toBe(true);
+    expect(queryInterrupt).toHaveBeenCalledTimes(1);
+    expect(ac.signal.aborted).toBe(true);
+    expect(manager.get("int-1")!.status).toBe("running");
+
+    const events = manager.readEvents("int-1").events;
+    const interruptEvent = events.find((e) => e.type === "progress");
+    expect(interruptEvent).toBeDefined();
+    expect(interruptEvent?.data).toMatchObject({ type: "interrupted", reason: "manual" });
+  });
+
+  it("should return false when interrupting non-running sessions", () => {
+    manager.create({ sessionId: "int-idle", cwd: "/tmp" });
+    manager.update("int-idle", { status: "idle" });
+    expect(manager.interrupt("int-idle")).toBe(false);
+  });
+
+  it("should interrupt waiting_permission sessions, deny pending requests, and return to running", () => {
+    const ac = new AbortController();
+    const queryInterrupt = vi.fn();
+    manager.create({
+      sessionId: "int-waiting",
+      cwd: "/tmp",
+      abortController: ac,
+      queryInterrupt,
+    });
+    const finish = vi.fn();
+    manager.setPendingPermission(
+      "int-waiting",
+      {
+        requestId: "req-waiting",
+        toolName: "Bash",
+        input: { command: "echo hi" },
+        summary: "run command",
+        toolUseID: "tu-waiting",
+        createdAt: new Date().toISOString(),
+      },
+      finish,
+      60_000
+    );
+
+    const interrupted = manager.interrupt("int-waiting", { reason: "manual-stop" });
+    expect(interrupted).toBe(true);
+    expect(queryInterrupt).toHaveBeenCalledTimes(1);
+    expect(ac.signal.aborted).toBe(true);
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(finish.mock.calls[0]?.[0]).toMatchObject({
+      behavior: "deny",
+      message: "manual-stop",
+      interrupt: true,
+    });
+    expect(manager.getPendingPermissionCount("int-waiting")).toBe(0);
+    expect(manager.get("int-waiting")?.status).toBe("running");
+
+    const events = manager.readEvents("int-waiting").events;
+    const permissionResult = events.find((event) => event.type === "permission_result");
+    expect((permissionResult?.data as { behavior?: string; source?: string }).behavior).toBe(
+      "deny"
+    );
+    expect((permissionResult?.data as { behavior?: string; source?: string }).source).toBe(
+      "interrupt"
+    );
+    const interruptProgress = events.find(
+      (event) =>
+        event.type === "progress" &&
+        (event.data as { type?: string; reason?: string }).type === "interrupted"
+    );
+    expect(interruptProgress).toBeDefined();
+  });
+
   it("should delete a session", () => {
     manager.create({ sessionId: "test-1", cwd: "/tmp" });
     expect(manager.delete("test-1")).toBe(true);
@@ -423,7 +504,7 @@ describe("SessionManager", () => {
     });
 
     it("should enforce disallowedTools even when respond_permission attempts to allow", () => {
-      manager.create({ sessionId: "perm", cwd: "/tmp", disallowedTools: ["Bash"] });
+      manager.create({ sessionId: "perm", cwd: "/tmp", disallowedTools: [" Bash "] });
 
       const finish = vi.fn();
       manager.setPendingPermission(
@@ -449,6 +530,25 @@ describe("SessionManager", () => {
       const permEvents = manager.readEvents("perm").events;
       const permResult = permEvents.find((e) => e.type === "permission_result");
       expect((permResult?.data as { message?: string }).message).toContain("disallowed");
+    });
+
+    it("should allow adding tools for session-scoped auto-approval", () => {
+      manager.create({ sessionId: "allow-session", cwd: "/tmp" });
+
+      expect(manager.allowToolForSession("allow-session", "Read")).toBe(true);
+      expect(manager.allowToolForSession("allow-session", "Read")).toBe(true);
+      expect(manager.get("allow-session")?.allowedTools).toEqual(["Read"]);
+    });
+
+    it("should not add session-scoped allowed tool when disallowed", () => {
+      manager.create({
+        sessionId: "allow-session-deny",
+        cwd: "/tmp",
+        disallowedTools: [" Bash "],
+      });
+
+      expect(manager.allowToolForSession("allow-session-deny", "Bash")).toBe(false);
+      expect(manager.get("allow-session-deny")?.allowedTools).toBeUndefined();
     });
 
     it("should default allow.updatedInput to the original tool input when omitted", () => {

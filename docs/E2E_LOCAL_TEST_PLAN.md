@@ -23,9 +23,13 @@
 
 1. 能发现 4 个工具，并至少读取 1 个内置 resource。
 2. 能完成 1 次完整生命周期：`claude_code -> claude_code_check(poll) -> 终态(result)`。
-3. 能至少处理 1 次权限请求（`respond_permission` 的 allow 或 deny）。
+3. 能至少处理 1 次权限请求（`respond_permission` 的 allow/deny/allow_for_session）。
 4. 能完成 1 个真实编程任务验收（本地测试命令先失败、修改后通过）。
 5. 结束时清理残留会话（取消所有 `running/waiting_permission`）。
+
+兼容性说明（必须知晓）：
+
+- 当前 backend 不支持 `respond_user_input`，测试时只走 `respond_permission` 流程。
 
 ---
 
@@ -43,7 +47,7 @@
    - `advanced.maxBudgetUsd: 0.2-1.0`
    - `advanced.sessionInitTimeoutMs: 10000-20000`（`claude_code` 推荐位置；不要依赖顶层 `sessionInitTimeoutMs`）
 6. 权限循环准备：
-   - 明确如何记录 `requestId` 与预期决策（allow/deny）。
+   - 明确如何记录 `requestId` 与预期决策（allow/deny/allow_for_session）。
    - 明确权限请求默认超时 `permissionRequestTimeoutMs=60000`，到期会自动 deny。
 
 ---
@@ -52,7 +56,7 @@
 
 在以下关键节点，建议先让模型用一句话确认目标，再执行调用：
 
-1. 第一次看到 `waiting_permission` 时：先确认“本次应 allow 还是 deny”。
+1. 第一次看到 `waiting_permission` 时：先确认“本次应 allow、allow_for_session 还是 deny”。
 2. 第一次出现 `error` 终态时：先确认“是参数问题、权限问题，还是任务本身失败”。
 3. 真实编程任务开始前：先确认“最小修复范围”与“验收命令”。
 4. 结束清理前：先确认“是否还有 running/waiting session 未处理”。
@@ -74,7 +78,7 @@
 2. 用 `claude_code_check` action=`poll` 轮询。
 3. 若状态是 `waiting_permission`，处理 `actions[]`：
    - 从 `actions[]` 读取 `requestId`。
-   - 调 `claude_code_check` action=`respond_permission`，必须同时传 `requestId` 和 `decision`（`allow` 或 `deny`）。
+   - 调 `claude_code_check` action=`respond_permission`，必须同时传 `requestId` 和 `decision`（`allow` / `deny` / `allow_for_session`）。
 4. 重复轮询直到终态：`idle | error | cancelled`。
 5. 读取并记录 `result`。
 6. 在结束阶段调用 `claude_code_session cancel` 清理残留运行会话。
@@ -115,7 +119,7 @@
 ```text
 请先通过客户端工具注册表或可调用性确认 4 个工具：claude_code、claude_code_reply、claude_code_check、claude_code_session。
 如果客户端支持 tools/list，再调用 tools/list 做二次确认。
-然后调用 resources/list，并至少读取一个资源（建议 claude-code-mcp:///server-info 和 claude-code-mcp:///compat-report）。
+然后调用 resources/list，并至少读取一个资源（建议 claude-code-mcp:///server-info、claude-code-mcp:///quickstart、claude-code-mcp:///errors 和 claude-code-mcp:///compat-report）。
 请输出你读到的关键字段。
 ```
 
@@ -140,7 +144,7 @@
 - `advanced.maxBudgetUsd`: `0.2`
 - `advanced.sessionInitTimeoutMs`: `15000`（`claude_code` 的推荐写法）
 - `allowedTools`: `["Read", "Write"]`
-- `disallowedTools`: `["Bash"]`（避免模型偏向调用 Bash 导致额外权限请求）
+- `disallowedTools`: 仅当通过 `includeTools=true` 确认 Bash 在运行时工具列表中时才设置为 `["Bash"]`；否则省略该字段，仅在 prompt 中要求不调用 Bash（避免 `Unknown disallowedTools: Bash` 告警）
 - 不建议使用顶层 `sessionInitTimeoutMs` 作为主配置（该字段仅用于兼容，优先使用 `advanced.sessionInitTimeoutMs`）
 - prompt 中明确要求“不要调用 Bash”（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
 
@@ -148,6 +152,7 @@
 
 ```text
 在当前目录创建 mcp_smoke.txt，写入 ok；然后读取并输出该文件内容；最后总结执行步骤。
+Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 风格路径，必须先自检并改写为当前 cwd 下的 Windows 绝对路径后再执行。
 ```
 
 通过判据：
@@ -162,9 +167,9 @@
 1. 若长期停在 `running`，检查是否遗漏 cursor 更新。
 2. 若停在 `waiting_permission`，立即处理 `actions[]`。
 3. 若 `error`，记录 `result.errorSubtype` 和关键 event。
-4. 若出现 `Unknown disallowedTools`，归类为 `compat warning`（非阻断）；仅在闭环失败时判定为 failed。
+4. 若出现 `Unknown disallowedTools` 告警，建议移除未知工具名以消除告警；仅在闭环失败时判定为 failed。
 
-### 5.3 用例 C：权限闭环（allow 与 deny）
+### 5.3 用例 C：权限闭环（allow / allow_for_session / deny）
 
 目标：验证异步权限裁决通路。
 
@@ -173,14 +178,14 @@
 1. 启动一个会触发工具调用的任务（例如写文件 + 执行命令），且不要预批准相关工具（如 `allowedTools` 不包含 `Write/Bash`）。
 2. poll 到 `waiting_permission` 后读取 `actions[].requestId`。
 3. 若有多个 request，同时记录每个 `requestId -> 期望决策`，按顺序逐个处理。
-4. 对其中一个 request 做 allow。
+4. 对其中一个 request 做 allow 或 allow_for_session。
 5. 再对另一个 request 做 deny（可选 `interrupt=true` 或 `interrupt=false`）。
 
 给模型的指令模板：
 
 ```text
 当 session 进入 waiting_permission 时，不要继续空轮询。
-请读取 actions[]，对第一个 requestId 执行 allow。
+请读取 actions[]，对第一个 requestId 执行 allow_for_session（或 allow）。
 如果出现第二个 requestId，再执行 deny（interrupt=false）。
 每次 respond_permission 后，请确认 events 里出现 permission_result。
 如果请求快过期（默认 60000ms），优先处理剩余时间最短的 requestId。
@@ -191,16 +196,18 @@
 通过判据：
 
 1. 出现 `permission_request`。
-2. `respond_permission` 后出现 `permission_result`，且 decision 与预期一致。
+2. `respond_permission` 后出现 `permission_result`，且 `behavior` 与预期方向一致（allow/deny）。
 3. 状态可从 `waiting_permission` 回到 `running` 或进入终态。
+4. 若使用 `allow_for_session`，后续同工具调用可被会话级自动批准（不再重复弹权限）；但若该工具在 `disallowedTools` 中，仍应被拒绝。
 
 失败恢复：
 
 1. 若 request 过期，记录 `expiresAt/remainingMs`，重新触发权限场景。
 2. 若一直无权限请求，检查是否设置了过宽 `allowedTools` 导致自动批准。
 3. 若出现并发请求漏处理，先回到 `actions[]` 建立 `requestId -> 决策` 清单，再继续。
+4. 若 `allow_for_session` 后仍收到 deny，优先检查 `disallowedTools` 是否包含该工具（包含时 deny 为预期行为）。
 
-### 5.4 用例 D：会话管理（list/get/cancel）
+### 5.4 用例 D：会话管理（list/get/cancel/interrupt）
 
 目标：验证会话管理工具行为稳定。
 
@@ -209,6 +216,7 @@
 ```text
 请调用 claude_code_session action=list，列出当前 sessions。
 对一个 session 调用 action=get（分别测试 includeSensitive=false 和 true）。
+再选择一个 running 或 waiting_permission 的 session 调用 action=interrupt，确认它不是直接 cancelled。
 最后选择一个 running 或 waiting_permission 的 session 调用 action=cancel，再 poll 验证状态变为 cancelled。
 不要对已终态 session 重复 cancel。
 ```
@@ -218,7 +226,8 @@
 1. `list` 返回会话列表。
 2. `get(includeSensitive=false)` 不泄露敏感字段。
 3. `get(includeSensitive=true)` 对已设置字段可见；未设置字段可不存在（仍不应暴露 `env/mcpServers/sandbox` 等敏感内容）。
-4. `cancel` 后状态进入 `cancelled`。
+4. `interrupt` 与 `cancel` 语义分离：interrupt 不应像 cancel 一样直接将 session 置为 cancelled；但 interrupt 可能导致 SDK 以 error 状态结束（含 CANCELLED result），客户端需兼容处理这两种情况。
+5. `cancel` 后状态进入 `cancelled`。
 
 失败恢复：
 
@@ -239,7 +248,7 @@
 ```text
 目标：让本目录测试命令通过。
 先运行测试复现失败；再定位根因并做最小修复；最后再次运行测试确认通过。
-Windows 场景请优先使用当前 cwd 下的绝对 Windows 路径，避免 `/home/user/...` 风格路径。
+Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 风格路径，必须先自检并改写为当前 cwd 下的 Windows 绝对路径后再执行。
 不要做无关重构。
 输出：失败原因、修改点、复测结果。
 ```
@@ -380,7 +389,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 ```text
 请先通过客户端工具注册表或可调用性确认 claude_code、claude_code_reply、claude_code_check、claude_code_session 四个工具。
 如果客户端支持 tools/list，再调用 tools/list 做二次确认。
-然后调用 resources/list，并读取 claude-code-mcp:///server-info 与 claude-code-mcp:///compat-report。
+然后调用 resources/list，并读取 claude-code-mcp:///server-info、claude-code-mcp:///quickstart、claude-code-mcp:///errors 与 claude-code-mcp:///compat-report。
 输出关键字段和你的结论。
 ```
 
@@ -392,6 +401,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 每次轮询都要打印 status、nextCursor、actions 数量。
 如果返回 cursorResetTo，请先重置 cursor 再继续 poll。
 如果出现 nextCursor 不变且 events 为空，按同一 cursor 重试最多 3 次，再记录为疑似异常。
+Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 风格路径，必须先自检并改写为当前 cwd 下的 Windows 绝对路径后再执行。
 终态时输出 result。
 ```
 
@@ -400,7 +410,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 ```text
 如果出现 waiting_permission，不要继续空轮询。
 请读取 actions[] 中的 requestId，并调用 claude_code_check(action=respond_permission, requestId=..., decision=...)。
-先执行一次 allow；若后续还有请求，再执行一次 deny(interrupt=false)。
+先执行一次 allow_for_session（或 allow）；若后续还有请求，再执行一次 deny(interrupt=false)。
 每次 respond_permission 后确认 permission_result；如临近超时（默认 60000ms）优先处理剩余时间最短的请求。
 Windows 场景优先使用当前 cwd 下的绝对 Windows 路径，不要使用 `/home/user/...` 路径。
 然后继续 poll 到终态，并说明 permission_result。
@@ -410,6 +420,7 @@ Windows 场景优先使用当前 cwd 下的绝对 Windows 路径，不要使用 
 
 ```text
 请在独立测试项目目录执行：先运行测试复现失败，再做最小修复，再次运行测试确认通过。
+Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 风格路径，必须先自检并改写为当前 cwd 下的 Windows 绝对路径后再执行。
 要求输出：失败用例、根因、修改文件、复测结果。
 最后给出是否通过 verdict。
 ```

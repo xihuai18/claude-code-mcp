@@ -2,7 +2,7 @@ import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/serv
 import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { createHash } from "node:crypto";
 import type { SessionManager } from "../session/manager.js";
-import type { PublicSessionInfo } from "../types.js";
+import { ErrorCode, type PublicSessionInfo } from "../types.js";
 import {
   defaultCatalogTools,
   discoverToolsFromInit,
@@ -15,6 +15,8 @@ export const RESOURCE_URIS = {
   serverInfo: `${RESOURCE_SCHEME}:///server-info`,
   internalTools: `${RESOURCE_SCHEME}:///internal-tools`,
   gotchas: `${RESOURCE_SCHEME}:///gotchas`,
+  quickstart: `${RESOURCE_SCHEME}:///quickstart`,
+  errors: `${RESOURCE_SCHEME}:///errors`,
   compatReport: `${RESOURCE_SCHEME}:///compat-report`,
 } as const;
 
@@ -191,7 +193,7 @@ export function registerResources(
   deps: { toolCache: ToolDiscoveryCache; version: string; sessionManager: SessionManager }
 ): void {
   const startedAt = new Date().toISOString();
-  const resourceSchemaVersion = "1.2";
+  const resourceSchemaVersion = "1.3";
   const mcpProtocolVersion = "2025-03-26";
   const gotchasEntries = buildGotchasEntries();
   const catalogToolNames = new Set(defaultCatalogTools().map((tool) => tool.name));
@@ -304,6 +306,72 @@ export function registerResources(
   );
 
   const compatReportUri = new URL(RESOURCE_URIS.compatReport);
+
+  const quickstartUri = new URL(RESOURCE_URIS.quickstart);
+  server.registerResource(
+    "quickstart",
+    quickstartUri.toString(),
+    {
+      title: "Quickstart",
+      description: "Minimal async polling flow for claude_code / claude_code_check.",
+      mimeType: "text/markdown",
+    },
+    () =>
+      asTextResource(
+        quickstartUri,
+        [
+          "# claude-code-mcp quickstart",
+          "",
+          "1. Call `claude_code` with `{ prompt }` and keep `sessionId`.",
+          "2. Poll with `claude_code_check(action='poll')` using `nextCursor`.",
+          "3. If actions are returned, respond with `claude_code_check(action='respond_permission')`.",
+          "4. Continue polling until status becomes `idle` / `error` / `cancelled`.",
+          "",
+          "Notes:",
+          "- `respond_user_input` is not supported on this backend.",
+          "- Prefer `responseMode='delta_compact'` for high-frequency polling.",
+        ].join("\n"),
+        "text/markdown"
+      )
+  );
+
+  const errorsUri = new URL(RESOURCE_URIS.errors);
+  server.registerResource(
+    "errors",
+    errorsUri.toString(),
+    {
+      title: "Errors",
+      description: "Structured error codes and remediation hints.",
+      mimeType: "application/json",
+    },
+    () => {
+      const codes = Object.values(ErrorCode);
+      const hints = {
+        [ErrorCode.INVALID_ARGUMENT]: "Validate required fields and enum values.",
+        [ErrorCode.SESSION_NOT_FOUND]: "Session may be expired or server-restarted.",
+        [ErrorCode.SESSION_BUSY]: "Wait for running/waiting_permission session to settle.",
+        [ErrorCode.PERMISSION_REQUEST_NOT_FOUND]:
+          "The permission request was already finished/expired.",
+        [ErrorCode.PERMISSION_DENIED]: "Check token/secrets/policy restrictions.",
+        [ErrorCode.RESOURCE_EXHAUSTED]: "Reduce session count or increase server limits.",
+        [ErrorCode.TIMEOUT]: "Increase timeout or poll/respond more frequently.",
+        [ErrorCode.CANCELLED]: "Request/session was cancelled by caller or shutdown.",
+        [ErrorCode.INTERNAL]: "Inspect server logs and runtime environment.",
+      };
+      return asJsonResource(
+        errorsUri,
+        asVersionedPayload({
+          schemaVersion: resourceSchemaVersion,
+          stability: "stable",
+          payload: {
+            codes,
+            hints,
+          },
+        })
+      );
+    }
+  );
+
   server.registerResource(
     "compat_report",
     compatReportUri.toString(),
@@ -360,6 +428,9 @@ export function registerResources(
           resourceTemplates: true,
           toolsListChanged: true,
           resourcesListChanged: true,
+          sessionInterrupt: true,
+          allowForSessionDecision: true,
+          respondUserInput: false,
           prompts: false,
           completions: false,
         },
@@ -381,6 +452,7 @@ export function registerResources(
           "Use allowedTools/disallowedTools only with exact runtime tool names.",
           "This server assumes MCP client and server run on the same machine/platform.",
           "For high-frequency status checks, prefer responseMode='delta_compact'.",
+          "respond_user_input is not supported on this backend; use poll/respond_permission flow.",
         ],
         toolCounts: {
           catalogCount: toolCatalogCount,

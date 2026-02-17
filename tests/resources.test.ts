@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServerContext } from "../src/server.js";
+import { ErrorCode } from "../src/types.js";
 
 async function withClientServer<T>(
   fn: (client: Client, ctx: ReturnType<typeof createServerContext>) => Promise<T>
@@ -47,8 +48,10 @@ describe("Resources", () => {
       expect(uris.sort()).toEqual(
         [
           "claude-code-mcp:///compat-report",
+          "claude-code-mcp:///errors",
           "claude-code-mcp:///gotchas",
           "claude-code-mcp:///internal-tools",
+          "claude-code-mcp:///quickstart",
           "claude-code-mcp:///server-info",
         ].sort()
       );
@@ -81,7 +84,7 @@ describe("Resources", () => {
       };
       expect(info.name).toBe("claude-code-mcp");
       expect(typeof info.version).toBe("string");
-      expect(info.schemaVersion).toBe("1.2");
+      expect(info.schemaVersion).toBe("1.3");
       expect(typeof info.etag).toBe("string");
       expect(typeof info.updatedAt).toBe("string");
       expect(info.capabilities?.resources).toBe(true);
@@ -91,9 +94,11 @@ describe("Resources", () => {
       expect((info.resources as string[]).slice().sort()).toEqual(
         [
           "claude-code-mcp:///compat-report",
+          "claude-code-mcp:///errors",
           "claude-code-mcp:///server-info",
           "claude-code-mcp:///internal-tools",
           "claude-code-mcp:///gotchas",
+          "claude-code-mcp:///quickstart",
         ]
           .slice()
           .sort()
@@ -125,6 +130,44 @@ describe("Resources", () => {
           : "";
       expect(gotchasText).toContain("gotchas");
 
+      const quickstartRes = await client.readResource({ uri: "claude-code-mcp:///quickstart" });
+      expect(quickstartRes.contents[0]?.mimeType).toBe("text/markdown");
+      const quickstartContent = quickstartRes.contents[0];
+      const quickstartText =
+        quickstartContent &&
+        "text" in quickstartContent &&
+        typeof quickstartContent.text === "string"
+          ? quickstartContent.text
+          : "";
+      expect(quickstartText).toContain("quickstart");
+      expect(quickstartText).toContain("claude_code_check(action='poll')");
+      expect(quickstartText).toContain("respond_permission");
+      expect(quickstartText).toContain("`respond_user_input` is not supported");
+
+      const errorsRes = await client.readResource({ uri: "claude-code-mcp:///errors" });
+      expect(errorsRes.contents[0]?.mimeType).toBe("application/json");
+      const errorsContent = errorsRes.contents[0];
+      const errorsText =
+        errorsContent && "text" in errorsContent && typeof errorsContent.text === "string"
+          ? errorsContent.text
+          : "{}";
+      const errorsJson = JSON.parse(errorsText) as { codes?: unknown[]; hints?: unknown };
+      expect(Array.isArray(errorsJson.codes)).toBe(true);
+      expect(errorsJson.codes).toEqual(
+        expect.arrayContaining([
+          ErrorCode.INVALID_ARGUMENT,
+          ErrorCode.SESSION_NOT_FOUND,
+          ErrorCode.INTERNAL,
+        ])
+      );
+      expect(errorsJson.hints).toBeDefined();
+      expect(errorsJson.hints).not.toBeNull();
+      expect(Array.isArray(errorsJson.hints)).toBe(false);
+      const hints = errorsJson.hints as Record<string, unknown>;
+      expect(typeof hints[ErrorCode.INVALID_ARGUMENT]).toBe("string");
+      expect(typeof hints[ErrorCode.SESSION_NOT_FOUND]).toBe("string");
+      expect(typeof hints[ErrorCode.INTERNAL]).toBe("string");
+
       const compatRes = await client.readResource({ uri: "claude-code-mcp:///compat-report" });
       expect(compatRes.contents[0]?.mimeType).toBe("application/json");
       const compatContent = compatRes.contents[0];
@@ -148,12 +191,17 @@ describe("Resources", () => {
           responseMode?: unknown;
           poll?: { cursorStrategy?: unknown };
         };
-        features?: { resourceTemplates?: unknown };
+        features?: {
+          resourceTemplates?: unknown;
+          sessionInterrupt?: unknown;
+          allowForSessionDecision?: unknown;
+          respondUserInput?: unknown;
+        };
         resourceTemplates?: unknown;
       };
       expect(compat.samePlatformRequired).toBe(true);
       expect(compat.transport).toBe("stdio");
-      expect(compat.schemaVersion).toBe("1.2");
+      expect(compat.schemaVersion).toBe("1.3");
       expect(typeof compat.packageVersion).toBe("string");
       expect(typeof compat.limits?.eventBuffer?.maxSize).toBe("number");
       expect(typeof compat.limits?.eventBuffer?.hardMaxSize).toBe("number");
@@ -164,6 +212,9 @@ describe("Resources", () => {
       expect(compat.recommendedSettings?.responseMode).toBe("delta_compact");
       expect(typeof compat.recommendedSettings?.poll?.cursorStrategy).toBe("string");
       expect(compat.features?.resourceTemplates).toBe(true);
+      expect(compat.features?.sessionInterrupt).toBe(true);
+      expect(compat.features?.allowForSessionDecision).toBe(true);
+      expect(compat.features?.respondUserInput).toBe(false);
       expect(Array.isArray(compat.resourceTemplates)).toBe(true);
 
       ctx.sessionManager.create({ sessionId: "s-template", cwd: "/tmp" });

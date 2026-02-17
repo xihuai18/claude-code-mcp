@@ -114,6 +114,14 @@ function describeTool(toolName: string, toolCache?: ToolDiscoveryCache): string 
   return found?.description;
 }
 
+function normalizePolicyToolNames(tools: string[] | undefined): string[] {
+  if (!Array.isArray(tools) || tools.length === 0) return [];
+  return tools
+    .filter((tool): tool is string => typeof tool === "string")
+    .map((tool) => tool.trim())
+    .filter((tool) => tool !== "");
+}
+
 function sdkResultToAgentResult(result: SDKResultMessage): AgentResult {
   const sessionTotalTurns = (result as unknown as { session_total_turns?: unknown })
     .session_total_turns;
@@ -265,6 +273,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
 
   const canUseTool: CanUseTool = async (toolName, input, options) => {
     const sessionId = await getSessionId();
+    const normalizedToolName = toolName.trim();
     const normalizedInput = normalizeToolInput(toolName, input, params.platform);
 
     // Keep MCP permission behavior consistent with the SDK options semantics:
@@ -274,17 +283,19 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
     // defensive fast-path in case the SDK calls canUseTool for all tool uses.
     const sessionInfo = params.sessionManager.get(sessionId);
     if (sessionInfo) {
-      if (
-        Array.isArray(sessionInfo.disallowedTools) &&
-        sessionInfo.disallowedTools.includes(toolName)
-      ) {
-        return { behavior: "deny", message: `Tool '${toolName}' is disallowed by session policy.` };
+      const disallowedTools = normalizePolicyToolNames(sessionInfo.disallowedTools);
+      const allowedTools = normalizePolicyToolNames(sessionInfo.allowedTools);
+      if (normalizedToolName !== "" && disallowedTools.includes(normalizedToolName)) {
+        return {
+          behavior: "deny",
+          message: `Tool '${normalizedToolName}' is disallowed by session policy.`,
+        };
       }
 
       if (
         !options.blockedPath &&
-        Array.isArray(sessionInfo.allowedTools) &&
-        sessionInfo.allowedTools.includes(toolName)
+        normalizedToolName !== "" &&
+        allowedTools.includes(normalizedToolName)
       ) {
         return {
           behavior: "allow",
@@ -499,12 +510,14 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
                 totalTurns: sessionTotalTurns,
                 totalCostUsd: sessionTotalCostUsd,
                 abortController: undefined,
+                queryInterrupt: undefined,
               });
             } else if (current) {
               params.sessionManager.update(sessionId, {
                 totalTurns: sessionTotalTurns,
                 totalCostUsd: sessionTotalCostUsd,
                 abortController: undefined,
+                queryInterrupt: undefined,
               });
             }
 
@@ -561,6 +574,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
             params.sessionManager.update(sessionId, {
               status: "error",
               abortController: undefined,
+              queryInterrupt: undefined,
             });
           }
         }
@@ -661,7 +675,11 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
             timestamp: new Date().toISOString(),
           });
 
-          params.sessionManager.update(sessionId, { status: "error", abortController: undefined });
+          params.sessionManager.update(sessionId, {
+            status: "error",
+            abortController: undefined,
+            queryInterrupt: undefined,
+          });
         }
         return; // fatal/abort exit
       } finally {

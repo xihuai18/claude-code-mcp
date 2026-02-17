@@ -1,5 +1,5 @@
 /**
- * claude_code_session tool - Manage sessions (list, get, cancel)
+ * claude_code_session tool - Manage sessions (list, get, cancel, interrupt)
  */
 import type { SessionManager } from "../session/manager.js";
 import type {
@@ -142,10 +142,44 @@ export function executeClaudeCodeSession(
       };
     }
 
+    case "interrupt": {
+      if (!input.sessionId) {
+        return {
+          sessions: [],
+          message: `Error [${ErrorCode.INVALID_ARGUMENT}]: sessionId is required for 'interrupt' action.`,
+          isError: true,
+        };
+      }
+      const interrupted = sessionManager.interrupt(input.sessionId, {
+        reason: "Interrupted by caller",
+        source: "claude_code_session",
+      });
+      if (!interrupted) {
+        const session = sessionManager.get(input.sessionId);
+        if (!session) {
+          return {
+            sessions: [],
+            message: `Error [${ErrorCode.SESSION_NOT_FOUND}]: Session '${input.sessionId}' not found.`,
+            isError: true,
+          };
+        }
+        return {
+          sessions: [toSessionJson(session)],
+          message: `Error [${ErrorCode.INVALID_ARGUMENT}]: Session '${input.sessionId}' is not running (status: ${session.status}).`,
+          isError: true,
+        };
+      }
+      const updated = sessionManager.get(input.sessionId);
+      return {
+        sessions: updated ? [toSessionJson(updated)] : [],
+        message: `Session '${input.sessionId}' interrupted.`,
+      };
+    }
+
     default:
       return {
         sessions: [],
-        message: `Error [${ErrorCode.INVALID_ARGUMENT}]: Unknown action '${input.action}'. Use 'list', 'get', or 'cancel'.`,
+        message: `Error [${ErrorCode.INVALID_ARGUMENT}]: Unknown action '${input.action}'. Use 'list', 'get', 'cancel', or 'interrupt'.`,
         isError: true,
       };
   }

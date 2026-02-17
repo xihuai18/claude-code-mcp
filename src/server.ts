@@ -401,10 +401,10 @@ export function createServerContext(serverCwd: string): {
   server.registerTool(
     "claude_code_session",
     {
-      description: "List, inspect, or cancel sessions.",
+      description: "List, inspect, cancel, or interrupt sessions.",
       inputSchema: {
         action: z.enum(SESSION_ACTIONS),
-        sessionId: z.string().optional().describe("Required for get/cancel"),
+        sessionId: z.string().optional().describe("Required for get/cancel/interrupt"),
         includeSensitive: z.boolean().optional().describe("Default: false"),
       },
       outputSchema: sessionResultSchema,
@@ -469,8 +469,11 @@ export function createServerContext(serverCwd: string): {
           .optional()
           .describe("Default: 200 (minimal), unlimited (full/delta_compact)"),
 
-        requestId: z.string().optional().describe("Permission request ID"),
-        decision: z.enum(["allow", "deny"]).optional().describe("Decision"),
+        requestId: z.string().optional().describe("Default: none"),
+        decision: z
+          .enum(["allow", "deny", "allow_for_session"])
+          .optional()
+          .describe("Default: none"),
         denyMessage: z.string().optional().describe("Default: 'Permission denied by caller'"),
         interrupt: z.boolean().optional().describe("Default: false"),
 

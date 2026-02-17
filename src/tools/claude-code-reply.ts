@@ -207,7 +207,7 @@ export async function executeClaudeCodeReply(
       );
 
       try {
-        consumeQuery({
+        const handle = consumeQuery({
           mode: "disk-resume",
           sessionId: input.sessionId,
           prompt: input.prompt,
@@ -217,6 +217,11 @@ export async function executeClaudeCodeReply(
           sessionInitTimeoutMs,
           sessionManager,
           toolCache,
+        });
+        sessionManager.update(input.sessionId, {
+          queryInterrupt: () => {
+            handle.interrupt();
+          },
         });
       } catch (err: unknown) {
         const { agentResult, errorText } = toStartError(input.sessionId, err);
@@ -230,7 +235,11 @@ export async function executeClaudeCodeReply(
           data: agentResult,
           timestamp: new Date().toISOString(),
         });
-        sessionManager.update(input.sessionId, { status: "error", abortController: undefined });
+        sessionManager.update(input.sessionId, {
+          status: "error",
+          abortController: undefined,
+          queryInterrupt: undefined,
+        });
         return { sessionId: input.sessionId, status: "error", error: errorText };
       }
 
@@ -253,7 +262,11 @@ export async function executeClaudeCodeReply(
           data: agentResult,
           timestamp: new Date().toISOString(),
         });
-        sessionManager.update(input.sessionId, { status: "error", abortController: undefined });
+        sessionManager.update(input.sessionId, {
+          status: "error",
+          abortController: undefined,
+          queryInterrupt: undefined,
+        });
       }
       return {
         sessionId: input.sessionId,
@@ -340,6 +353,7 @@ export async function executeClaudeCodeReply(
         sessionManager.update(input.sessionId, {
           status: originalStatus,
           abortController: undefined,
+          queryInterrupt: undefined,
         });
 
         if (!sessionManager.get(init.session_id)) {
@@ -349,11 +363,21 @@ export async function executeClaudeCodeReply(
               source: { ...session, ...sourceOverrides },
               permissionMode: "default",
               abortController,
+              queryInterrupt: () => {
+                handle.interrupt();
+              },
             })
           );
         }
       },
     });
+    if (!input.forkSession) {
+      sessionManager.update(input.sessionId, {
+        queryInterrupt: () => {
+          handle.interrupt();
+        },
+      });
+    }
 
     const sessionId = input.forkSession
       ? await raceWithAbort(handle.sdkSessionIdPromise, requestSignal, () =>
@@ -381,6 +405,7 @@ export async function executeClaudeCodeReply(
       sessionManager.update(input.sessionId, {
         status: originalStatus,
         abortController: undefined,
+        queryInterrupt: undefined,
       });
     } else {
       sessionManager.setResult(input.sessionId, {
@@ -393,7 +418,11 @@ export async function executeClaudeCodeReply(
         data: agentResult,
         timestamp: new Date().toISOString(),
       });
-      sessionManager.update(input.sessionId, { status: "error", abortController: undefined });
+      sessionManager.update(input.sessionId, {
+        status: "error",
+        abortController: undefined,
+        queryInterrupt: undefined,
+      });
     }
     return {
       sessionId: input.sessionId,

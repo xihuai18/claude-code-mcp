@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { SessionManager } from "../src/session/manager.js";
 import { executeClaudeCodeSession } from "../src/tools/claude-code-session.js";
 import type { SessionAction } from "../src/types.js";
@@ -159,6 +159,87 @@ describe("claude_code_session tool", () => {
       const result = executeClaudeCodeSession({ action: "cancel", sessionId: "nope" }, manager);
       expect(result.isError).toBe(true);
       expect(result.message).toContain("SESSION_NOT_FOUND");
+    });
+  });
+
+  describe("interrupt action", () => {
+    it("should return error without sessionId", () => {
+      const result = executeClaudeCodeSession({ action: "interrupt" }, manager);
+      expect(result.isError).toBe(true);
+      expect(result.message).toContain("INVALID_ARGUMENT");
+    });
+
+    it("should interrupt a running session without cancelling it", () => {
+      const ac = new AbortController();
+      const queryInterrupt = vi.fn();
+      manager.create({
+        sessionId: "s-int",
+        cwd: "/tmp",
+        abortController: ac,
+        queryInterrupt,
+      });
+
+      const result = executeClaudeCodeSession({ action: "interrupt", sessionId: "s-int" }, manager);
+      expect(result.message).toContain("interrupted");
+      expect(queryInterrupt).toHaveBeenCalledTimes(1);
+      expect(ac.signal.aborted).toBe(true);
+      expect(manager.get("s-int")?.status).toBe("running");
+      expect(manager.get("s-int")?.cancelledAt).toBeUndefined();
+      expect(manager.get("s-int")?.cancelledReason).toBeUndefined();
+      expect(manager.get("s-int")?.cancelledSource).toBeUndefined();
+    });
+
+    it("should interrupt waiting_permission sessions and clear pending requests", () => {
+      const ac = new AbortController();
+      const finish = vi.fn();
+      manager.create({
+        sessionId: "s-int-wait",
+        cwd: "/tmp",
+        abortController: ac,
+        queryInterrupt: vi.fn(),
+      });
+      manager.setPendingPermission(
+        "s-int-wait",
+        {
+          requestId: "req-int",
+          toolName: "Bash",
+          input: { command: "echo hi" },
+          summary: "run command",
+          toolUseID: "tu-int",
+          createdAt: new Date().toISOString(),
+        },
+        finish,
+        60_000
+      );
+
+      const result = executeClaudeCodeSession(
+        { action: "interrupt", sessionId: "s-int-wait" },
+        manager
+      );
+      expect(result.message).toContain("interrupted");
+      expect(result.isError).toBeUndefined();
+      expect(ac.signal.aborted).toBe(true);
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(manager.getPendingPermissionCount("s-int-wait")).toBe(0);
+      expect(manager.get("s-int-wait")?.status).toBe("running");
+    });
+
+    it("should return error for non-existent session", () => {
+      const result = executeClaudeCodeSession({ action: "interrupt", sessionId: "nope" }, manager);
+      expect(result.isError).toBe(true);
+      expect(result.message).toContain("SESSION_NOT_FOUND");
+    });
+
+    it("should return error for non-running session", () => {
+      manager.create({ sessionId: "s-idle", cwd: "/tmp" });
+      manager.update("s-idle", { status: "idle" });
+
+      const result = executeClaudeCodeSession(
+        { action: "interrupt", sessionId: "s-idle" },
+        manager
+      );
+      expect(result.isError).toBe(true);
+      expect(result.message).toContain("not running");
     });
   });
 

@@ -469,6 +469,92 @@ describe("consumeQuery", () => {
     manager.destroy();
   });
 
+  it("should hard-deny canUseTool for disallowedTools even when policy names contain whitespace", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
+      const options = params.options as unknown as { canUseTool: CanUseTool };
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-disallowed",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Bash"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        const result = await options.canUseTool(
+          "Bash",
+          { command: "echo hi" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tu-disallowed",
+          }
+        );
+        expect(result).toEqual({
+          behavior: "deny",
+          message: "Tool 'Bash' is disallowed by session policy.",
+        });
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-disallowed",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn;
+    });
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          disallowedTools: [" Bash "],
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+    expect(manager.get("sess-disallowed")!.status).toBe("idle");
+    expect(manager.getPendingPermissionCount("sess-disallowed")).toBe(0);
+
+    manager.destroy();
+  });
+
   it("should still require permission for allowedTools when blockedPath is provided", async () => {
     const manager = new SessionManager();
     const toolCache = new ToolDiscoveryCache();
