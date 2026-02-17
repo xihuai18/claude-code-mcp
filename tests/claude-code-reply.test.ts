@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => {
@@ -132,6 +134,28 @@ describe("claude-code-reply", () => {
       expect(mockQuery).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllEnvs();
+    }
+  });
+
+  it("maps /tmp/* session cwd to the OS temp directory on Windows", async () => {
+    if (process.platform !== "win32") return;
+
+    const createdDir = mkdtempSync(path.join(os.tmpdir(), "cc-reply-cwd-"));
+    const posixLikeCwd = `/tmp/${path.basename(createdDir)}`;
+    try {
+      manager.create({ sessionId: "sess-win-tmp", cwd: posixLikeCwd });
+      manager.update("sess-win-tmp", { status: "idle" });
+      mockQuery.mockReturnValue(successStream("sess-win-tmp"));
+
+      const result = await executeClaudeCodeReply(
+        { sessionId: "sess-win-tmp", prompt: "continue" },
+        manager,
+        toolCache
+      );
+
+      expect(result.status).toBe("running");
+    } finally {
+      rmSync(createdDir, { recursive: true, force: true });
     }
   });
 });

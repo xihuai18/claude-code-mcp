@@ -2,6 +2,8 @@
  * claude_code_reply tool - Continue an existing Claude Code session (async)
  */
 import { existsSync, statSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { SessionManager } from "../session/manager.js";
 import type {
   AgentDefinition,
@@ -89,26 +91,38 @@ export type ClaudeCodeReplyStartResult =
 
 function normalizeAndAssertCwd(cwd: string, contextLabel: string): string {
   const normalizedCwd = normalizeWindowsPathLike(cwd);
-  if (!existsSync(normalizedCwd)) {
+  const resolvedCwd = resolvePortableTmpAlias(normalizedCwd);
+  if (!existsSync(resolvedCwd)) {
     throw new Error(
-      `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} path does not exist: ${normalizedCwd}`
+      `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} path does not exist: ${resolvedCwd}`
     );
   }
   try {
-    const stat = statSync(normalizedCwd);
+    const stat = statSync(resolvedCwd);
     if (!stat.isDirectory()) {
       throw new Error(
-        `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} must be a directory: ${normalizedCwd}`
+        `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} must be a directory: ${resolvedCwd}`
       );
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes("Error [")) throw err;
     const detail = err instanceof Error ? ` (${err.message})` : "";
     throw new Error(
-      `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} is not accessible: ${normalizedCwd}${detail}`
+      `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} is not accessible: ${resolvedCwd}${detail}`
     );
   }
-  return normalizedCwd;
+  return resolvedCwd;
+}
+
+function resolvePortableTmpAlias(cwd: string): string {
+  if (process.platform !== "win32") return cwd;
+
+  const normalized = cwd.replace(/\\/g, "/");
+  if (normalized === "/tmp") return os.tmpdir();
+  if (normalized.startsWith("/tmp/")) {
+    return path.join(os.tmpdir(), normalized.slice("/tmp/".length));
+  }
+  return cwd;
 }
 
 function toStartError(
