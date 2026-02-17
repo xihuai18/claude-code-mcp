@@ -168,6 +168,47 @@ describe("MCP Server", () => {
     }
   });
 
+  it("should expose strictAllowedTools in claude_code and diskResumeConfig schemas", async () => {
+    const server = createServer("/tmp");
+    const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const listed = await client.listTools();
+      const claudeCode = listed.tools.find((t) => t.name === "claude_code") as
+        | { inputSchema?: { properties?: Record<string, unknown> } }
+        | undefined;
+      const claudeCodeReply = listed.tools.find((t) => t.name === "claude_code_reply") as
+        | {
+            inputSchema?: {
+              properties?: {
+                diskResumeConfig?: {
+                  properties?: Record<string, unknown>;
+                };
+              };
+            };
+          }
+        | undefined;
+
+      expect(
+        (claudeCode?.inputSchema?.properties?.strictAllowedTools as { type?: string } | undefined)
+          ?.type
+      ).toBe("boolean");
+      expect(
+        (
+          claudeCodeReply?.inputSchema?.properties?.diskResumeConfig?.properties
+            ?.strictAllowedTools as { type?: string } | undefined
+        )?.type
+      ).toBe("boolean");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("should support claude_code_session(action='interrupt') via MCP tool call", async () => {
     const ctx = createServerContext("/tmp");
     const { server, sessionManager } = ctx;

@@ -280,8 +280,14 @@ function computeToolValidation(
   if (!session) return { summary: undefined, warnings: [] };
   const allowedTools = uniqSorted(session.allowedTools);
   const disallowedTools = uniqSorted(session.disallowedTools);
+  const warnings: string[] = [];
+  if (allowedTools.length > 0 && session.strictAllowedTools !== true) {
+    warnings.push(
+      "allowedTools currently acts as pre-approval only. Set strictAllowedTools=true to enforce a strict allowlist."
+    );
+  }
   if (allowedTools.length === 0 && disallowedTools.length === 0) {
-    return { summary: undefined, warnings: [] };
+    return { summary: undefined, warnings };
   }
 
   if (!Array.isArray(initTools) || initTools.length === 0) {
@@ -292,6 +298,7 @@ function computeToolValidation(
         unknownDisallowedTools: [],
       },
       warnings: [
+        ...warnings,
         "Runtime tool list is not available yet; unknown allowedTools/disallowedTools names cannot be validated until system/init tools arrive.",
       ],
     };
@@ -305,7 +312,6 @@ function computeToolValidation(
   );
   const unknownAllowedTools = allowedTools.filter((name) => !runtime.has(name));
   const unknownDisallowedTools = disallowedTools.filter((name) => !runtime.has(name));
-  const warnings: string[] = [];
   if (unknownAllowedTools.length > 0) {
     warnings.push(
       `Unknown allowedTools (not present in runtime tools): ${unknownAllowedTools.join(", ")}.`

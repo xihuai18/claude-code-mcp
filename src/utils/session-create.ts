@@ -20,6 +20,7 @@ export function toSessionCreateParams(input: {
     permissionMode: input.permissionMode,
     allowedTools: src.allowedTools,
     disallowedTools: src.disallowedTools,
+    strictAllowedTools: src.strictAllowedTools,
     tools: src.tools,
     maxTurns: src.maxTurns,
     systemPrompt: src.systemPrompt,

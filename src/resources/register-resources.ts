@@ -329,6 +329,7 @@ export function registerResources(
           "",
           "Notes:",
           "- `respond_user_input` is not supported on this backend.",
+          "- `allowedTools` is pre-approval by default; set `strictAllowedTools=true` for strict allowlist behavior.",
           "- Prefer `responseMode='delta_compact'` for high-frequency polling.",
         ].join("\n"),
         "text/markdown"
@@ -450,6 +451,7 @@ export function registerResources(
         guidance: [
           "Some clients cache tool descriptions at connect time. Prefer claude_code_check(pollOptions.includeTools=true) for runtime-authoritative tool lists.",
           "Use allowedTools/disallowedTools only with exact runtime tool names.",
+          "Set strictAllowedTools=true when you need allowedTools to behave as a strict allowlist.",
           "This server assumes MCP client and server run on the same machine/platform.",
           "For high-frequency status checks, prefer responseMode='delta_compact'.",
           "respond_user_input is not supported on this backend; use poll/respond_permission flow.",
@@ -645,6 +647,7 @@ export function registerResources(
             recommendations: [
               "Use resources and resource templates for low-latency diagnostics.",
               "Use allowedTools/disallowedTools with exact runtime names.",
+              "Enable strictAllowedTools when running in locked-down governance mode.",
             ],
           };
         }

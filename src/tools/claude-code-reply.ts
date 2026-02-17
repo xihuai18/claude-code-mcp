@@ -1,6 +1,7 @@
 /**
  * claude_code_reply tool - Continue an existing Claude Code session (async)
  */
+import { existsSync, statSync } from "node:fs";
 import type { SessionManager } from "../session/manager.js";
 import type {
   AgentDefinition,
@@ -27,6 +28,7 @@ import { raceWithAbort } from "../utils/race-with-abort.js";
 import { buildOptions } from "../utils/build-options.js";
 import type { OptionSource } from "../utils/build-options.js";
 import { toSessionCreateParams } from "../utils/session-create.js";
+import { normalizeWindowsPathLike } from "../utils/normalize-windows-path.js";
 
 /** Disk resume fallback configuration — only used when the in-memory session is missing. */
 export interface DiskResumeConfig {
@@ -55,6 +57,7 @@ export interface DiskResumeConfig {
   enableFileCheckpointing?: boolean;
   includePartialMessages?: boolean;
   strictMcpConfig?: boolean;
+  strictAllowedTools?: boolean;
   settingSources?: SettingSource[];
   debug?: boolean;
   debugFile?: string;
@@ -83,6 +86,30 @@ export interface ClaudeCodeReplyInput {
 export type ClaudeCodeReplyStartResult =
   | SessionStartResult
   | { sessionId: string; status: "error"; error: string };
+
+function normalizeAndAssertCwd(cwd: string, contextLabel: string): string {
+  const normalizedCwd = normalizeWindowsPathLike(cwd);
+  if (!existsSync(normalizedCwd)) {
+    throw new Error(
+      `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} path does not exist: ${normalizedCwd}`
+    );
+  }
+  try {
+    const stat = statSync(normalizedCwd);
+    if (!stat.isDirectory()) {
+      throw new Error(
+        `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} must be a directory: ${normalizedCwd}`
+      );
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes("Error [")) throw err;
+    const detail = err instanceof Error ? ` (${err.message})` : "";
+    throw new Error(
+      `Error [${ErrorCode.INVALID_ARGUMENT}]: ${contextLabel} is not accessible: ${normalizedCwd}${detail}`
+    );
+  }
+  return normalizedCwd;
+}
 
 function toStartError(
   sessionId: string,
@@ -119,7 +146,11 @@ function buildOptionsFromDiskResume(dr: DiskResumeConfig): ReturnType<typeof bui
   if (dr.cwd === undefined || typeof dr.cwd !== "string" || dr.cwd.trim() === "") {
     throw new Error(`Error [${ErrorCode.INVALID_ARGUMENT}]: cwd must be provided for disk resume.`);
   }
-  return buildOptions(dr as Parameters<typeof buildOptions>[0]);
+  const normalizedCwd = normalizeAndAssertCwd(dr.cwd, "disk resume cwd");
+  return buildOptions({
+    ...dr,
+    cwd: normalizedCwd,
+  } as Parameters<typeof buildOptions>[0]);
 }
 
 export async function executeClaudeCodeReply(
@@ -307,7 +338,9 @@ export async function executeClaudeCodeReply(
   }
 
   const session = acquired;
+  const normalizedCwd = normalizeAndAssertCwd(session.cwd, "session cwd");
   const options = buildOptions(session);
+  options.cwd = normalizedCwd;
   if (input.forkSession) options.forkSession = true;
 
   if (input.forkSession && !sessionManager.hasCapacityFor(1)) {

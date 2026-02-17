@@ -555,6 +555,94 @@ describe("consumeQuery", () => {
     manager.destroy();
   });
 
+  it("should hard-deny tools outside allowedTools when strictAllowedTools=true", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
+      const options = params.options as unknown as { canUseTool: CanUseTool };
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-strict-allow",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Read", "Bash"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        const result = await options.canUseTool(
+          "Bash",
+          { command: "pwd" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tu-strict-allow",
+          }
+        );
+        expect(result).toEqual({
+          behavior: "deny",
+          message: "Tool 'Bash' is not in allowedTools under strictAllowedTools policy.",
+          interrupt: false,
+        });
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-strict-allow",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn;
+    });
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          allowedTools: ["Read"],
+          strictAllowedTools: true,
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+    expect(manager.get("sess-strict-allow")!.status).toBe("idle");
+    expect(manager.getPendingPermissionCount("sess-strict-allow")).toBe(0);
+
+    manager.destroy();
+  });
+
   it("should still require permission for allowedTools when blockedPath is provided", async () => {
     const manager = new SessionManager();
     const toolCache = new ToolDiscoveryCache();
@@ -614,6 +702,7 @@ describe("consumeQuery", () => {
       mode: "start",
       prompt: "test",
       abortController,
+      platform: "linux",
       options: { cwd: "/tmp" },
       permissionRequestTimeoutMs: 60_000,
       sessionInitTimeoutMs: 10_000,
@@ -741,6 +830,94 @@ describe("consumeQuery", () => {
 
     manager.finishRequest("sess-nbedit", pending[0]!.requestId, { behavior: "allow" }, "respond");
     await handle.done;
+
+    manager.destroy();
+  });
+
+  it("denies Bash commands containing POSIX home paths on Windows", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
+      const options = params.options as unknown as { canUseTool: CanUseTool };
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-home-path",
+          uuid: "u1",
+          cwd: "D:\\repo",
+          tools: ["Bash"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        const result = await options.canUseTool(
+          "Bash",
+          { command: "cat /home/user/project/a.txt" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tu-home-path",
+          }
+        );
+        expect(result).toEqual({
+          behavior: "deny",
+          message:
+            "Tool 'Bash' requested unsupported POSIX path '/home/user/project/a.txt' on Windows.",
+          interrupt: false,
+        });
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-home-path",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn;
+    });
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      platform: "win32",
+      options: { cwd: "D:\\repo" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+    expect(manager.get("sess-home-path")!.status).toBe("idle");
+    expect(manager.getPendingPermissionCount("sess-home-path")).toBe(0);
 
     manager.destroy();
   });

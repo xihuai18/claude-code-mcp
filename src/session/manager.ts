@@ -15,8 +15,8 @@ import type {
   SessionStatus,
   StoredAgentResult,
 } from "../types.js";
-import { normalizePermissionUpdatedInput } from "../utils/permission-updated-input.js";
 import { normalizeToolInput } from "../utils/normalize-tool-input.js";
+import { findUnsupportedPosixPathInToolInput } from "../utils/normalize-windows-path.js";
 
 const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 const DEFAULT_RUNNING_SESSION_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours max for running sessions
@@ -173,6 +173,7 @@ export class SessionManager {
     permissionMode?: PermissionMode;
     allowedTools?: SessionInfo["allowedTools"];
     disallowedTools?: SessionInfo["disallowedTools"];
+    strictAllowedTools?: SessionInfo["strictAllowedTools"];
     tools?: SessionInfo["tools"];
     maxTurns?: SessionInfo["maxTurns"];
     systemPrompt?: SessionInfo["systemPrompt"];
@@ -220,6 +221,7 @@ export class SessionManager {
       permissionMode: params.permissionMode ?? "default",
       allowedTools: params.allowedTools,
       disallowedTools: params.disallowedTools,
+      strictAllowedTools: params.strictAllowedTools,
       tools: params.tools,
       maxTurns: params.maxTurns,
       systemPrompt: params.systemPrompt,
@@ -688,20 +690,30 @@ export class SessionManager {
         updatedInput !== undefined &&
         typeof updatedInput === "object" &&
         !Array.isArray(updatedInput);
-      if (!validRecord) {
-        finalResult = {
-          ...finalResult,
-          updatedInput: normalizePermissionUpdatedInput(pending.record.input),
-        };
-      } else {
-        // Caller-provided updatedInput should be normalized consistently with our tool input normalization.
-        finalResult = {
-          ...finalResult,
-          updatedInput: normalizeToolInput(
+      const normalizedUpdatedInput = validRecord
+        ? normalizeToolInput(
             pending.record.toolName,
             updatedInput as Record<string, unknown>,
             this.platform
-          ),
+          )
+        : normalizeToolInput(pending.record.toolName, pending.record.input, this.platform);
+
+      const unsupportedPath = findUnsupportedPosixPathInToolInput(
+        normalizedUpdatedInput,
+        this.platform
+      );
+      if (unsupportedPath) {
+        finalResult = {
+          behavior: "deny",
+          message: `Tool '${pending.record.toolName}' attempted to allow an unsupported POSIX path '${
+            unsupportedPath
+          }' on Windows.`,
+          interrupt: false,
+        };
+      } else {
+        finalResult = {
+          ...finalResult,
+          updatedInput: normalizedUpdatedInput,
         };
       }
     }

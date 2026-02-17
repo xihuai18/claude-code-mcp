@@ -38,11 +38,23 @@ describe("buildOptions", () => {
       cwd: "/tmp",
       allowedTools: undefined,
       disallowedTools: undefined,
+      strictAllowedTools: undefined,
       model: undefined,
     });
     expect("allowedTools" in opts).toBe(false);
     expect("disallowedTools" in opts).toBe(false);
+    expect("strictAllowedTools" in opts).toBe(false);
     expect("model" in opts).toBe(false);
+  });
+
+  it("keeps strictAllowedTools out of SDK options", () => {
+    const opts = buildOptions({
+      cwd: "/tmp",
+      allowedTools: ["Read"],
+      strictAllowedTools: true,
+    });
+    expect(opts.allowedTools).toEqual(["Read"]);
+    expect("strictAllowedTools" in opts).toBe(false);
   });
 
   it("merges env with process.env (user values win)", () => {

@@ -3,6 +3,8 @@
  * Uses mocked query() to simulate Agent SDK behavior.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { SessionManager } from "../src/session/manager.js";
 
 // Mock the Agent SDK
@@ -202,6 +204,24 @@ describe("executeClaudeCode (async)", () => {
     expect(start.status).toBe("error");
     if (start.status === "error") {
       expect(start.error).toContain("INVALID_ARGUMENT");
+    }
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it("should return error when explicit cwd does not exist", async () => {
+    const missingCwd = path.join(process.cwd(), `.missing-cwd-${Date.now()}-${Math.random()}`);
+    expect(existsSync(missingCwd)).toBe(false);
+
+    const start = await executeClaudeCode(
+      { prompt: "Test", cwd: missingCwd },
+      manager,
+      "/tmp",
+      toolCache
+    );
+    expect(start.status).toBe("error");
+    if (start.status === "error") {
+      expect(start.error).toContain("INVALID_ARGUMENT");
+      expect(start.error).toContain("path does not exist");
     }
     expect(mockQuery).not.toHaveBeenCalled();
   });

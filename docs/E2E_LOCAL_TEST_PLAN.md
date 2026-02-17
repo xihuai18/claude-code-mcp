@@ -25,7 +25,8 @@
 2. 能完成 1 次完整生命周期：`claude_code -> claude_code_check(poll) -> 终态(result)`。
 3. 能至少处理 1 次权限请求（`respond_permission` 的 allow/deny/allow_for_session）。
 4. 能完成 1 个真实编程任务验收（本地测试命令先失败、修改后通过）。
-5. 结束时清理残留会话（取消所有 `running/waiting_permission`）。
+5. 能显式完成 1 次 `claude_code_reply` 调用并返回可解析结果（成功或失败都需可解释）。
+6. 结束时清理残留会话（取消所有 `running/waiting_permission`）。
 
 兼容性说明（必须知晓）：
 
@@ -39,14 +40,15 @@
 
 1. 当前客户端已连接本 MCP server，且可调用 MCP tools。
 2. 运行环境有可用 Node.js（`>=18`）。
-3. 本机 Claude 本地配置可用（默认读取 `user/project/local` setting sources）。
-4. Windows 场景可用 Git Bash；若自动检测失败，设置：
+3. 目标 `cwd` 必须存在且可访问（尤其是传给 `claude_code.cwd` 或 `diskResumeConfig.cwd` 的目录）。
+4. 本机 Claude 本地配置可用（默认读取 `user/project/local` setting sources）。
+5. Windows 场景可用 Git Bash；若自动检测失败，设置：
    - `CLAUDE_CODE_GIT_BASH_PATH=<你的 bash.exe 路径>`
-5. 为防跑飞，建议每次 `claude_code` 使用：
+6. 为防跑飞，建议每次 `claude_code` 使用：
    - `maxTurns: 6-12`
    - `advanced.maxBudgetUsd: 0.2-1.0`
    - `advanced.sessionInitTimeoutMs: 10000-20000`（`claude_code` 推荐位置；不要依赖顶层 `sessionInitTimeoutMs`）
-6. 权限循环准备：
+7. 权限循环准备：
    - 明确如何记录 `requestId` 与预期决策（allow/deny/allow_for_session）。
    - 明确权限请求默认超时 `permissionRequestTimeoutMs=60000`，到期会自动 deny。
 
@@ -91,6 +93,7 @@
 - 如果某轮未返回 `nextCursor`，用上次成功 cursor 重试 1 次并写入日志。
 - 如果出现 `nextCursor` 不变且 `events` 为空，允许按同一 cursor 重试最多 3 次；超过上限再标记 `poll_stall_suspected`。
 - 如果 `status=waiting_permission`，必须处理 `actions[]`，禁止无限 poll。
+- Windows 下记录 `posix_path_incidents`（出现 `/home/...` 或其他明显 POSIX 绝对路径的次数）；建议阈值为 0，超过阈值记为质量不达标。
 
 关键观测字段（每轮都要记录）：
 
@@ -144,9 +147,10 @@
 - `advanced.maxBudgetUsd`: `0.2`
 - `advanced.sessionInitTimeoutMs`: `15000`（`claude_code` 的推荐写法）
 - `allowedTools`: `["Read", "Write"]`
-- `disallowedTools`: 仅当通过 `includeTools=true` 确认 Bash 在运行时工具列表中时才设置为 `["Bash"]`；否则省略该字段，仅在 prompt 中要求不调用 Bash（避免 `Unknown disallowedTools: Bash` 告警）
+- `strictAllowedTools`: `true`（建议开启，确保 `allowedTools` 是严格白名单语义）
+- `disallowedTools`: 仅当通过 `includeTools=true` 确认 Bash 在运行时工具列表中时才设置为 `["Bash"]`；否则省略该字段（避免 `Unknown disallowedTools: Bash` 告警）
 - 不建议使用顶层 `sessionInitTimeoutMs` 作为主配置（该字段仅用于兼容，优先使用 `advanced.sessionInitTimeoutMs`）
-- prompt 中明确要求“不要调用 Bash”（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
+- 即使 prompt 中明确要求“不要调用 Bash”，也应以策略约束（`strictAllowedTools` / `allowedTools` / `disallowedTools`）作为主判据（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
 
 给模型的任务 prompt 示例：
 
@@ -180,6 +184,7 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
 3. 若有多个 request，同时记录每个 `requestId -> 期望决策`，按顺序逐个处理。
 4. 对其中一个 request 做 allow 或 allow_for_session。
 5. 再对另一个 request 做 deny（可选 `interrupt=true` 或 `interrupt=false`）。
+6. 若同一 session 内因 `allow_for_session` 不再出现后续请求，允许在第二个 session 中完成 deny 分支验证。
 
 给模型的指令模板：
 
@@ -259,6 +264,7 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
 2. 修改后测试命令退出码为 0。
 3. `result.isError=false`。
 4. 变更是最小必要改动。
+5. （增强必跑）在真实仓库子目录再执行 1 次最小修复闭环，避免仅玩具项目通过。
 
 失败恢复：
 
@@ -397,6 +403,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 
 ```text
 请调用 claude_code 在当前目录执行一个最小 smoke 任务（创建并读取 mcp_smoke.txt）。
+调用参数建议包含 strictAllowedTools=true 且 allowedTools 仅保留本轮必需工具。
 随后持续调用 claude_code_check(action=poll) 直到终态。
 每次轮询都要打印 status、nextCursor、actions 数量。
 如果返回 cursorResetTo，请先重置 cursor 再继续 poll。
@@ -411,6 +418,7 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
 如果出现 waiting_permission，不要继续空轮询。
 请读取 actions[] 中的 requestId，并调用 claude_code_check(action=respond_permission, requestId=..., decision=...)。
 先执行一次 allow_for_session（或 allow）；若后续还有请求，再执行一次 deny(interrupt=false)。
+若同一 session 内不再出现第二个请求，允许新开第二个 session 完成 deny 分支。
 每次 respond_permission 后确认 permission_result；如临近超时（默认 60000ms）优先处理剩余时间最短的请求。
 Windows 场景优先使用当前 cwd 下的绝对 Windows 路径，不要使用 `/home/user/...` 路径。
 然后继续 poll 到终态，并说明 permission_result。

@@ -17,6 +17,10 @@ import { ErrorCode } from "../types.js";
 import { enhanceWindowsError } from "../utils/windows.js";
 import { normalizePermissionUpdatedInput } from "../utils/permission-updated-input.js";
 import { normalizeToolInput } from "../utils/normalize-tool-input.js";
+import {
+  findUnsupportedPosixPathInToolInput,
+  isUnsupportedPosixAbsolutePath,
+} from "../utils/normalize-windows-path.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 
 export type ConsumeQueryMode = "start" | "resume" | "disk-resume";
@@ -275,6 +279,26 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
     const sessionId = await getSessionId();
     const normalizedToolName = toolName.trim();
     const normalizedInput = normalizeToolInput(toolName, input, params.platform);
+    const unsupportedPath = findUnsupportedPosixPathInToolInput(normalizedInput, params.platform);
+    if (unsupportedPath) {
+      return {
+        behavior: "deny",
+        message: `Tool '${normalizedToolName || toolName}' requested unsupported POSIX path '${
+          unsupportedPath
+        }' on Windows.`,
+        interrupt: false,
+      };
+    }
+    if (
+      typeof options.blockedPath === "string" &&
+      isUnsupportedPosixAbsolutePath(options.blockedPath, params.platform)
+    ) {
+      return {
+        behavior: "deny",
+        message: `Tool '${normalizedToolName || toolName}' requested blocked path '${options.blockedPath}' that is unsupported on Windows.`,
+        interrupt: false,
+      };
+    }
 
     // Keep MCP permission behavior consistent with the SDK options semantics:
     // - disallowedTools: hard deny
@@ -289,6 +313,19 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
         return {
           behavior: "deny",
           message: `Tool '${normalizedToolName}' is disallowed by session policy.`,
+        };
+      }
+
+      if (
+        sessionInfo.strictAllowedTools === true &&
+        normalizedToolName !== "" &&
+        allowedTools.length > 0 &&
+        !allowedTools.includes(normalizedToolName)
+      ) {
+        return {
+          behavior: "deny",
+          message: `Tool '${normalizedToolName}' is not in allowedTools under strictAllowedTools policy.`,
+          interrupt: false,
         };
       }
 

@@ -46,6 +46,7 @@ export interface OptionSource {
   enableFileCheckpointing?: boolean;
   includePartialMessages?: boolean;
   strictMcpConfig?: boolean;
+  strictAllowedTools?: boolean;
   settingSources?: SettingSource[];
   debug?: boolean;
   debugFile?: string;

@@ -1,6 +1,7 @@
 /**
  * claude_code tool - Start a new Claude Code agent session
  */
+import { existsSync, statSync } from "node:fs";
 import type { SessionManager } from "../session/manager.js";
 import type {
   AgentDefinition,
@@ -48,6 +49,7 @@ export interface ClaudeCodeAdvancedOptions {
   enableFileCheckpointing?: boolean;
   includePartialMessages?: boolean;
   strictMcpConfig?: boolean;
+  strictAllowedTools?: boolean;
   settingSources?: SettingSource[];
   debug?: boolean;
   debugFile?: string;
@@ -59,6 +61,7 @@ export interface ClaudeCodeInput {
   cwd?: string;
   allowedTools?: string[];
   disallowedTools?: string[];
+  strictAllowedTools?: boolean;
   maxTurns?: number;
   model?: string;
   effort?: EffortLevel;
@@ -83,7 +86,8 @@ export async function executeClaudeCode(
   toolCache?: ToolDiscoveryCache,
   requestSignal?: AbortSignal
 ): Promise<ClaudeCodeStartResult> {
-  const cwd = input.cwd !== undefined ? input.cwd : serverCwd;
+  const cwdProvided = input.cwd !== undefined;
+  const cwd = cwdProvided ? input.cwd : serverCwd;
 
   if (typeof cwd !== "string" || cwd.trim() === "") {
     return {
@@ -91,6 +95,32 @@ export async function executeClaudeCode(
       status: "error",
       error: `Error [${ErrorCode.INVALID_ARGUMENT}]: cwd must be a non-empty string.`,
     };
+  }
+  const normalizedCwd = normalizeWindowsPathLike(cwd);
+  if (cwdProvided && !existsSync(normalizedCwd)) {
+    return {
+      sessionId: "",
+      status: "error",
+      error: `Error [${ErrorCode.INVALID_ARGUMENT}]: cwd path does not exist: ${normalizedCwd}`,
+    };
+  }
+  if (cwdProvided) {
+    try {
+      if (!statSync(normalizedCwd).isDirectory()) {
+        return {
+          sessionId: "",
+          status: "error",
+          error: `Error [${ErrorCode.INVALID_ARGUMENT}]: cwd must be a directory: ${normalizedCwd}`,
+        };
+      }
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? ` (${err.message})` : "";
+      return {
+        sessionId: "",
+        status: "error",
+        error: `Error [${ErrorCode.INVALID_ARGUMENT}]: cwd is not accessible: ${normalizedCwd}${detail}`,
+      };
+    }
   }
 
   if (!sessionManager.hasCapacityFor(1)) {
@@ -124,9 +154,10 @@ export async function executeClaudeCode(
 
   // Flatten top-level + advanced into a single object for buildOptions / sessionManager.
   const flat = {
-    cwd,
+    cwd: normalizedCwd,
     allowedTools: input.allowedTools,
     disallowedTools: input.disallowedTools,
+    strictAllowedTools: input.strictAllowedTools ?? adv.strictAllowedTools,
     maxTurns: input.maxTurns,
     model: input.model,
     systemPrompt: input.systemPrompt,

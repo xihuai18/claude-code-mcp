@@ -46,6 +46,7 @@ export interface AgentDefinition {
   prompt: string;
   tools?: string[];
   disallowedTools?: string[];
+  strictAllowedTools?: boolean;
   model?: AgentModel;
   maxTurns?: number;
   mcpServers?: (string | Record<string, unknown>)[];
@@ -82,6 +83,7 @@ export interface SessionInfo {
   permissionMode: PermissionMode;
   allowedTools?: string[];
   disallowedTools?: string[];
+  strictAllowedTools?: boolean;
   tools?: ToolsConfig;
   maxTurns?: number;
   systemPrompt?: SystemPrompt;
@@ -137,6 +139,7 @@ export interface PublicSessionInfo {
   permissionMode: PermissionMode;
   allowedTools?: string[];
   disallowedTools?: string[];
+  strictAllowedTools?: boolean;
   tools?: ToolsConfig;
   maxTurns?: number;
   maxBudgetUsd?: number;

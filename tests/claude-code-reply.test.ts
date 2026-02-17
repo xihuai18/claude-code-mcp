@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import path from "node:path";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => {
   class AbortError extends Error {
@@ -17,6 +18,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { SessionManager } from "../src/session/manager.js";
 import { executeClaudeCodeReply } from "../src/tools/claude-code-reply.js";
 import { ToolDiscoveryCache } from "../src/tools/tool-discovery.js";
+import { computeResumeToken } from "../src/utils/resume-token.js";
 
 const mockQuery = vi.mocked(query);
 
@@ -101,6 +103,35 @@ describe("claude-code-reply", () => {
     expect(result.status).toBe("error");
     if (result.status === "error") {
       expect(result.error).toContain("RESOURCE_EXHAUSTED");
+    }
+  });
+
+  it("rejects disk resume when cwd path does not exist", async () => {
+    vi.stubEnv("CLAUDE_CODE_MCP_ALLOW_DISK_RESUME", "1");
+    vi.stubEnv("CLAUDE_CODE_MCP_RESUME_SECRET", "test-secret");
+    try {
+      const missingCwd = path.join(process.cwd(), `.missing-reply-cwd-${Date.now()}`);
+      const result = await executeClaudeCodeReply(
+        {
+          sessionId: "missing-reply",
+          prompt: "continue",
+          diskResumeConfig: {
+            cwd: missingCwd,
+            resumeToken: computeResumeToken("missing-reply", "test-secret"),
+          },
+        },
+        manager,
+        toolCache
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") {
+        expect(result.error).toContain("INVALID_ARGUMENT");
+        expect(result.error).toContain("path does not exist");
+      }
+      expect(mockQuery).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 });

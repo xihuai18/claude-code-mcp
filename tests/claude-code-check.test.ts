@@ -144,6 +144,8 @@ describe("executeClaudeCodeCheck", () => {
 
   it("supports decision=allow_for_session, preserves updates, and promotes tool to session allowlist", () => {
     manager.create({ sessionId: "s1", cwd: "/tmp" });
+    const originalPath = process.platform === "win32" ? "C:\\repo\\a.txt" : "/tmp/a.txt";
+    const updatedPath = process.platform === "win32" ? "C:\\repo\\b.txt" : "/tmp/b.txt";
 
     const finish = vi.fn();
     manager.setPendingPermission(
@@ -151,7 +153,7 @@ describe("executeClaudeCodeCheck", () => {
       {
         requestId: "r-session",
         toolName: " Read ",
-        input: { file_path: "/tmp/a.txt" },
+        input: { file_path: originalPath },
         summary: "Read file",
         toolUseID: "tu-session",
         createdAt: new Date().toISOString(),
@@ -167,7 +169,7 @@ describe("executeClaudeCodeCheck", () => {
         requestId: "r-session",
         decision: "allow_for_session",
         permissionOptions: {
-          updatedInput: { file_path: "/tmp/b.txt" },
+          updatedInput: { file_path: updatedPath },
           updatedPermissions: [{ scope: "existing" }],
         },
       },
@@ -178,7 +180,7 @@ describe("executeClaudeCodeCheck", () => {
     expect("isError" in responded).toBe(false);
     expect(finish).toHaveBeenCalledTimes(1);
     expect(finish.mock.calls[0]?.[0]?.behavior).toBe("allow");
-    expect(finish.mock.calls[0]?.[0]?.updatedInput).toEqual({ file_path: "/tmp/b.txt" });
+    expect(finish.mock.calls[0]?.[0]?.updatedInput).toEqual({ file_path: updatedPath });
     expect(finish.mock.calls[0]?.[0]?.updatedPermissions).toEqual([
       { scope: "existing" },
       {
@@ -641,6 +643,27 @@ describe("executeClaudeCodeCheck", () => {
     });
     expect(polled.compatWarnings).toContain(
       "Runtime tool list is not available yet; unknown allowedTools/disallowedTools names cannot be validated until system/init tools arrive."
+    );
+  });
+
+  it("warns that allowedTools is pre-approval when strictAllowedTools is not enabled", () => {
+    manager.create({
+      sessionId: "s-tool-preapprove",
+      cwd: "/tmp",
+      allowedTools: ["Read"],
+      strictAllowedTools: false,
+    });
+    manager.setInitTools("s-tool-preapprove", ["Read", "Write"]);
+    manager.update("s-tool-preapprove", { status: "idle" });
+
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-tool-preapprove" },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.compatWarnings).toContain(
+      "allowedTools currently acts as pre-approval only. Set strictAllowedTools=true to enforce a strict allowlist."
     );
   });
 

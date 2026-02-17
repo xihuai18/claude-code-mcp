@@ -1,6 +1,18 @@
 import path from "node:path";
 import os from "node:os";
 
+const TOOL_INPUT_PATH_FIELDS = [
+  "file_path",
+  "path",
+  "directory",
+  "folder",
+  "cwd",
+  "dest",
+  "destination",
+  "source",
+  "target",
+] as const;
+
 function maybeAddWindowsLongPathPrefix(value: string): string {
   if (value.startsWith("\\\\?\\") || value.startsWith("\\\\.\\") || value.length < 240)
     return value;
@@ -17,7 +29,7 @@ function expandTilde(value: string, platform: NodeJS.Platform): string {
   return join(os.homedir(), rest);
 }
 
-function normalizeMsysToWindowsPathInner(rawPath: string): string | undefined {
+function convertMsysToWindowsPath(rawPath: string): string | undefined {
   // NOTE: This assumes callers have already confirmed the runtime is Windows.
   // We intentionally do not normalize on non-win32 platforms (e.g. WSL) where
   // `/mnt/c/...` can be a real POSIX path.
@@ -53,9 +65,51 @@ function normalizeMsysToWindowsPathInner(rawPath: string): string | undefined {
 }
 
 export function normalizeMsysToWindowsPath(rawPath: string): string | undefined {
-  const converted = normalizeMsysToWindowsPathInner(rawPath);
+  const converted = convertMsysToWindowsPath(rawPath);
   if (!converted) return undefined;
   return path.win32.normalize(converted);
+}
+
+export function isUnsupportedPosixAbsolutePath(
+  value: string,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  if (platform !== "win32") return false;
+  if (!value.startsWith("/")) return false;
+  return convertMsysToWindowsPath(value) === undefined;
+}
+
+export function hasUnsupportedPosixAbsoluteFilePath(
+  input: Record<string, unknown>,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  const filePath = input.file_path;
+  if (typeof filePath !== "string") return false;
+  return isUnsupportedPosixAbsolutePath(filePath, platform);
+}
+
+function extractPosixHomePathFromCommand(command: string): string | undefined {
+  const match = command.match(/\/home\/[^/\s"'`]+(?:\/[^\s"'`]*)?/);
+  return match?.[0];
+}
+
+export function findUnsupportedPosixPathInToolInput(
+  input: Record<string, unknown>,
+  platform: NodeJS.Platform = process.platform
+): string | undefined {
+  if (platform !== "win32") return undefined;
+
+  for (const key of TOOL_INPUT_PATH_FIELDS) {
+    const value = input[key];
+    if (typeof value !== "string") continue;
+    if (isUnsupportedPosixAbsolutePath(value, platform)) return value;
+  }
+
+  const command = input.command;
+  if (typeof command !== "string") return undefined;
+  const embeddedHomePath = extractPosixHomePathFromCommand(command);
+  if (!embeddedHomePath) return undefined;
+  return isUnsupportedPosixAbsolutePath(embeddedHomePath, platform) ? embeddedHomePath : undefined;
 }
 
 export function normalizeWindowsPathLike(
