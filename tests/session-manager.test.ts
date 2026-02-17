@@ -111,12 +111,46 @@ describe("SessionManager", () => {
     manager.create({ sessionId: "s1", cwd: "/a", abortController: ac1 });
     manager.create({ sessionId: "s2", cwd: "/b", abortController: ac2 });
     manager.destroy();
-    // Sessions are marked cancelled but not cleared (in-flight ops may still reference them)
-    expect(manager.list()).toHaveLength(2);
-    expect(manager.get("s1")!.status).toBe("cancelled");
-    expect(manager.get("s2")!.status).toBe("cancelled");
+    expect(manager.list()).toHaveLength(0);
+    expect(manager.getSessionCount()).toBe(0);
+    expect(manager.get("s1")).toBeUndefined();
+    expect(manager.get("s2")).toBeUndefined();
     expect(ac1.signal.aborted).toBe(true);
     expect(ac2.signal.aborted).toBe(true);
+  });
+
+  it("should reject new work after destroy", () => {
+    manager.destroy();
+    expect(manager.hasCapacityFor(1)).toBe(false);
+    expect(manager.get("s1")).toBeUndefined();
+    expect(() => manager.create({ sessionId: "s1", cwd: "/tmp" })).toThrow(/destroyed/i);
+  });
+
+  it("should deny and finish pending permissions during destroy", () => {
+    manager.create({ sessionId: "destroy-perm", cwd: "/tmp" });
+    const finish = vi.fn();
+    manager.setPendingPermission(
+      "destroy-perm",
+      {
+        requestId: "req-1",
+        toolName: "Bash",
+        input: { command: "echo hi" },
+        summary: "permission",
+        toolUseID: "tool-1",
+        createdAt: new Date().toISOString(),
+      },
+      finish,
+      60_000
+    );
+
+    manager.destroy();
+
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(finish.mock.calls[0]?.[0]).toMatchObject({
+      behavior: "deny",
+      interrupt: true,
+      message: "Server shutting down",
+    });
   });
 
   describe("tryAcquire", () => {
@@ -204,7 +238,7 @@ describe("SessionManager", () => {
     }
   });
 
-  it("should abort and mark stuck running sessions as error after max time", () => {
+  it("should abort and mark stuck running sessions as cancelled after max time", () => {
     vi.useFakeTimers();
     try {
       const mgr = new SessionManager();
@@ -217,7 +251,7 @@ describe("SessionManager", () => {
 
       const session = mgr.get("stuck");
       expect(session).toBeDefined();
-      expect(session!.status).toBe("error");
+      expect(session!.status).toBe("cancelled");
       expect(ac.signal.aborted).toBe(true);
 
       mgr.destroy();
@@ -299,6 +333,33 @@ describe("SessionManager", () => {
   });
 
   describe("event buffer + permissions", () => {
+    it("should clamp hard max to max size when configured lower", () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const mgr = new SessionManager({ eventBufferMaxSize: 12, eventBufferHardMaxSize: 6 });
+      try {
+        expect(mgr.getEventBufferConfig()).toEqual({ maxSize: 12, hardMaxSize: 12 });
+        expect(spy).toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+        mgr.destroy();
+      }
+    });
+
+    it("should read from cursor via monotonic event ids", () => {
+      manager.create({ sessionId: "cursor", cwd: "/tmp" });
+      for (let i = 0; i < 10; i++) {
+        manager.pushEvent("cursor", {
+          type: "output",
+          data: { i },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const res = manager.readEvents("cursor", 6);
+      expect(res.events.map((e) => e.id)).toEqual([6, 7, 8, 9]);
+      expect(res.nextCursor).toBe(10);
+    });
+
     it("should support cursorResetTo when old events are evicted", () => {
       manager.create({ sessionId: "buf", cwd: "/tmp" });
       for (let i = 0; i < 1005; i++) {

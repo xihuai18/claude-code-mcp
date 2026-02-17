@@ -469,6 +469,104 @@ describe("consumeQuery", () => {
     manager.destroy();
   });
 
+  it("should still require permission for allowedTools when blockedPath is provided", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
+      const options = params.options as unknown as { canUseTool: CanUseTool };
+      return (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-blocked-path",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Write"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        await options.canUseTool(
+          "Write",
+          { file_path: "/tmp/file.txt", content: "hello" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tu-blocked-path",
+            blockedPath: "/tmp/file.txt",
+          }
+        );
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-blocked-path",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn;
+    });
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          allowedTools: ["Write"],
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+
+    for (let i = 0; i < 20; i++) {
+      if (manager.get("sess-blocked-path")?.status === "waiting_permission") break;
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    expect(manager.get("sess-blocked-path")?.status).toBe("waiting_permission");
+    const pending = manager.listPendingPermissions("sess-blocked-path");
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.blockedPath).toBe("/tmp/file.txt");
+
+    manager.finishRequest(
+      "sess-blocked-path",
+      pending[0]!.requestId,
+      { behavior: "allow" },
+      "respond"
+    );
+    await handle.done;
+
+    manager.destroy();
+  });
+
   it("normalizes NotebookEdit MSYS paths in permission records (platform override)", async () => {
     const manager = new SessionManager();
     const toolCache = new ToolDiscoveryCache();

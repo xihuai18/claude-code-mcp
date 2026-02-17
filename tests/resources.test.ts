@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServerContext } from "../src/server.js";
@@ -65,9 +65,11 @@ describe("Resources", () => {
           : "{}";
       const info = JSON.parse(infoText) as {
         name?: unknown;
+        version?: unknown;
         resources?: unknown;
       };
       expect(info.name).toBe("claude-code-mcp");
+      expect(typeof info.version).toBe("string");
       expect(Array.isArray(info.resources)).toBe(true);
       expect((info.resources as string[]).slice().sort()).toEqual(
         [
@@ -107,12 +109,51 @@ describe("Resources", () => {
           ? compatContent.text
           : "{}";
       const compat = JSON.parse(compatText) as {
+        packageVersion?: unknown;
         samePlatformRequired?: unknown;
         transport?: unknown;
+        limits?: {
+          maxSessions?: unknown;
+          maxPendingPermissionsPerSession?: unknown;
+          eventBuffer?: { maxSize?: unknown; hardMaxSize?: unknown };
+        };
+        diskResume?: { enabled?: unknown; resumeSecretConfigured?: unknown };
       };
       expect(compat.samePlatformRequired).toBe(true);
       expect(compat.transport).toBe("stdio");
+      expect(typeof compat.packageVersion).toBe("string");
+      expect(typeof compat.limits?.eventBuffer?.maxSize).toBe("number");
+      expect(typeof compat.limits?.eventBuffer?.hardMaxSize).toBe("number");
+      expect(typeof compat.diskResume?.enabled).toBe("boolean");
+      expect(typeof compat.diskResume?.resumeSecretConfigured).toBe("boolean");
     });
+  });
+
+  it("should serialize unlimited limits as 'unlimited' in compat-report", async () => {
+    const prevMaxSessions = process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
+    const prevMaxPending = process.env.CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS;
+    process.env.CLAUDE_CODE_MCP_MAX_SESSIONS = "0";
+    process.env.CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS = "0";
+    try {
+      await withClientServer(async (client) => {
+        const compatRes = await client.readResource({ uri: "claude-code-mcp:///compat-report" });
+        const compatContent = compatRes.contents[0];
+        const compatText =
+          compatContent && "text" in compatContent && typeof compatContent.text === "string"
+            ? compatContent.text
+            : "{}";
+        const compat = JSON.parse(compatText) as {
+          limits?: { maxSessions?: unknown; maxPendingPermissionsPerSession?: unknown };
+        };
+        expect(compat.limits?.maxSessions).toBe("unlimited");
+        expect(compat.limits?.maxPendingPermissionsPerSession).toBe("unlimited");
+      });
+    } finally {
+      if (prevMaxSessions === undefined) delete process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
+      else process.env.CLAUDE_CODE_MCP_MAX_SESSIONS = prevMaxSessions;
+      if (prevMaxPending === undefined) delete process.env.CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS;
+      else process.env.CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS = prevMaxPending;
+    }
   });
 
   it("should return updated internal-tools content after runtime discovery", async () => {
@@ -141,6 +182,20 @@ describe("Resources", () => {
       };
       const names = (secondParsed.tools ?? []).map((t) => t.name);
       expect(names).toContain("NewRuntimeTool");
+    });
+  });
+
+  it("should notify resource updates when runtime tool catalog changes", async () => {
+    await withClientServer(async (_client, ctx) => {
+      const listChangedSpy = vi.spyOn(ctx.server, "sendResourceListChanged");
+
+      try {
+        ctx.toolCache.updateFromInit(["Read", "Write", "NotifiedRuntimeTool"]);
+        await Promise.resolve();
+        expect(listChangedSpy).toHaveBeenCalled();
+      } finally {
+        listChangedSpy.mockRestore();
+      }
     });
   });
 });

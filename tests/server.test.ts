@@ -75,6 +75,39 @@ describe("MCP Server", () => {
     }
   });
 
+  it("should keep claude_code advanced schema at 20 low-frequency fields + 2 aliases", async () => {
+    const server = createServer("/tmp");
+    const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const listed = await client.listTools();
+      const claudeCode = listed.tools.find((t) => t.name === "claude_code") as
+        | {
+            inputSchema?: {
+              properties?: {
+                advanced?: {
+                  properties?: Record<string, unknown>;
+                };
+              };
+            };
+          }
+        | undefined;
+      expect(claudeCode).toBeDefined();
+      const advancedProps = claudeCode?.inputSchema?.properties?.advanced?.properties ?? {};
+      const keys = Object.keys(advancedProps);
+      expect(keys).toHaveLength(22);
+      expect(keys).toContain("effort");
+      expect(keys).toContain("thinking");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("should declare capabilities consistent with exposed primitives", async () => {
     const server = createServer("/tmp");
     const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
