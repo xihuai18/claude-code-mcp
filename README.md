@@ -79,7 +79,7 @@ codex mcp add claude-code -- npx -y @leo000001/claude-code-mcp
 Or manually add to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.claude-code]
+[mcp_servers.claude-code-mcp]
 command = "npx"
 args = ["-y", "@leo000001/claude-code-mcp"]
 ```
@@ -414,11 +414,11 @@ For JSON-based MCP clients (Claude Desktop, Cursor, etc.):
 For OpenAI Codex CLI (`~/.codex/config.toml`):
 
 ```toml
-[mcp_servers.claude-code]
+[mcp_servers.claude-code-mcp]
 command = "npx"
 args = ["-y", "@leo000001/claude-code-mcp"]
 
-[mcp_servers.claude-code.env]
+[mcp_servers.claude-code-mcp.env]
 CLAUDE_CODE_GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe"
 ```
 
@@ -482,14 +482,14 @@ All environment variables are optional. They are set on the MCP server process (
 }
 ```
 
-**OpenAI Codex CLI** — add an `[mcp_servers.claude-code.env]` section in `~/.codex/config.toml`:
+**OpenAI Codex CLI** — add an `[mcp_servers.claude-code-mcp.env]` section in `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.claude-code]
+[mcp_servers.claude-code-mcp]
 command = "npx"
 args = ["-y", "@leo000001/claude-code-mcp"]
 
-[mcp_servers.claude-code.env]
+[mcp_servers.claude-code-mcp.env]
 CLAUDE_CODE_MCP_ALLOW_DISK_RESUME = "1"
 CLAUDE_CODE_MCP_RESUME_SECRET = "change-me"
 ```
