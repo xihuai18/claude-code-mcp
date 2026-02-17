@@ -36,12 +36,12 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 ### 3. 最少配置（Minimum Configuration）
 
-`claude_code` 仅 `prompt` 为必填参数，其余高频参数（`cwd`, `allowedTools`, `disallowedTools`, `maxTurns`, `model`, `systemPrompt`, `permissionRequestTimeoutMs`）保留在顶层，22 个低频参数折叠到 `advanced` 对象中：
+`claude_code` 仅 `prompt` 为必填参数，其余高频参数（`cwd`, `allowedTools`, `disallowedTools`, `maxTurns`, `model`, `systemPrompt`, `permissionRequestTimeoutMs`）保留在顶层，20 个低频参数折叠到 `advanced` 对象中（另保留 2 个兼容别名：`advanced.effort`、`advanced.thinking`）：
 
 - **工作目录**：默认为 server 进程的 cwd
 - **权限**：默认 `permissionMode="default"` + 空 `allowedTools`/`disallowedTools`（所有工具调用都会触发权限请求）
 - **会话持久化**：默认 `advanced.persistSession=true`（历史保存到 `~/.claude/projects/`）
-- **超时**：`advanced.sessionInitTimeoutMs=10000`，`permissionRequestTimeoutMs=60000`
+- **超时**：`advanced.sessionInitTimeoutMs=10000`，`permissionRequestTimeoutMs=60000`（服务端上限 clamp 到 300000）
 - **设置来源**：默认加载全部本地设置（见上方第 1 点）
 - **模型/effort/thinking**：默认使用 SDK/Claude Code 的默认值
 
@@ -76,7 +76,7 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 
 **轮询获取**：调用方通过 `claude_code_check` 的 `action="poll"` 增量获取事件（cursor 分页），直到 status 变为 `idle`/`error`/`cancelled`。
 
-**事件缓冲**：`EventBuffer` 使用简单数组 + pin 策略（关键事件如 permission_request/result/error 不被淘汰），默认 maxSize=1000，hardMaxSize=2000。
+**事件缓冲**：`EventBuffer` 使用简单数组 + pin 策略（关键事件如 permission_request/result/error 不被淘汰），默认 maxSize=1000，hardMaxSize=2000（可通过环境变量调整）。
 
 **AbortController 生命周期**：每个 session 持有独立的 `AbortController`，cancel 时 abort，完成后清理。`src/utils/race-with-abort.ts` 提供 Promise 与 AbortSignal 的竞争机制。
 
@@ -109,7 +109,7 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 **运行时工具发现**：
 - `tool-discovery.ts` 维护 `TOOL_CATALOG` 静态映射（工具名 → 描述 + 分类）
 - 首个 session 的 `system/init` 消息提供运行时工具列表，与静态映射合并
-- 合并结果用于动态生成 `claude_code` 的工具描述，并通过 `tools/list_changed` 通知支持 discovery 的 Client
+- 合并结果用于动态生成 `claude_code` 的工具描述，并通过 `tools/list_changed` 通知支持 discovery 的 Client；`internal-tools` 资源会同步发送资源更新通知
 - `claude_code_check` 的 `pollOptions.includeTools=true` 返回权威的 `availableTools` 列表
 
 ## Quick Commands
@@ -159,10 +159,13 @@ src/
 tests/
 ├── server.test.ts
 ├── tools.test.ts
+├── claude-code-reply.test.ts
 ├── claude-code-check.test.ts
 ├── claude-code-session.test.ts
 ├── query-consumer.test.ts
 ├── session-manager.test.ts
+├── resources.test.ts
+├── resume-token.test.ts
 ├── tool-discovery.test.ts
 └── windows.test.ts
 docs/                         # Design docs (Chinese), refactoring logs
@@ -181,17 +184,17 @@ mcp_demo/                     # Copy-paste MCP client config examples
 - **Same-platform assumption**: the MCP server and client run on the same machine. The server communicates via stdio, reads local `~/.claude/` configuration, and accesses the local file system directly.
 - **Async execution**: `claude_code` and `claude_code_reply` start asynchronously and return `{ sessionId, status: "running", pollInterval }`. Use `claude_code_check` to poll events and fetch the final result.
 - **Query consumer** (`src/tools/query-consumer.ts`): shared background logic for consuming SDK `query()` streams. Both `claude_code` (start) and `claude_code_reply` (resume/disk-resume) delegate to `consumeQuery()`.
-- **Tool discovery** (`src/tools/tool-discovery.ts`): maintains a `TOOL_CATALOG` of known Claude Code internal tools with descriptions and categories. Merges runtime `system/init` tool lists with the static catalog. Generates dynamic `claude_code` tool descriptions. `ToolDiscoveryCache` updates on first session init and triggers `tools/list_changed`.
+- **Tool discovery** (`src/tools/tool-discovery.ts`): maintains a `TOOL_CATALOG` of known Claude Code internal tools with descriptions and categories. Merges runtime `system/init` tool lists with the static catalog. Generates dynamic `claude_code` tool descriptions. `ToolDiscoveryCache` updates on first session init and triggers `tools/list_changed` plus internal-tools resource update notifications.
 - **Build options** (`src/utils/build-options.ts`): centralizes SDK `Partial<Options>` construction from flat input objects — used by start, reply, and disk-resume code paths.
 - **Session lifecycle**: `running` ↔ `waiting_permission` → `idle` | `error` | `cancelled`. The `SessionManager` holds an in-memory `Map<id, SessionInfo>` plus an event buffer (polled via `claude_code_check`) and pending permission requests. Conversation history is persisted to disk by the SDK (under `~/.claude/projects/`), not by this server. `cancelled` is a terminal state — cancelled sessions cannot be resumed.
 - **Async permissions**: when a tool call needs approval, the session transitions to `waiting_permission` and surfaces requests via `claude_code_check` (`actions[]`). Callers approve/deny via `respond_permission`. Three-layer defense: `advanced.tools` (visibility), `allowedTools`/`disallowedTools` (auto-approve/deny), `canUseTool` callback (interactive).
 - **Resume token** (`src/utils/resume-token.ts`): HMAC-SHA256 token for secure disk resume. Only generated when `CLAUDE_CODE_MCP_RESUME_SECRET` is set.
-- **Atomic state transitions**: `SessionManager.tryAcquire()` atomically moves a session from `idle`/`error` to `running` (used by `claude_code_reply`).
+- **Atomic state transition (sync section)**: `SessionManager.tryAcquire()` performs a synchronous state flip from `idle`/`error` to `running` without `await` (used by `claude_code_reply`).
 - **Session fork**: `claude_code_reply` supports `forkSession: true` — creates a branched copy of the session; the original remains unchanged.
-- **Session cleanup**: periodic timer removes idle sessions after TTL (default 30 min) and force-aborts stuck running sessions (default 4 hr).
-- **Logging**: use `console.error` — stdout is reserved for MCP stdio communication.
+- **Session cleanup**: periodic timer removes idle sessions after TTL (default 30 min) and force-aborts stuck running sessions (default 4 hr, marked `cancelled`).
+- **Logging**: stdout is reserved for MCP stdio communication; operational logs go to `console.error`, and lifecycle events also use MCP `notifications/message` when supported by the client.
 - **Tool response pattern**: tools return `{ content: [{ type: "text", text }], isError }` — never throw from the tool handler; catch and wrap errors.
-- **Graceful shutdown**: `index.ts` registers SIGINT/SIGTERM handlers; `server.close` is patched to call `sessionManager.destroy()` (aborts all running sessions).
+- **Graceful shutdown**: `index.ts` registers signal/runtime handlers and explicitly calls `sessionManager.destroy()` before `server.close()` to abort all running sessions.
 - **Default settings**: the server loads all local Claude settings by default (`advanced.settingSources: ["user", "project", "local"]`), including `CLAUDE.md`. Pass `advanced.settingSources: []` for SDK isolation mode.
 
 ## Types Pattern (`src/types.ts`)
@@ -216,6 +219,10 @@ These are set on the MCP server process (not the child Claude Code process):
 | `CLAUDE_CODE_GIT_BASH_PATH`         | auto-detect | Path to `bash.exe` on Windows                                       |
 | `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | `0`         | Allow `claude_code_reply` to resume from on-disk transcripts        |
 | `CLAUDE_CODE_MCP_RESUME_SECRET`     | *(unset)*   | HMAC secret used to validate `resumeToken` for disk resume fallback |
+| `CLAUDE_CODE_MCP_MAX_SESSIONS`      | `128`       | Maximum number of in-memory sessions (`0` disables the limit)       |
+| `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS` | `64`  | Maximum pending permission requests per session (`0` disables)      |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE` | `1000` | Soft cap for per-session event buffer (`0` is not supported)   |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE` | `2000` | Hard cap for per-session event buffer (clamped to `>= max`; `0` is not supported) |
 
 ## Code Style & Conventions
 
@@ -316,7 +323,7 @@ MCP 基于 JSON-RPC 2.0，三种消息类型：
 | `tools`       | 暴露可调用工具（`listChanged` 子字段）    | ✅          |
 | `resources`   | 提供可读资源（`subscribe`/`listChanged`） | ✅          |
 | `prompts`     | 提供提示词模板（`listChanged`）           | ❌          |
-| `logging`     | 可发送 `notifications/message`            | 计划中     |
+| `logging`     | 可发送 `notifications/message`            | ✅          |
 | `completions` | 参数自动补全                              | ❌          |
 
 ### Client 能力声明

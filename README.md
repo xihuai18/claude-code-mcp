@@ -8,6 +8,8 @@ MCP server that wraps [Claude Code (Claude Agent SDK)](https://docs.anthropic.co
 
 Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sdk/) design philosophy — minimum tools, maximum capability.
 
+This package is **CLI-first**: it is intended to run as an MCP server process (`npx @leo000001/claude-code-mcp`), not as a stable programmatic library API.
+
 ## Features
 
 - **4 tools** covering the full agent lifecycle: start, continue, check/poll, manage
@@ -60,7 +62,7 @@ Add to your MCP client configuration (Claude Desktop, Cursor, etc.):
 }
 ```
 
-> Some clients cache tool definitions at connect-time. This server emits `notifications/tools/list_changed` after runtime tool discovery so clients can refresh the `claude_code` tool description.
+> Some clients cache tool/resource metadata at connect-time. This server emits `notifications/tools/list_changed` and resource update notifications after runtime tool discovery so clients can refresh both the `claude_code` tool description and `internal-tools` resource.
 
 ### Anthropic Claude Code CLI (as an MCP client)
 
@@ -174,7 +176,7 @@ Continue an existing session by sending a follow-up message. The agent retains f
 | `forkSession`                | boolean | No       | Create a branched copy of this session. Default: `false`                                                             |
 | `effort`                     | string  | No       | Effort level override for this run (and for future replies when not forking). Default: SDK/Claude Code default      |
 | `thinking`                   | object  | No       | Thinking mode override for this run (and for future replies when not forking). Default: SDK/Claude Code default     |
-| `permissionRequestTimeoutMs` | number  | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000`                      |
+| `permissionRequestTimeoutMs` | number  | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min) |
 | `sessionInitTimeoutMs`       | number  | No       | Fork init timeout in milliseconds (only when `forkSession=true`). Default: `10000`                                   |
 | `diskResumeConfig`           | object  | No       | Disk resume parameters (see below). Used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` and in-memory session is missing |
 
@@ -425,6 +427,7 @@ setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
 - **Async permission approvals** — when a tool call needs approval, the session transitions to `waiting_permission` and surfaces requests via `claude_code_check` (`actions[]`).
 - **No runtime privilege escalation tool** — permission decisions are per-session (allow/deny lists + explicit approvals), and the server does not expose a `claude_code_configure` bypass switch.
 - **Environment variables are inherited** — the spawned Claude Code process inherits all environment variables (including `ANTHROPIC_API_KEY`) from the parent process by default. The `advanced.env` parameter **merges** with `process.env` (user-provided values take precedence), so you can safely add or override individual variables without losing existing ones.
+- **Permission policy is enforced in two places** — `allowedTools`/`disallowedTools` are passed to the SDK and also guarded in `canUseTool` as a defensive consistency check (for example, `blockedPath` can still trigger an approval flow).
 - Tool visibility vs approvals:
   - Use `advanced.tools` to restrict which tools the agent can _see_ (hidden tools cannot be called).
   - Use `allowedTools` to auto-approve specific tools without prompting (the SDK may still prompt for path-based restrictions like `blockedPath`).
@@ -444,6 +447,8 @@ All environment variables are optional. They are set on the MCP server process (
 | `CLAUDE_CODE_MCP_RESUME_SECRET`     | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | _(unset)_      |
 | `CLAUDE_CODE_MCP_MAX_SESSIONS`      | Maximum number of in-memory sessions (set `0` to disable the limit)                                              | `128`          |
 | `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS` | Maximum number of outstanding permission requests per session (set `0` to disable the limit)                | `64`           |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE` | Soft limit for in-memory event buffer per session (`0` is not supported)                                      | `1000`         |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE` | Hard limit for in-memory event buffer per session (clamped to be `>= max`; `0` is not supported)      | `2000`         |
 
 ### How to configure
 
@@ -530,7 +535,7 @@ MCP Client ←→ (stdio/JSON-RPC) ←→ MCP Server     [same machine]
 
 **Session persistence:** The MCP server's Session Manager holds **in-memory** session metadata, a snapshot of session options (tool config, limits, `cwd`, allow/deny lists, etc.), and an event buffer used by `claude_code_check`. This metadata is **not** persisted to disk by the MCP server. The actual conversation history is persisted to disk by the Claude Code CLI (under `~/.claude/projects/`) — this is managed by the SDK, not by this MCP server. By default, if the MCP server restarts or the session expires from memory, `claude_code_reply` will return `SESSION_NOT_FOUND` even though the CLI transcript may still exist on disk. You can opt into disk-resume behavior by setting `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`.
 
-Sessions are automatically cleaned up after 30 minutes of idle time, or after 4 hours of continuous running.
+Sessions are automatically cleaned up after 30 minutes of idle time, or after 4 hours of continuous running (timed-out running sessions transition to `cancelled`).
 
 **Turn/Cost semantics:** `numTurns` and `totalCostUsd` are per-call increments. For cumulative per-session totals, use `sessionTotalTurns` and `sessionTotalCostUsd`. When `forkSession=true`, the returned `sessionId` (and `sessionTotal*`) refer to the forked session; the original session totals are preserved.
 

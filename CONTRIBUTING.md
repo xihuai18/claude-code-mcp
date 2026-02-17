@@ -10,6 +10,13 @@ cd claude-code-mcp
 npm install
 ```
 
+### Local Environment Requirements
+
+- Node.js `>=18` (Node 20/22 recommended for local development)
+- npm (bundled with Node)
+- Windows contributors: install **Git for Windows** (`bash.exe`) for Claude Code CLI compatibility
+- Optional: set `CLAUDE_CODE_GIT_BASH_PATH` explicitly when testing MCP clients launched outside your terminal environment
+
 ## Development Workflow
 
 1. Create a feature branch from the default branch

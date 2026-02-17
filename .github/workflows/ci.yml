@@ -20,6 +20,10 @@ jobs:
           - os: ubuntu-latest
             node-version: 22
           - os: windows-latest
+            node-version: 18
+          - os: windows-latest
+            node-version: 20
+          - os: windows-latest
             node-version: 22
           - os: macos-latest
             node-version: 22

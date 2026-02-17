@@ -28,12 +28,12 @@
 | `maxTurns`        | number   | 否   | 最大对话轮次                                                |
 | `model`           | string   | 否   | 模型选择                                                    |
 | `systemPrompt`    | string / object | 否 | 自定义系统提示 (字符串或 preset 对象)                       |
-| `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000 |
+| `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000（服务端上限 300000） |
 | `sessionInitTimeoutMs` | number | 否 | `advanced.sessionInitTimeoutMs` 的兼容别名（不推荐在 `claude_code` 中作为主配置） |
 | `advanced`        | object   | 否   | 低频高级参数（见下方折叠表）                                |
 
 <details>
-<summary><code>advanced</code> 对象参数（22 个低频参数）</summary>
+<summary><code>advanced</code> 对象参数（20 个低频参数 + 2 个兼容别名）</summary>
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -60,6 +60,8 @@
 | `advanced.debugFile` | string | 调试日志文件路径（隐式启用调试模式） |
 | `advanced.env` | object | 传递给 Claude Code 进程的环境变量 |
 
+兼容别名：`advanced.effort` 与 `advanced.thinking` 仍可用，但推荐使用顶层 `effort` / `thinking`（若同时传入，顶层优先）。
+
 </details>
 
 **返回值**：`{ sessionId, status: "running", pollInterval }`
@@ -73,7 +75,7 @@
 | `sessionId`   | string  | 是   | 要继续的会话 ID    |
 | `prompt`      | string  | 是   | 后续提示           |
 | `forkSession` | boolean | 否   | 是否 fork 到新会话 |
-| `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000 |
+| `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000（服务端上限 300000） |
 | `sessionInitTimeoutMs` | number | 否 | 等待 fork `system/init` 的超时 (毫秒)，默认 10000 |
 | `diskResumeConfig` | object | 否 | 磁盘恢复参数（见下方折叠表） |
 
@@ -253,7 +255,7 @@ claude-code-mcp/
 > 重要：若使用 `agents`（子 agent），主 agent 需要具备 `Task` 工具权限，否则无法调用子 agent。
 - **费用控制**：`advanced.maxBudgetUsd` 限制单次费用
 - **轮次限制**：`maxTurns` 防止无限循环
-- **会话自动清理**：空闲 30 分钟 / 卡死 4 小时
+- **会话自动清理**：空闲 30 分钟自动删除；运行超时（4 小时）会被标记为 `cancelled`
 - **AbortController 生命周期**：完成后清除，取消时正确 abort
 - **取消语义**：cancelled 状态不会被后续 update 覆盖
 

@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Security
+
+- Validate `resumeToken` using timing-safe comparison (`timingSafeEqual` for fixed-length HMAC tokens) to reduce timing side-channel risk.
+
+### Improvements
+
+- Session cleanup now marks timed-out running/waiting sessions as `cancelled` for consistent status semantics.
+- `SessionManager.destroy()` now clears in-memory session/runtime maps after aborting active runs, so post-destroy reads are no longer stale.
+- Event buffer eviction now uses batch compaction (instead of repeated `findIndex` + `splice`) and `readEvents` now uses binary search for cursor start.
+- Add configurable event-buffer limits via `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE` and `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE`.
+- Runtime tool-discovery updates now notify both tools and resources (internal-tools resource change notification).
+- Enrich compatibility resources with package version, disk-resume diagnostics, and runtime limits.
+
+### Documentation
+
+- Align README/DESIGN/AGENTS with current defaults and behavior (timeout clamp, advanced parameter count, lifecycle semantics).
+- Clarify package positioning as CLI-first and remove stale guidance that implied a public programmatic API surface.
+- Update CONTRIBUTING with local environment requirements (Node/npm and Windows Git Bash notes).
+
+### Tests
+
+- Add dedicated tests for `resume-token` and `claude-code-reply`.
+- Extend tests for event-buffer behavior, resource metadata, and runtime resource notifications.
+
+## 2.2.0 (2026-02-17)
+
 ### Improvements
 
 - Add `CLAUDE_CODE_MCP_MAX_SESSIONS` (default: `128`) to cap in-memory session count and reduce risk of memory exhaustion.
@@ -60,8 +86,9 @@
 - `claude_code` and `claude_code_reply` now start asynchronously and return `{ sessionId, status: "running", pollInterval }`. Use `claude_code_check` to poll events and fetch the final `result`.
 - Removed tool: `claude_code_configure`
 - New tool: `claude_code_check` (poll + respond_permission)
+- Legacy `bypassPermissions` mode is no longer exposed in MCP schemas for 2.x.
 - **Parameter nesting refactor**: low-frequency parameters have been folded into nested objects to reduce top-level clutter. This is a breaking change for callers that pass these parameters at the top level:
-  - `claude_code`: 22 low-frequency params moved into `advanced` object (e.g. `effort` → `advanced.effort`, `tools` → `advanced.tools`, `agents` → `advanced.agents`, `env` → `advanced.env`)
+  - `claude_code`: 22 low-frequency params moved into `advanced` object in 2.0.0 (current versions expose 20 low-frequency params + 2 compatibility aliases: `advanced.effort`, `advanced.thinking`)
   - `claude_code_reply`: 28 disk-resume params moved into `diskResumeConfig` object (e.g. `resumeToken` → `diskResumeConfig.resumeToken`, `cwd` → `diskResumeConfig.cwd`)
   - `claude_code_check`: 9 poll control params moved into `pollOptions` object (e.g. `includeTools` → `pollOptions.includeTools`); 2 permission response params moved into `permissionOptions` object (e.g. `updatedInput` → `permissionOptions.updatedInput`)
 
