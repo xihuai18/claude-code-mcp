@@ -458,13 +458,16 @@ export function createServerContext(serverCwd: string): {
         action: z.enum(CHECK_ACTIONS),
         sessionId: z.string().describe("Session ID"),
         cursor: z.number().int().nonnegative().optional().describe("Default: 0"),
-        responseMode: z.enum(CHECK_RESPONSE_MODES).optional().describe("Default: 'minimal'"),
+        responseMode: z
+          .enum(CHECK_RESPONSE_MODES)
+          .optional()
+          .describe("Default: 'minimal'. Use 'delta_compact' for lightweight polling."),
         maxEvents: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Default: 200 (minimal), unlimited (full)"),
+          .describe("Default: 200 (minimal), unlimited (full/delta_compact)"),
 
         requestId: z.string().optional().describe("Permission request ID"),
         decision: z.enum(["allow", "deny"]).optional().describe("Decision"),
@@ -477,20 +480,26 @@ export function createServerContext(serverCwd: string): {
             includeEvents: z.boolean().optional().describe("Default: true"),
             includeActions: z.boolean().optional().describe("Default: true"),
             includeResult: z.boolean().optional().describe("Default: true"),
-            includeUsage: z.boolean().optional().describe("Default: full=true, minimal=false"),
-            includeModelUsage: z.boolean().optional().describe("Default: full=true, minimal=false"),
+            includeUsage: z
+              .boolean()
+              .optional()
+              .describe("Default: full=true, minimal/delta_compact=false"),
+            includeModelUsage: z
+              .boolean()
+              .optional()
+              .describe("Default: full=true, minimal/delta_compact=false"),
             includeStructuredOutput: z
               .boolean()
               .optional()
-              .describe("Default: full=true, minimal=false"),
+              .describe("Default: full=true, minimal/delta_compact=false"),
             includeTerminalEvents: z
               .boolean()
               .optional()
-              .describe("Default: full=true, minimal=false"),
+              .describe("Default: full=true, minimal/delta_compact=false"),
             includeProgressEvents: z
               .boolean()
               .optional()
-              .describe("Default: full=true, minimal=false"),
+              .describe("Default: full=true, minimal/delta_compact=false"),
             maxBytes: z.number().int().positive().optional().describe("Default: unlimited"),
           })
           .optional()

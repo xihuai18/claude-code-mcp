@@ -150,6 +150,17 @@ export interface PublicSessionInfo {
   strictMcpConfig?: boolean;
   debug?: boolean;
   lastToolUseId?: string;
+  pendingPermissionCount?: number;
+  eventCount?: number;
+  currentCursor?: number;
+  lastEventId?: number;
+  ttlMs?: number;
+  lastError?: string;
+  lastErrorAt?: string;
+  redactions?: Array<{
+    field: string;
+    reason: string;
+  }>;
 }
 
 /** Session metadata returned when includeSensitive=true (still excludes secrets like env) */
@@ -186,7 +197,7 @@ export interface AgentResult {
 export const CHECK_ACTIONS = ["poll", "respond_permission"] as const;
 export type CheckAction = (typeof CHECK_ACTIONS)[number];
 
-export const CHECK_RESPONSE_MODES = ["minimal", "full"] as const;
+export const CHECK_RESPONSE_MODES = ["minimal", "full", "delta_compact"] as const;
 export type CheckResponseMode = (typeof CHECK_RESPONSE_MODES)[number];
 
 export type PermissionDecision = "allow" | "deny";
@@ -202,6 +213,18 @@ export interface ToolInfo {
   name: string;
   description: string;
   category?: string;
+  /**
+   * Internal tool approval is controlled by a combination of tools visibility,
+   * allowedTools/disallowedTools, and runtime permission callbacks.
+   */
+  permissionModel?: "policy_controlled";
+  /**
+   * Whether machine-validated input schemas are available via discovery.
+   */
+  schemaAvailability?: "none";
+  availabilityConditions?: string[];
+  platformConstraints?: string[];
+  notes?: string[];
 }
 
 export type SessionEventType =

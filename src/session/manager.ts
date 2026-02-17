@@ -144,6 +144,14 @@ export class SessionManager {
     };
   }
 
+  getSessionTtlMs(): number {
+    return this.sessionTtlMs;
+  }
+
+  getRunningSessionMaxMs(): number {
+    return this.runningSessionMaxMs;
+  }
+
   hasCapacityFor(additionalSessions: number): boolean {
     if (this.destroyed) return false;
     if (additionalSessions <= 0) return true;
@@ -505,6 +513,55 @@ export class SessionManager {
   getPendingPermissionCount(sessionId: string): number {
     if (this.destroyed) return 0;
     return this.runtime.get(sessionId)?.pendingPermissions.size ?? 0;
+  }
+
+  getEventCount(sessionId: string): number {
+    if (this.destroyed) return 0;
+    return this.runtime.get(sessionId)?.buffer.events.length ?? 0;
+  }
+
+  getCurrentCursor(sessionId: string): number | undefined {
+    if (this.destroyed) return undefined;
+    const state = this.runtime.get(sessionId);
+    if (!state) return undefined;
+    return state.buffer.nextId;
+  }
+
+  getRemainingTtlMs(sessionId: string): number | undefined {
+    if (this.destroyed) return undefined;
+    const session = this.sessions.get(sessionId);
+    if (!session) return undefined;
+    const lastActiveMs = Date.parse(session.lastActiveAt);
+    if (!Number.isFinite(lastActiveMs)) return undefined;
+    const limitMs =
+      session.status === "running" || session.status === "waiting_permission"
+        ? this.runningSessionMaxMs
+        : this.sessionTtlMs;
+    return Math.max(0, limitMs - (Date.now() - lastActiveMs));
+  }
+
+  getRuntimeToolStats(): {
+    sessionsWithInitTools: number;
+    runtimeDiscoveredUniqueCount: number;
+  } {
+    if (this.destroyed) {
+      return { sessionsWithInitTools: 0, runtimeDiscoveredUniqueCount: 0 };
+    }
+    const unique = new Set<string>();
+    let sessionsWithInitTools = 0;
+    for (const state of this.runtime.values()) {
+      if (!Array.isArray(state.initTools) || state.initTools.length === 0) continue;
+      sessionsWithInitTools += 1;
+      for (const tool of state.initTools) {
+        if (typeof tool === "string" && tool.trim() !== "") {
+          unique.add(tool);
+        }
+      }
+    }
+    return {
+      sessionsWithInitTools,
+      runtimeDiscoveredUniqueCount: unique.size,
+    };
   }
 
   listPendingPermissions(sessionId: string): PermissionRequestRecord[] {

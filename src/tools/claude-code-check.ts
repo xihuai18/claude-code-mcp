@@ -47,6 +47,7 @@ export interface ClaudeCodeCheckInput {
   /**
    * Response shaping. Defaults to "minimal" to reduce payload size.
    * Use "full" to include verbose fields like usage/modelUsage.
+   * Use "delta_compact" for high-frequency status polling.
    */
   responseMode?: CheckResponseMode;
   /** Max number of events to return per poll (pagination via nextCursor). */
@@ -296,11 +297,12 @@ function buildResult(
   input: ClaudeCodeCheckInput
 ): CheckResult {
   const responseMode: CheckResponseMode = input.responseMode ?? "minimal";
+  const compactMode = responseMode === "delta_compact";
   const po = input.pollOptions ?? {};
   const includeTools = po.includeTools;
-  const includeEvents = po.includeEvents ?? true;
+  const includeEvents = po.includeEvents ?? !compactMode;
   const includeActions = po.includeActions ?? true;
-  const includeResult = po.includeResult ?? true;
+  const includeResult = po.includeResult ?? !compactMode;
   const includeUsage = po.includeUsage ?? responseMode === "full";
   const includeModelUsage = po.includeModelUsage ?? responseMode === "full";
   const includeStructuredOutput = po.includeStructuredOutput ?? responseMode === "full";
@@ -381,7 +383,7 @@ function buildResult(
     includeUsage,
     includeModelUsage,
     includeStructuredOutput,
-    slim: responseMode === "minimal",
+    slim: responseMode === "minimal" || responseMode === "delta_compact",
   });
   const cappedEvents = capEventsByBytes(shapedEvents, maxBytes);
   if (cappedEvents.truncated) {
@@ -437,7 +439,7 @@ function buildResult(
             includeUsage,
             includeModelUsage,
             includeStructuredOutput,
-            slim: responseMode === "minimal",
+            slim: responseMode === "minimal" || responseMode === "delta_compact",
           })
         : undefined,
     cancelledAt: session?.cancelledAt,

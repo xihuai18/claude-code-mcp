@@ -235,16 +235,23 @@ Gotchas:
 - On Windows, POSIX home paths like `/home/user/...` are **not** rewritten to drive paths; prefer absolute Windows paths under your current `cwd` to avoid out-of-bounds permission prompts.
 - `TeamDelete` may require members to reach `shutdown_approved` (otherwise you may see "active member" errors); cleanup can be asynchronous during shutdown.
 - Skills may become available later in the same session (early calls may show "Unknown", later succeed after skills are loaded/registered).
+- `toolCatalogCount` and `availableTools` are different views: catalog is server-known tools, while `availableTools` comes from each session's runtime `system/init.tools`.
 - Some internal features (e.g. ToolSearch) may not appear in `availableTools` (derived from SDK `system/init.tools`).
 
 ### Resources
 
 If your MCP client supports resources, this server exposes a couple of **read-only** MCP resources:
 
-- `claude-code-mcp:///server-info` (JSON): server metadata (version/platform/runtime)
-- `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (runtime-aware)
+- `claude-code-mcp:///server-info` (JSON): server metadata (version/platform/runtime + capabilities/limits)
+- `claude-code-mcp:///internal-tools` (JSON): internal tool catalog (runtime-aware, includes permission/schema metadata)
 - `claude-code-mcp:///gotchas` (Markdown): practical limits/gotchas
-- `claude-code-mcp:///compat-report` (JSON): compatibility report (transport/platform assumptions, runtime warnings, guidance)
+- `claude-code-mcp:///compat-report` (JSON): compatibility report (transport/platform assumptions, runtime warnings, guidance, recommended settings, tool count diagnostics)
+
+Resource templates:
+
+- `claude-code-mcp:///session/{sessionId}`: lightweight session snapshot for a specific session
+- `claude-code-mcp:///tools/runtime{?sessionId}`: runtime tool view globally or per session
+- `claude-code-mcp:///compat/diff{?client}`: client-specific compatibility guidance
 
 **Disk resume (optional):** By default, `claude_code_reply` requires the session to exist in the MCP server's in-memory Session Manager. If you set `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1`, it can attempt to resume using the Claude Code CLI's on-disk transcript even when the in-memory session is missing (e.g. after a restart / TTL cleanup). For safety, disk resume fallback requires `CLAUDE_CODE_MCP_RESUME_SECRET` to be set on the server and requires callers to pass `diskResumeConfig.resumeToken` (returned by `claude_code` / `claude_code_reply` when `CLAUDE_CODE_MCP_RESUME_SECRET` is set).
 
@@ -260,6 +267,8 @@ List, inspect, or cancel sessions.
 
 **Returns:** `{ sessions, message?, isError? }`
 
+`sessions[]` now includes lightweight diagnostics fields: `pendingPermissionCount`, `eventCount`, `currentCursor`, `lastEventId`, `ttlMs`, `lastError?`, `lastErrorAt?`, and `redactions[]`.
+
 ### `claude_code_check` — Poll events and respond to permission requests
 
 Poll session events/results and approve/deny pending permission requests.
@@ -269,8 +278,8 @@ Poll session events/results and approve/deny pending permission requests.
 | `action`            | string  | Yes                    | `"poll"` or `"respond_permission"`                                                                             |
 | `sessionId`         | string  | Yes                    | Target session ID                                                                                              |
 | `cursor`            | number  | No                     | Event cursor for incremental polling (`poll` only). Default: omitted (starts from the beginning of the buffer) |
-| `responseMode`      | string  | No                     | `"minimal"` (default) or `"full"` — controls payload size and redaction behavior                               |
-| `maxEvents`         | number  | No                     | Max events per poll (pagination via `nextCursor`). Default: `200` in `"minimal"`; unlimited in `"full"`        |
+| `responseMode`      | string  | No                     | `"minimal"` (default), `"delta_compact"` (lightweight polling), or `"full"` (verbose diagnostics)               |
+| `maxEvents`         | number  | No                     | Max events per poll (pagination via `nextCursor`). Default: `200` in `"minimal"`; unlimited in `"full"`/`"delta_compact"` |
 | `requestId`         | string  | For respond_permission | Permission request ID                                                                                          |
 | `decision`          | string  | For respond_permission | `"allow"` or `"deny"`                                                                                          |
 | `denyMessage`       | string  | No                     | Deny reason shown to Claude (`deny` only). Default: `"Permission denied by caller"`                            |
@@ -287,11 +296,11 @@ Poll session events/results and approve/deny pending permission requests.
 | `pollOptions.includeEvents`           | boolean | When false, omits `events` (but `nextCursor` still advances). Default: `true`                                                                                                           |
 | `pollOptions.includeActions`          | boolean | When false, omits `actions[]` even if `waiting_permission`. Default: `true`                                                                                                             |
 | `pollOptions.includeResult`           | boolean | When false, omits top-level `result` even when `idle`/`error`. Default: `true`                                                                                                          |
-| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: true in full mode, false in minimal mode)                                                                                                              |
-| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: true in full mode, false in minimal mode)                                                                                                         |
-| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: true in full mode, false in minimal mode)                                                                                                   |
-| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`, `true` in `"full"`                               |
-| `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`, `true` in `"full"`                                          |
+| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                         |
+| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                    |
+| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                              |
+| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`            |
+| `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`                       |
 | `pollOptions.maxBytes`                | number  | Approximate max JSON bytes for `events` in this response. When exceeded, events are truncated and `truncatedFields` includes `"events_bytes"`. Default: unlimited                         |
 
 </details>
@@ -321,6 +330,7 @@ Notes:
 - Permission `actions[]` include `timeoutMs`, `expiresAt`, and best-effort `remainingMs` to help callers avoid auto-deny timeouts.
 - `permission_result` event data is `{ requestId, toolName, behavior, source, message?, interrupt? }` (denial details only present for `deny`).
 - In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy progress events (`tool_progress`, `auth_status`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
+- In `"delta_compact"` mode: defaults are optimized for high-frequency polling (`events` and top-level `result` omitted unless explicitly enabled via `pollOptions`), while still returning session status/actions/cursors.
 
 ## Usage Example
 

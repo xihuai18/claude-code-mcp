@@ -12,6 +12,8 @@ describe("tool-discovery", () => {
     const tools = discoverToolsFromInit(["Read", "UnknownTool", "Read"]);
     expect(tools.find((t) => t.name === "Read")?.description).toBe(TOOL_CATALOG.Read.description);
     expect(tools.find((t) => t.name === "UnknownTool")?.description).toBe("UnknownTool");
+    expect(tools.find((t) => t.name === "Read")?.permissionModel).toBe("policy_controlled");
+    expect(tools.find((t) => t.name === "Read")?.schemaAvailability).toBe("none");
   });
 
   it("catalog descriptions include important tool gotchas", () => {

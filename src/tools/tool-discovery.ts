@@ -3,14 +3,19 @@ import type { ToolInfo } from "../types.js";
 type ToolCatalogEntry = Omit<ToolInfo, "name">;
 type ToolDiscoveryUpdatedCallback = (tools: ToolInfo[]) => void;
 
+const DEFAULT_PERMISSION_MODEL: ToolInfo["permissionModel"] = "policy_controlled";
+const DEFAULT_SCHEMA_AVAILABILITY: ToolInfo["schemaAvailability"] = "none";
+
 export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   Bash: {
     description: "Run shell commands",
     category: "execute",
+    notes: ["Execution may require permission approval depending on session policy."],
   },
   Read: {
     description: "Read file contents (large files: use offset/limit or Grep)",
     category: "file_read",
+    notes: ["Large reads are often capped by the backend; use offset/limit when needed."],
   },
   Write: {
     description: "Create or overwrite files",
@@ -40,6 +45,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   Task: {
     description: "Spawn subagent (must be in allowedTools)",
     category: "agent",
+    availabilityConditions: ["Requires Task to be visible and approved by session policy."],
   },
   TaskOutput: { description: "Get subagent output", category: "agent" },
   TaskStop: { description: "Cancel subagent", category: "agent" },
@@ -54,6 +60,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   TeamDelete: {
     description: "Delete team (may need shutdown_approved first)",
     category: "agent",
+    notes: ["Team cleanup can be asynchronous during shutdown."],
   },
 };
 
@@ -61,19 +68,32 @@ function uniq<T>(items: T[]): T[] {
   return Array.from(new Set(items));
 }
 
+function withToolDefaults(tool: ToolInfo): ToolInfo {
+  return {
+    ...tool,
+    permissionModel: tool.permissionModel ?? DEFAULT_PERMISSION_MODEL,
+    schemaAvailability: tool.schemaAvailability ?? DEFAULT_SCHEMA_AVAILABILITY,
+  };
+}
+
 export function discoverToolsFromInit(initTools: string[]): ToolInfo[] {
   const names = uniq(initTools.filter((t) => typeof t === "string" && t.trim() !== ""));
-  return names.map((name) => ({
-    name,
-    description: TOOL_CATALOG[name]?.description ?? name,
-    category: TOOL_CATALOG[name]?.category,
-  }));
+  return names.map((name) =>
+    withToolDefaults({
+      name,
+      description: TOOL_CATALOG[name]?.description ?? name,
+      category: TOOL_CATALOG[name]?.category,
+      availabilityConditions: TOOL_CATALOG[name]?.availabilityConditions,
+      platformConstraints: TOOL_CATALOG[name]?.platformConstraints,
+      notes: TOOL_CATALOG[name]?.notes,
+    })
+  );
 }
 
 export function defaultCatalogTools(): ToolInfo[] {
   return Object.keys(TOOL_CATALOG)
     .sort((a, b) => a.localeCompare(b))
-    .map((name) => ({ name, ...TOOL_CATALOG[name] }));
+    .map((name) => withToolDefaults({ name, ...TOOL_CATALOG[name] }));
 }
 
 export class ToolDiscoveryCache {

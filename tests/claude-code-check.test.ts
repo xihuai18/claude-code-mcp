@@ -401,6 +401,61 @@ describe("executeClaudeCodeCheck", () => {
     expect(polled.events.some((e) => e.type === "result")).toBe(true);
   });
 
+  it("supports delta_compact mode for lightweight polling", () => {
+    manager.create({ sessionId: "s-compact", cwd: "/tmp" });
+
+    manager.pushEvent("s-compact", {
+      type: "progress",
+      data: { type: "status", message: "working" },
+      timestamp: new Date().toISOString(),
+    });
+    manager.setResult("s-compact", {
+      type: "result",
+      result: {
+        sessionId: "s-compact",
+        result: "done",
+        isError: false,
+        durationMs: 1,
+        numTurns: 1,
+        totalCostUsd: 0.01,
+      },
+      createdAt: new Date().toISOString(),
+    });
+    manager.update("s-compact", { status: "idle" });
+
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-compact", responseMode: "delta_compact" },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.events).toEqual([]);
+    expect(polled.result).toBeUndefined();
+    expect(polled.nextCursor).toBe(1);
+  });
+
+  it("allows overriding includeEvents in delta_compact mode", () => {
+    manager.create({ sessionId: "s-compact-events", cwd: "/tmp" });
+    manager.pushEvent("s-compact-events", {
+      type: "progress",
+      data: { type: "status", idx: 1 },
+      timestamp: new Date().toISOString(),
+    });
+
+    const polled = executeClaudeCodeCheck(
+      {
+        action: "poll",
+        sessionId: "s-compact-events",
+        responseMode: "delta_compact",
+        pollOptions: { includeEvents: true },
+      },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.events).toHaveLength(1);
+  });
+
   it("supports maxEvents pagination and marks events as truncated", () => {
     manager.create({ sessionId: "s1", cwd: "/tmp" });
 

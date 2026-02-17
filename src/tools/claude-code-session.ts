@@ -22,6 +22,34 @@ export interface SessionResult {
   isError?: boolean;
 }
 
+const ALWAYS_REDACTED_FIELDS = [
+  "env",
+  "mcpServers",
+  "sandbox",
+  "debugFile",
+  "pathToClaudeCodeExecutable",
+] as const;
+
+const CONDITIONAL_REDACTED_FIELDS = [
+  "cwd",
+  "systemPrompt",
+  "agents",
+  "additionalDirectories",
+] as const;
+
+function buildRedactions(includeSensitive?: boolean): PublicSessionInfo["redactions"] {
+  const redactions: PublicSessionInfo["redactions"] = [];
+  for (const field of ALWAYS_REDACTED_FIELDS) {
+    redactions?.push({ field, reason: "secret_or_internal" });
+  }
+  if (!includeSensitive) {
+    for (const field of CONDITIONAL_REDACTED_FIELDS) {
+      redactions?.push({ field, reason: "sensitive_by_default" });
+    }
+  }
+  return redactions;
+}
+
 export function executeClaudeCodeSession(
   input: ClaudeCodeSessionInput,
   sessionManager: SessionManager,
@@ -35,8 +63,25 @@ export function executeClaudeCodeSession(
     };
   }
 
-  const toSessionJson = (s: SessionInfo) =>
-    input.includeSensitive ? sessionManager.toSensitiveJSON(s) : sessionManager.toPublicJSON(s);
+  const toSessionJson = (s: SessionInfo): PublicSessionInfo | SensitiveSessionInfo => {
+    const base = input.includeSensitive
+      ? sessionManager.toSensitiveJSON(s)
+      : sessionManager.toPublicJSON(s);
+    const stored = sessionManager.getResult(s.sessionId);
+    const lastError = stored?.type === "error" ? stored.result.result : undefined;
+    const lastErrorAt = stored?.type === "error" ? stored.createdAt : undefined;
+    return {
+      ...base,
+      pendingPermissionCount: sessionManager.getPendingPermissionCount(s.sessionId),
+      eventCount: sessionManager.getEventCount(s.sessionId),
+      currentCursor: sessionManager.getCurrentCursor(s.sessionId),
+      lastEventId: sessionManager.getLastEventId(s.sessionId),
+      ttlMs: sessionManager.getRemainingTtlMs(s.sessionId),
+      lastError,
+      lastErrorAt,
+      redactions: buildRedactions(input.includeSensitive),
+    };
+  };
 
   switch (input.action) {
     case "list": {

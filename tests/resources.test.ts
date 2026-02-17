@@ -42,7 +42,7 @@ async function safeListTemplates(client: Client): Promise<string[]> {
 
 describe("Resources", () => {
   it("should expose a small set of read-only resources", async () => {
-    await withClientServer(async (client) => {
+    await withClientServer(async (client, ctx) => {
       const uris = await safeListResources(client);
       expect(uris.sort()).toEqual(
         [
@@ -54,7 +54,13 @@ describe("Resources", () => {
       );
 
       const templates = await safeListTemplates(client);
-      expect(templates).toEqual([]);
+      expect(templates.slice().sort()).toEqual(
+        [
+          "claude-code-mcp:///session/{sessionId}",
+          "claude-code-mcp:///tools/runtime{?sessionId}",
+          "claude-code-mcp:///compat/diff{?client}",
+        ].sort()
+      );
 
       const infoRes = await client.readResource({ uri: "claude-code-mcp:///server-info" });
       expect(infoRes.contents[0]?.mimeType).toBe("application/json");
@@ -67,9 +73,20 @@ describe("Resources", () => {
         name?: unknown;
         version?: unknown;
         resources?: unknown;
+        schemaVersion?: unknown;
+        etag?: unknown;
+        updatedAt?: unknown;
+        capabilities?: { resources?: unknown; toolsListChanged?: unknown };
+        resourceTemplates?: unknown;
       };
       expect(info.name).toBe("claude-code-mcp");
       expect(typeof info.version).toBe("string");
+      expect(info.schemaVersion).toBe("1.2");
+      expect(typeof info.etag).toBe("string");
+      expect(typeof info.updatedAt).toBe("string");
+      expect(info.capabilities?.resources).toBe(true);
+      expect(info.capabilities?.toolsListChanged).toBe(true);
+      expect(Array.isArray(info.resourceTemplates)).toBe(true);
       expect(Array.isArray(info.resources)).toBe(true);
       expect((info.resources as string[]).slice().sort()).toEqual(
         [
@@ -91,6 +108,13 @@ describe("Resources", () => {
           : "{}";
       const parsed = JSON.parse(toolsText) as { tools?: unknown };
       expect(Array.isArray(parsed.tools)).toBe(true);
+      const firstTool = Array.isArray(parsed.tools)
+        ? (parsed.tools[0] as
+            | { permissionModel?: unknown; schemaAvailability?: unknown }
+            | undefined)
+        : undefined;
+      expect(firstTool?.permissionModel).toBe("policy_controlled");
+      expect(firstTool?.schemaAvailability).toBe("none");
 
       const gotchasRes = await client.readResource({ uri: "claude-code-mcp:///gotchas" });
       expect(gotchasRes.contents[0]?.mimeType).toBe("text/markdown");
@@ -112,20 +136,107 @@ describe("Resources", () => {
         packageVersion?: unknown;
         samePlatformRequired?: unknown;
         transport?: unknown;
+        schemaVersion?: unknown;
         limits?: {
           maxSessions?: unknown;
           maxPendingPermissionsPerSession?: unknown;
           eventBuffer?: { maxSize?: unknown; hardMaxSize?: unknown };
         };
         diskResume?: { enabled?: unknown; resumeSecretConfigured?: unknown };
+        toolCounts?: { catalogCount?: unknown; runtimeDiscoveredUniqueCount?: unknown };
+        recommendedSettings?: {
+          responseMode?: unknown;
+          poll?: { cursorStrategy?: unknown };
+        };
+        features?: { resourceTemplates?: unknown };
+        resourceTemplates?: unknown;
       };
       expect(compat.samePlatformRequired).toBe(true);
       expect(compat.transport).toBe("stdio");
+      expect(compat.schemaVersion).toBe("1.2");
       expect(typeof compat.packageVersion).toBe("string");
       expect(typeof compat.limits?.eventBuffer?.maxSize).toBe("number");
       expect(typeof compat.limits?.eventBuffer?.hardMaxSize).toBe("number");
       expect(typeof compat.diskResume?.enabled).toBe("boolean");
       expect(typeof compat.diskResume?.resumeSecretConfigured).toBe("boolean");
+      expect(typeof compat.toolCounts?.catalogCount).toBe("number");
+      expect(typeof compat.toolCounts?.runtimeDiscoveredUniqueCount).toBe("number");
+      expect(compat.recommendedSettings?.responseMode).toBe("delta_compact");
+      expect(typeof compat.recommendedSettings?.poll?.cursorStrategy).toBe("string");
+      expect(compat.features?.resourceTemplates).toBe(true);
+      expect(Array.isArray(compat.resourceTemplates)).toBe(true);
+
+      ctx.sessionManager.create({ sessionId: "s-template", cwd: "/tmp" });
+      const sessionSnapshot = await client.readResource({
+        uri: "claude-code-mcp:///session/s-template",
+      });
+      const sessionSnapshotContent = sessionSnapshot.contents[0];
+      const sessionSnapshotText =
+        sessionSnapshotContent &&
+        "text" in sessionSnapshotContent &&
+        typeof sessionSnapshotContent.text === "string"
+          ? sessionSnapshotContent.text
+          : "{}";
+      const sessionSnapshotJson = JSON.parse(sessionSnapshotText) as {
+        found?: unknown;
+        session?: { sessionId?: unknown; pendingPermissionCount?: unknown };
+      };
+      expect(sessionSnapshotJson.found).toBe(true);
+      expect(sessionSnapshotJson.session?.sessionId).toBe("s-template");
+      expect(sessionSnapshotJson.session?.pendingPermissionCount).toBe(0);
+
+      const runtimeToolsNoInit = await client.readResource({
+        uri: "claude-code-mcp:///tools/runtime?sessionId=s-template",
+      });
+      const runtimeToolsNoInitContent = runtimeToolsNoInit.contents[0];
+      const runtimeToolsNoInitText =
+        runtimeToolsNoInitContent &&
+        "text" in runtimeToolsNoInitContent &&
+        typeof runtimeToolsNoInitContent.text === "string"
+          ? runtimeToolsNoInitContent.text
+          : "{}";
+      const runtimeToolsNoInitJson = JSON.parse(runtimeToolsNoInitText) as {
+        source?: unknown;
+        availableTools?: unknown[];
+      };
+      expect(runtimeToolsNoInitJson.source).toBe("session_without_init");
+      expect(Array.isArray(runtimeToolsNoInitJson.availableTools)).toBe(true);
+      expect(runtimeToolsNoInitJson.availableTools).toHaveLength(0);
+
+      ctx.sessionManager.setInitTools("s-template", ["Read", "Write", "ExternalX"]);
+      const runtimeToolsWithInit = await client.readResource({
+        uri: "claude-code-mcp:///tools/runtime?sessionId=s-template",
+      });
+      const runtimeToolsWithInitContent = runtimeToolsWithInit.contents[0];
+      const runtimeToolsWithInitText =
+        runtimeToolsWithInitContent &&
+        "text" in runtimeToolsWithInitContent &&
+        typeof runtimeToolsWithInitContent.text === "string"
+          ? runtimeToolsWithInitContent.text
+          : "{}";
+      const runtimeToolsWithInitJson = JSON.parse(runtimeToolsWithInitText) as {
+        source?: unknown;
+        availableTools?: Array<{ name?: unknown }>;
+      };
+      expect(runtimeToolsWithInitJson.source).toBe("session_runtime");
+      expect(runtimeToolsWithInitJson.availableTools?.map((t) => t.name)).toContain("ExternalX");
+
+      const compatDiff = await client.readResource({
+        uri: "claude-code-mcp:///compat/diff?client=codex",
+      });
+      const compatDiffContent = compatDiff.contents[0];
+      const compatDiffText =
+        compatDiffContent &&
+        "text" in compatDiffContent &&
+        typeof compatDiffContent.text === "string"
+          ? compatDiffContent.text
+          : "{}";
+      const compatDiffJson = JSON.parse(compatDiffText) as {
+        clientFamily?: unknown;
+        recommendedSettings?: { responseMode?: unknown };
+      };
+      expect(compatDiffJson.clientFamily).toBe("codex");
+      expect(compatDiffJson.recommendedSettings?.responseMode).toBe("delta_compact");
     });
   });
 

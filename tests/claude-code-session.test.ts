@@ -47,6 +47,11 @@ describe("claude_code_session tool", () => {
       const result = executeClaudeCodeSession({ action: "get", sessionId: "s1" }, manager);
       expect(result.sessions).toHaveLength(1);
       expect(result.sessions[0]).toHaveProperty("sessionId", "s1");
+      expect(result.sessions[0]).toHaveProperty("pendingPermissionCount", 0);
+      expect(result.sessions[0]).toHaveProperty("eventCount", 0);
+      expect(result.sessions[0]).toHaveProperty("currentCursor", 0);
+      expect(result.sessions[0]).toHaveProperty("ttlMs");
+      expect(result.sessions[0]).toHaveProperty("redactions");
       // Should not expose abortController
       expect(result.sessions[0]).not.toHaveProperty("abortController");
     });
@@ -63,6 +68,8 @@ describe("claude_code_session tool", () => {
       expect(result.sessions[0]).not.toHaveProperty("cwd");
       expect(result.sessions[0]).not.toHaveProperty("systemPrompt");
       expect(result.sessions[0]).not.toHaveProperty("additionalDirectories");
+      const redactions = result.sessions[0].redactions ?? [];
+      expect(redactions.some((r) => r.field === "cwd")).toBe(true);
     });
 
     it("should include sensitive fields when requested", () => {
@@ -80,6 +87,9 @@ describe("claude_code_session tool", () => {
       expect(result.sessions[0]).toHaveProperty("cwd", "/tmp");
       expect(result.sessions[0]).toHaveProperty("systemPrompt", "secret");
       expect(result.sessions[0]).toHaveProperty("additionalDirectories");
+      const redactions = result.sessions[0].redactions ?? [];
+      expect(redactions.some((r) => r.field === "cwd")).toBe(false);
+      expect(redactions.some((r) => r.field === "env")).toBe(true);
     });
 
     it("should not leak secrets even with includeSensitive", () => {
@@ -103,6 +113,26 @@ describe("claude_code_session tool", () => {
       expect(result.sessions[0]).not.toHaveProperty("sandbox");
       expect(result.sessions[0]).not.toHaveProperty("debugFile");
       expect(result.sessions[0]).not.toHaveProperty("pathToClaudeCodeExecutable");
+    });
+
+    it("should surface lastError diagnostics when session result is error", () => {
+      manager.create({ sessionId: "s-error", cwd: "/tmp" });
+      manager.setResult("s-error", {
+        type: "error",
+        result: {
+          sessionId: "s-error",
+          result: "tool failed",
+          isError: true,
+          durationMs: 1,
+          numTurns: 1,
+          totalCostUsd: 0,
+        },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const result = executeClaudeCodeSession({ action: "get", sessionId: "s-error" }, manager);
+      expect(result.sessions[0]).toHaveProperty("lastError", "tool failed");
+      expect(result.sessions[0]).toHaveProperty("lastErrorAt", "2026-01-01T00:00:00.000Z");
     });
   });
 
