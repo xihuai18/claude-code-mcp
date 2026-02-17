@@ -110,11 +110,11 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `disallowedTools`            | string[]         | No       | Forbidden tool names. Default: `[]` (none). SDK behavior: disallowed tools are removed from the model's context. Takes precedence over `allowedTools` and will be denied even if later approved interactively |
 | `maxTurns`                   | number           | No       | Maximum number of agent reasoning steps. Each step may involve one or more tool calls. Default: SDK/Claude Code default                                                                                       |
 | `model`                      | string           | No       | Model to use (e.g. `"claude-sonnet-4-5-20250929"`). Default: SDK/Claude Code default                                                                                                                          |
-| `effort`                     | string           | No       | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`. Default: SDK/Claude Code default                                                                                                                                                 |
-| `thinking`                   | object           | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default                                                                                             |
+| `effort`                     | string           | No       | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`. Default: SDK/Claude Code default                                                                                                                        |
+| `thinking`                   | object           | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default                                                                    |
 | `systemPrompt`               | string \| object | No       | Override the agent's system prompt. Default: SDK/Claude Code default. Pass a string for full replacement, or `{ type: "preset", preset: "claude_code", append?: "..." }` to extend the default prompt         |
-| `permissionRequestTimeoutMs` | number           | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min)                                                                                                            |
-| `sessionInitTimeoutMs`       | number           | No       | **Compatibility alias** for `advanced.sessionInitTimeoutMs` (deprecated for `claude_code`). Default: `10000`. If both are provided, `advanced.sessionInitTimeoutMs` wins                                                                 |
+| `permissionRequestTimeoutMs` | number           | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min)                                                                                      |
+| `sessionInitTimeoutMs`       | number           | No       | **Compatibility alias** for `advanced.sessionInitTimeoutMs` (deprecated for `claude_code`). Default: `10000`. If both are provided, `advanced.sessionInitTimeoutMs` wins                                      |
 | `advanced`                   | object           | No       | Advanced/low-frequency parameters (see below)                                                                                                                                                                 |
 
 <details>
@@ -124,7 +124,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | ------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `advanced.tools`                      | string[] \| object | Define the base tool set. Default: SDK/Claude Code default toolset. Array of tool name strings, or `{ type: "preset", preset: "claude_code" }` for the default toolset. `allowedTools`/`disallowedTools` further filter on top of this |
 | `advanced.persistSession`             | boolean            | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                                                                                                      |
-| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`. **Recommended location for `claude_code` callers.**                                                                                                                                    |
+| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`. **Recommended location for `claude_code` callers.**                                                                                                  |
 | `advanced.agents`                     | object             | Define custom sub-agents the main agent can delegate tasks to. Default: none. SDK default: if a sub-agent omits `tools`, it inherits all tools from the parent.                                                                        |
 | `advanced.agent`                      | string             | Name of a custom agent (defined in `agents`) to use as the primary agent. Default: omitted                                                                                                                                             |
 | `advanced.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                                                                                                                |
@@ -169,16 +169,16 @@ Use `claude_code_check` to poll events and obtain the final `result`.
 
 Continue an existing session by sending a follow-up message. The agent retains full context from previous turns including files read, code analysis, and conversation history.
 
-| Parameter                    | Type    | Required | Description                                                                                                          |
-| ---------------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `sessionId`                  | string  | Yes      | Session ID from a previous `claude_code` call                                                                        |
-| `prompt`                     | string  | Yes      | Follow-up prompt                                                                                                     |
-| `forkSession`                | boolean | No       | Create a branched copy of this session. Default: `false`                                                             |
-| `effort`                     | string  | No       | Effort level override for this run (and for future replies when not forking). Default: SDK/Claude Code default      |
-| `thinking`                   | object  | No       | Thinking mode override for this run (and for future replies when not forking). Default: SDK/Claude Code default     |
+| Parameter                    | Type    | Required | Description                                                                                                              |
+| ---------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `sessionId`                  | string  | Yes      | Session ID from a previous `claude_code` call                                                                            |
+| `prompt`                     | string  | Yes      | Follow-up prompt                                                                                                         |
+| `forkSession`                | boolean | No       | Create a branched copy of this session. Default: `false`                                                                 |
+| `effort`                     | string  | No       | Effort level override for this run (and for future replies when not forking). Default: SDK/Claude Code default           |
+| `thinking`                   | object  | No       | Thinking mode override for this run (and for future replies when not forking). Default: SDK/Claude Code default          |
 | `permissionRequestTimeoutMs` | number  | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min) |
-| `sessionInitTimeoutMs`       | number  | No       | Fork init timeout in milliseconds (only when `forkSession=true`). Default: `10000`                                   |
-| `diskResumeConfig`           | object  | No       | Disk resume parameters (see below). Used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` and in-memory session is missing |
+| `sessionInitTimeoutMs`       | number  | No       | Fork init timeout in milliseconds (only when `forkSession=true`). Default: `10000`                                       |
+| `diskResumeConfig`           | object  | No       | Disk resume parameters (see below). Used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` and in-memory session is missing     |
 
 <details>
 <summary><code>diskResumeConfig</code> object parameters (28 disk-resume-only parameters)</summary>
@@ -261,11 +261,11 @@ Resource templates:
 
 List, inspect, cancel, or interrupt sessions.
 
-| Parameter          | Type    | Required                  | Description                                                                    |
-| ------------------ | ------- | ------------------------- | ------------------------------------------------------------------------------ |
-| `action`           | string  | Yes                       | `"list"`, `"get"`, `"cancel"`, or `"interrupt"`                               |
-| `sessionId`        | string  | For get/cancel/interrupt  | Target session ID                                                              |
-| `includeSensitive` | boolean | No             | Include `cwd`/`systemPrompt`/`agents`/`additionalDirectories` (default: false) |
+| Parameter          | Type    | Required                 | Description                                                                    |
+| ------------------ | ------- | ------------------------ | ------------------------------------------------------------------------------ |
+| `action`           | string  | Yes                      | `"list"`, `"get"`, `"cancel"`, or `"interrupt"`                                |
+| `sessionId`        | string  | For get/cancel/interrupt | Target session ID                                                              |
+| `includeSensitive` | boolean | No                       | Include `cwd`/`systemPrompt`/`agents`/`additionalDirectories` (default: false) |
 
 **Returns:** `{ sessions, message?, isError? }`
 
@@ -275,19 +275,19 @@ List, inspect, cancel, or interrupt sessions.
 
 Poll session events/results and approve/deny pending permission requests.
 
-| Parameter           | Type    | Required               | Description                                                                                                    |
-| ------------------- | ------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `action`            | string  | Yes                    | `"poll"` or `"respond_permission"`                                                                             |
-| `sessionId`         | string  | Yes                    | Target session ID                                                                                              |
-| `cursor`            | number  | No                     | Event cursor for incremental polling (`poll` only). Default: omitted (starts from the beginning of the buffer) |
-| `responseMode`      | string  | No                     | `"minimal"` (default), `"delta_compact"` (lightweight polling), or `"full"` (verbose diagnostics)               |
+| Parameter           | Type    | Required               | Description                                                                                                               |
+| ------------------- | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `action`            | string  | Yes                    | `"poll"` or `"respond_permission"`                                                                                        |
+| `sessionId`         | string  | Yes                    | Target session ID                                                                                                         |
+| `cursor`            | number  | No                     | Event cursor for incremental polling (`poll` only). Default: omitted (starts from the beginning of the buffer)            |
+| `responseMode`      | string  | No                     | `"minimal"` (default), `"delta_compact"` (lightweight polling), or `"full"` (verbose diagnostics)                         |
 | `maxEvents`         | number  | No                     | Max events per poll (pagination via `nextCursor`). Default: `200` in `"minimal"`; unlimited in `"full"`/`"delta_compact"` |
-| `requestId`         | string  | For respond_permission | Permission request ID                                                                                          |
-| `decision`          | string  | For respond_permission | `"allow"`, `"deny"`, or `"allow_for_session"`                                                                  |
-| `denyMessage`       | string  | No                     | Deny reason shown to Claude (`deny` only). Default: `"Permission denied by caller"`                            |
-| `interrupt`         | boolean | No                     | When true, denying also interrupts the whole agent (`deny` only). Default: `false`                             |
-| `pollOptions`       | object  | No                     | Fine-grained poll control options (see below)                                                                  |
-| `permissionOptions` | object  | No                     | Advanced permission response options (see below)                                                               |
+| `requestId`         | string  | For respond_permission | Permission request ID                                                                                                     |
+| `decision`          | string  | For respond_permission | `"allow"`, `"deny"`, or `"allow_for_session"`                                                                             |
+| `denyMessage`       | string  | No                     | Deny reason shown to Claude (`deny` only). Default: `"Permission denied by caller"`                                       |
+| `interrupt`         | boolean | No                     | When true, denying also interrupts the whole agent (`deny` only). Default: `false`                                        |
+| `pollOptions`       | object  | No                     | Fine-grained poll control options (see below)                                                                             |
+| `permissionOptions` | object  | No                     | Advanced permission response options (see below)                                                                          |
 
 <details>
 <summary><code>pollOptions</code> object parameters (10 fine-grained poll controls)</summary>
@@ -298,20 +298,20 @@ Poll session events/results and approve/deny pending permission requests.
 | `pollOptions.includeEvents`           | boolean | When false, omits `events` (but `nextCursor` still advances). Default: `true`                                                                                                           |
 | `pollOptions.includeActions`          | boolean | When false, omits `actions[]` even if `waiting_permission`. Default: `true`                                                                                                             |
 | `pollOptions.includeResult`           | boolean | When false, omits top-level `result` even when `idle`/`error`. Default: `true`                                                                                                          |
-| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                         |
-| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                    |
-| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                              |
-| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`            |
-| `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`                       |
-| `pollOptions.maxBytes`                | number  | Approximate max JSON bytes for `events` in this response. When exceeded, events are truncated and `truncatedFields` includes `"events_bytes"`. Default: unlimited                         |
+| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                          |
+| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                     |
+| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                               |
+| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`             |
+| `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`                        |
+| `pollOptions.maxBytes`                | number  | Approximate max JSON bytes for `events` in this response. When exceeded, events are truncated and `truncatedFields` includes `"events_bytes"`. Default: unlimited                       |
 
 </details>
 
 <details>
 <summary><code>permissionOptions</code> object parameters (2 advanced permission response options)</summary>
 
-| Parameter                              | Type   | Description                                                             |
-| -------------------------------------- | ------ | ----------------------------------------------------------------------- |
+| Parameter                              | Type   | Description                                                                                 |
+| -------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
 | `permissionOptions.updatedInput`       | object | Modified tool input to run (`allow`/`allow_for_session` only). Default: none                |
 | `permissionOptions.updatedPermissions` | array  | Permission rule updates suggested/applied (`allow`/`allow_for_session` only). Default: none |
 
@@ -453,15 +453,15 @@ setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
 
 All environment variables are optional. They are set on the MCP server process (not on the Claude Code child process — for that, use the `env` tool parameter).
 
-| Variable                            | Description                                                                                                      | Default        |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
-| `CLAUDE_CODE_GIT_BASH_PATH`         | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                          | Auto-detected  |
-| `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME` | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
-| `CLAUDE_CODE_MCP_RESUME_SECRET`     | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | _(unset)_      |
-| `CLAUDE_CODE_MCP_MAX_SESSIONS`      | Maximum number of in-memory sessions (set `0` to disable the limit)                                              | `128`          |
-| `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS` | Maximum number of outstanding permission requests per session (set `0` to disable the limit)                | `64`           |
-| `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE` | Soft limit for in-memory event buffer per session (`0` is not supported)                                      | `1000`         |
-| `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE` | Hard limit for in-memory event buffer per session (clamped to be `>= max`; `0` is not supported)      | `2000`         |
+| Variable                                     | Description                                                                                                      | Default        |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
+| `CLAUDE_CODE_GIT_BASH_PATH`                  | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                          | Auto-detected  |
+| `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME`          | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
+| `CLAUDE_CODE_MCP_RESUME_SECRET`              | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | _(unset)_      |
+| `CLAUDE_CODE_MCP_MAX_SESSIONS`               | Maximum number of in-memory sessions (set `0` to disable the limit)                                              | `128`          |
+| `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS`    | Maximum number of outstanding permission requests per session (set `0` to disable the limit)                     | `64`           |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE`      | Soft limit for in-memory event buffer per session (`0` is not supported)                                         | `1000`         |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE` | Hard limit for in-memory event buffer per session (clamped to be `>= max`; `0` is not supported)                 | `2000`         |
 
 ### How to configure
 
