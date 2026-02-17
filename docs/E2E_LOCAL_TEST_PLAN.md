@@ -26,6 +26,8 @@
 3. 能至少处理 1 次权限请求（`respond_permission` 的 allow/deny/allow_for_session）。
 4. 能完成 1 个真实编程任务验收（本地测试命令先失败、修改后通过）。
 5. 能显式完成 1 次 `claude_code_reply` 调用并返回可解析结果（成功或失败都需可解释）。
+   - `claude_code_reply` 仅在会话处于 `idle` 或 `error` 状态时可调用；对 `running` / `waiting_permission` 状态的会话调用会返回 `SESSION_BUSY`（属于可解释失败）。
+   - 建议在用例 B 或 E 的会话到达终态后，再对同一 `sessionId` 调用 `claude_code_reply` 发送追问。
 6. 结束时清理残留会话（取消所有 `running/waiting_permission`）。
 
 兼容性说明（必须知晓）：
@@ -94,6 +96,10 @@
 - 如果出现 `nextCursor` 不变且 `events` 为空，允许按同一 cursor 重试最多 3 次；超过上限再标记 `poll_stall_suspected`。
 - 如果 `status=waiting_permission`，必须处理 `actions[]`，禁止无限 poll。
 - Windows 下记录 `posix_path_incidents`（出现 `/home/...` 或其他明显 POSIX 绝对路径的次数）；建议阈值为 0，超过阈值记为质量不达标。
+- Windows 路径强制校验（仅 `process.platform === 'win32'`）：
+  - 每次 poll 返回的 `events` 中，若 `data` 包含工具调用参数（如 `file_path`、`command`、`cwd`），检查是否匹配 `/home/`、`/d/`、`/c/` 等 POSIX 风格路径。
+  - 若检测到 POSIX 路径，立即对该权限请求执行 `deny`，并在 prompt 中追加纠偏指令：`"你刚才使用了 POSIX 风格路径 {path}，请改写为 Windows 绝对路径（如 D:\\...）后重试。"`
+  - 若会话已无权限请求可 deny（工具已自动批准），则在最终报告中记录 `posix_path_incidents++` 并标记为质量不达标。
 
 关键观测字段（每轮都要记录）：
 
@@ -121,14 +127,14 @@
 
 ```text
 请先通过客户端工具注册表或可调用性确认 4 个工具：claude_code、claude_code_reply、claude_code_check、claude_code_session。
-如果客户端支持 tools/list，再调用 tools/list 做二次确认。
+（可选）如果客户端支持 tools/list 协议方法，可调用 tools/list 做二次确认；不支持时跳过此步，不影响判定。
 然后调用 resources/list，并至少读取一个资源（建议 claude-code-mcp:///server-info、claude-code-mcp:///quickstart、claude-code-mcp:///errors 和 claude-code-mcp:///compat-report）。
 请输出你读到的关键字段。
 ```
 
 通过判据：
 
-1. 能确认 4 个工具都可调用（可通过客户端工具注册表、直接调用、或 tools/list）。
+1. 能确认 4 个工具都可调用（可通过客户端工具注册表、直接调用、或 tools/list；tools/list 为可选增强，不支持不扣分）。
 2. `resources/read` 成功返回内容。
 
 失败恢复：
@@ -147,7 +153,7 @@
 - `advanced.maxBudgetUsd`: `0.2`
 - `advanced.sessionInitTimeoutMs`: `15000`（`claude_code` 的推荐写法）
 - `allowedTools`: `["Read", "Write"]`
-- `strictAllowedTools`: `true`（建议开启，确保 `allowedTools` 是严格白名单语义）
+- `strictAllowedTools`: `true`（建议开启，确保 `allowedTools` 是严格白名单语义；该参数在 `claude_code` 和 `diskResumeConfig` 中均可用，部分客户端可能不在 UI 中展示但实际可传递）
 - `disallowedTools`: 仅当通过 `includeTools=true` 确认 Bash 在运行时工具列表中时才设置为 `["Bash"]`；否则省略该字段（避免 `Unknown disallowedTools: Bash` 告警）
 - 不建议使用顶层 `sessionInitTimeoutMs` 作为主配置（该字段仅用于兼容，优先使用 `advanced.sessionInitTimeoutMs`）
 - 即使 prompt 中明确要求“不要调用 Bash”，也应以策略约束（`strictAllowedTools` / `allowedTools` / `disallowedTools`）作为主判据（smoke 仅验证基础读写闭环；权限闭环由用例 C 覆盖）
@@ -246,7 +252,37 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
 准备要求：
 
 1. 使用独立测试项目目录（不要污染本仓库主目录）。
-2. 项目中存在可复现失败测试。
+2. 项目中存在可复现失败测试。可使用本仓库提供的内置 fixture 快速初始化：
+
+```bash
+# 在测试工作目录下执行（如 D:\Lab\Test-Claude-Code-MCP\e2e_real_task）
+mkdir -p e2e_real_task && cd e2e_real_task
+cat > package.json << 'PKGJSON'
+{
+  "name": "e2e-real-task",
+  "version": "1.0.0",
+  "scripts": { "test": "node test.js" }
+}
+PKGJSON
+cat > sum.js << 'SUMJS'
+function sum(a, b) {
+  return a - b; // BUG: should be a + b
+}
+module.exports = sum;
+SUMJS
+cat > test.js << 'TESTJS'
+const sum = require("./sum");
+const assert = require("assert");
+assert.strictEqual(sum(1, 2), 3, "1 + 2 should equal 3");
+assert.strictEqual(sum(-1, 1), 0, "-1 + 1 should equal 0");
+assert.strictEqual(sum(0, 0), 0, "0 + 0 should equal 0");
+console.log("All tests passed");
+TESTJS
+```
+
+上述 fixture 的预期行为：`npm test` 首次运行失败（`sum` 函数用了 `-` 而非 `+`），模型需将 `return a - b` 改为 `return a + b`，再次运行测试通过。
+
+如果不使用内置 fixture，也可自行准备满足"可复现失败"条件的项目，但必须在报告中说明项目来源。
 
 给模型的任务模板：
 
@@ -349,6 +385,10 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
    - 先重连 MCP server，再优先执行 `claude_code_session(action=list)`。
    - 对 `running/waiting_permission` 会话继续做 `cancel + poll` 清理。
    - 在报告中记录 `transport_health` 与是否完成重连后的清理验收。
+7. `claude_code_reply` 返回 `SESSION_BUSY`。
+   - 说明会话仍在 `running` 或 `waiting_permission` 状态，不可接受新 prompt。
+   - 先等待会话到达终态（`idle` / `error` / `cancelled`），再调用 `claude_code_reply`。
+   - 若需要中断当前执行，先调用 `claude_code_session(action=interrupt)` 或 `cancel`，等终态后再 reply。
 
 ---
 
@@ -394,7 +434,7 @@ args = ["-y", "@leo000001/claude-code-mcp"]
 
 ```text
 请先通过客户端工具注册表或可调用性确认 claude_code、claude_code_reply、claude_code_check、claude_code_session 四个工具。
-如果客户端支持 tools/list，再调用 tools/list 做二次确认。
+（可选）如果客户端支持 tools/list 协议方法，可调用 tools/list 做二次确认；不支持时跳过。
 然后调用 resources/list，并读取 claude-code-mcp:///server-info、claude-code-mcp:///quickstart、claude-code-mcp:///errors 与 claude-code-mcp:///compat-report。
 输出关键字段和你的结论。
 ```
@@ -427,7 +467,7 @@ Windows 场景优先使用当前 cwd 下的绝对 Windows 路径，不要使用 
 #### 模板 4：真实编程任务验收
 
 ```text
-请在独立测试项目目录执行：先运行测试复现失败，再做最小修复，再次运行测试确认通过。
+请在独立测试项目目录执行（可使用 §5.5 提供的内置 fixture 初始化）：先运行测试复现失败，再做最小修复，再次运行测试确认通过。
 Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 风格路径，必须先自检并改写为当前 cwd 下的 Windows 绝对路径后再执行。
 要求输出：失败用例、根因、修改文件、复测结果。
 最后给出是否通过 verdict。
