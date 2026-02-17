@@ -4,10 +4,8 @@
   "description": "MCP server that runs Claude Code as tools — start coding agents, poll their progress, and control permissions from any MCP client",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },

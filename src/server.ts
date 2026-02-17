@@ -53,12 +53,20 @@ export function createServerContext(serverCwd: string): {
   const claudeCodeToolRef: {
     current?: { update: (updates: { description?: string }) => void };
   } = {};
+  const notifyInternalToolsResourceChanged = () => {
+    if (!server.isConnected()) return;
+    // Prefer the stable high-level API to avoid coupling to internal SDK fields.
+    // This notifies clients to refresh resources when the runtime tool catalog changes.
+    server.sendResourceListChanged();
+  };
+
   const toolCache = new ToolDiscoveryCache(undefined, (tools) => {
     try {
       claudeCodeToolRef.current?.update({ description: buildInternalToolsDescription(tools) });
       if (server.isConnected()) {
         server.sendToolListChanged();
       }
+      notifyInternalToolsResourceChanged();
     } catch {
       // ignore update errors
     }
@@ -267,7 +275,7 @@ export function createServerContext(serverCwd: string): {
           .int()
           .positive()
           .optional()
-          .describe("Default: 60000"),
+          .describe("Default: 60000, clamped to 300000"),
         sessionInitTimeoutMs: z
           .number()
           .int()
@@ -343,7 +351,7 @@ export function createServerContext(serverCwd: string): {
           .int()
           .positive()
           .optional()
-          .describe("Default: 60000"),
+          .describe("Default: 60000, clamped to 300000"),
         diskResumeConfig: diskResumeConfigSchema,
       },
       outputSchema: startResultSchema,
@@ -544,7 +552,7 @@ export function createServerContext(serverCwd: string): {
     }
   );
 
-  registerResources(server, { toolCache });
+  registerResources(server, { toolCache, version: SERVER_VERSION, sessionManager });
 
   return { server, sessionManager, toolCache };
 }

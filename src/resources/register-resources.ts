@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import type { SessionManager } from "../session/manager.js";
 import type { ToolDiscoveryCache } from "../tools/tool-discovery.js";
 
 const RESOURCE_SCHEME = "claude-code-mcp";
@@ -23,9 +24,13 @@ function asTextResource(uri: URL, text: string, mimeType: string): ReadResourceR
   };
 }
 
+function serializeLimit(limit: number): number | "unlimited" {
+  return Number.isFinite(limit) ? limit : "unlimited";
+}
+
 export function registerResources(
   server: McpServer,
-  deps: { toolCache: ToolDiscoveryCache }
+  deps: { toolCache: ToolDiscoveryCache; version: string; sessionManager: SessionManager }
 ): void {
   const serverInfoUri = new URL(RESOURCE_URIS.serverInfo);
   server.registerResource(
@@ -42,6 +47,7 @@ export function registerResources(
         JSON.stringify(
           {
             name: "claude-code-mcp",
+            version: deps.version,
             node: process.version,
             platform: process.platform,
             arch: process.arch,
@@ -116,16 +122,33 @@ export function registerResources(
           "CLAUDE_CODE_GIT_BASH_PATH is not set. Auto-detection exists, but explicit path is more reliable for GUI-launched MCP clients."
         );
       }
+      const diskResumeEnabled = process.env.CLAUDE_CODE_MCP_ALLOW_DISK_RESUME === "1";
+      const resumeSecretConfigured =
+        typeof process.env.CLAUDE_CODE_MCP_RESUME_SECRET === "string" &&
+        process.env.CLAUDE_CODE_MCP_RESUME_SECRET.trim() !== "";
+
       return asTextResource(
         compatReportUri,
         JSON.stringify(
           {
             transport: "stdio",
             samePlatformRequired: true,
+            packageVersion: deps.version,
             runtime: {
               node: process.version,
               platform: process.platform,
               arch: process.arch,
+            },
+            limits: {
+              maxSessions: serializeLimit(deps.sessionManager.getMaxSessions()),
+              maxPendingPermissionsPerSession: serializeLimit(
+                deps.sessionManager.getMaxPendingPermissionsPerSession()
+              ),
+              eventBuffer: deps.sessionManager.getEventBufferConfig(),
+            },
+            diskResume: {
+              enabled: diskResumeEnabled,
+              resumeSecretConfigured,
             },
             features: {
               resources: true,

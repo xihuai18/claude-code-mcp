@@ -27,6 +27,18 @@ const DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE = 2000;
 const DEFAULT_MAX_SESSIONS = 128;
 const DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION = 64;
 
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return parsed;
+}
+
+function normalizePositiveNumber(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+  return Math.trunc(value);
+}
+
 type PendingPermission = {
   record: PermissionRequestRecord;
   finish: FinishFn;
@@ -50,11 +62,16 @@ export class SessionManager {
   private platform: NodeJS.Platform;
   private maxSessions: number;
   private maxPendingPermissionsPerSession: number;
+  private eventBufferMaxSize: number;
+  private eventBufferHardMaxSize: number;
+  private destroyed = false;
 
   constructor(opts?: {
     platform?: NodeJS.Platform;
     maxSessions?: number;
     maxPendingPermissionsPerSession?: number;
+    eventBufferMaxSize?: number;
+    eventBufferHardMaxSize?: number;
   }) {
     this.platform = opts?.platform ?? process.platform;
     const envRaw = process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
@@ -82,6 +99,24 @@ export class SessionManager {
           ? Number.POSITIVE_INFINITY
           : maxPendingConfigured
         : DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION;
+
+    const configuredEventBufferMaxSize =
+      normalizePositiveNumber(opts?.eventBufferMaxSize) ??
+      parsePositiveInt(process.env.CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE);
+    const configuredEventBufferHardMaxSize =
+      normalizePositiveNumber(opts?.eventBufferHardMaxSize) ??
+      parsePositiveInt(process.env.CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE);
+
+    this.eventBufferMaxSize = configuredEventBufferMaxSize ?? DEFAULT_EVENT_BUFFER_MAX_SIZE;
+    const initialHardMaxSize =
+      configuredEventBufferHardMaxSize ?? DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE;
+    this.eventBufferHardMaxSize = Math.max(this.eventBufferMaxSize, initialHardMaxSize);
+    if (initialHardMaxSize < this.eventBufferMaxSize) {
+      console.error(
+        `[config] CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE (${initialHardMaxSize}) is smaller than maxSize (${this.eventBufferMaxSize}); clamped to ${this.eventBufferHardMaxSize}.`
+      );
+    }
+
     // Periodically clean up expired sessions
     this.cleanupTimer = setInterval(() => this.cleanup(), DEFAULT_CLEANUP_INTERVAL_MS);
     if (this.cleanupTimer.unref) {
@@ -90,6 +125,7 @@ export class SessionManager {
   }
 
   getSessionCount(): number {
+    if (this.destroyed) return 0;
     return this.sessions.size;
   }
 
@@ -101,7 +137,15 @@ export class SessionManager {
     return this.maxPendingPermissionsPerSession;
   }
 
+  getEventBufferConfig(): { maxSize: number; hardMaxSize: number } {
+    return {
+      maxSize: this.eventBufferMaxSize,
+      hardMaxSize: this.eventBufferHardMaxSize,
+    };
+  }
+
   hasCapacityFor(additionalSessions: number): boolean {
+    if (this.destroyed) return false;
     if (additionalSessions <= 0) return true;
     return this.sessions.size + additionalSessions <= this.maxSessions;
   }
@@ -138,6 +182,10 @@ export class SessionManager {
     env?: SessionInfo["env"];
     abortController?: AbortController;
   }): SessionInfo {
+    if (this.destroyed) {
+      throw new Error("SessionManager is destroyed and no longer accepts new sessions.");
+    }
+
     const now = new Date().toISOString();
     const existing = this.sessions.get(params.sessionId);
     if (existing) {
@@ -184,8 +232,8 @@ export class SessionManager {
     this.runtime.set(params.sessionId, {
       buffer: {
         events: [],
-        maxSize: DEFAULT_EVENT_BUFFER_MAX_SIZE,
-        hardMaxSize: DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE,
+        maxSize: this.eventBufferMaxSize,
+        hardMaxSize: this.eventBufferHardMaxSize,
         nextId: 0,
       },
       pendingPermissions: new Map(),
@@ -194,6 +242,7 @@ export class SessionManager {
   }
 
   get(sessionId: string): SessionInfo | undefined {
+    if (this.destroyed) return undefined;
     return this.sessions.get(sessionId);
   }
 
@@ -202,6 +251,7 @@ export class SessionManager {
   }
 
   list(): SessionInfo[] {
+    if (this.destroyed) return [];
     return Array.from(this.sessions.values());
   }
 
@@ -209,6 +259,7 @@ export class SessionManager {
     sessionId: string,
     patch: Partial<Omit<SessionInfo, "sessionId" | "createdAt" | "lastActiveAt">>
   ): SessionInfo | undefined {
+    if (this.destroyed) return undefined;
     const info = this.sessions.get(sessionId);
     if (!info) return undefined;
     Object.assign(info, patch, { lastActiveAt: new Date().toISOString() });
@@ -216,7 +267,8 @@ export class SessionManager {
   }
 
   /**
-   * Atomically transition a session from an expected status to "running".
+   * Atomically transition a session's status from expectedStatus to "running".
+   * This only covers synchronous state mutation within SessionManager.
    * Returns the session if successful, undefined if the session doesn't exist
    * or its current status doesn't match `expectedStatus`.
    */
@@ -225,6 +277,7 @@ export class SessionManager {
     expectedStatus: SessionStatus,
     abortController: AbortController
   ): SessionInfo | undefined {
+    if (this.destroyed) return undefined;
     if (expectedStatus !== "idle" && expectedStatus !== "error") return undefined;
     const info = this.sessions.get(sessionId);
     if (!info || info.status !== expectedStatus) return undefined;
@@ -238,6 +291,7 @@ export class SessionManager {
   }
 
   cancel(sessionId: string, opts?: { reason?: string; source?: string }): boolean {
+    if (this.destroyed) return false;
     const info = this.sessions.get(sessionId);
     if (!info) return false;
     if (info.status !== "running" && info.status !== "waiting_permission") return false;
@@ -264,6 +318,7 @@ export class SessionManager {
   }
 
   delete(sessionId: string): boolean {
+    if (this.destroyed) return false;
     this.finishAllPending(
       sessionId,
       { behavior: "deny", message: "Session deleted", interrupt: true },
@@ -276,22 +331,26 @@ export class SessionManager {
   }
 
   setResult(sessionId: string, result: StoredAgentResult): void {
+    if (this.destroyed) return;
     const state = this.runtime.get(sessionId);
     if (!state) return;
     state.storedResult = result;
   }
 
   getResult(sessionId: string): StoredAgentResult | undefined {
+    if (this.destroyed) return undefined;
     return this.runtime.get(sessionId)?.storedResult;
   }
 
   setInitTools(sessionId: string, tools: string[]): void {
+    if (this.destroyed) return;
     const state = this.runtime.get(sessionId);
     if (!state) return;
     state.initTools = tools;
   }
 
   getInitTools(sessionId: string): string[] | undefined {
+    if (this.destroyed) return undefined;
     return this.runtime.get(sessionId)?.initTools;
   }
 
@@ -299,6 +358,7 @@ export class SessionManager {
     sessionId: string,
     event: Omit<SessionEvent, "id" | "pinned"> & { pinned?: boolean }
   ): SessionEvent | undefined {
+    if (this.destroyed) return undefined;
     const state = this.runtime.get(sessionId);
     if (!state) return undefined;
     const full = SessionManager.pushEvent(state.buffer, event, (requestId) =>
@@ -320,6 +380,7 @@ export class SessionManager {
   }
 
   getLastEventId(sessionId: string): number | undefined {
+    if (this.destroyed) return undefined;
     const state = this.runtime.get(sessionId);
     if (!state) return undefined;
     return state.buffer.nextId > 0 ? state.buffer.nextId - 1 : undefined;
@@ -333,12 +394,14 @@ export class SessionManager {
     nextCursor: number;
     cursorResetTo?: number;
   } {
+    if (this.destroyed) return { events: [], nextCursor: cursor ?? 0 };
     const state = this.runtime.get(sessionId);
     if (!state) return { events: [], nextCursor: cursor ?? 0 };
     return SessionManager.readEvents(state.buffer, cursor);
   }
 
   clearTerminalEvents(sessionId: string): void {
+    if (this.destroyed) return;
     const state = this.runtime.get(sessionId);
     if (!state) return;
     SessionManager.clearTerminalEvents(state.buffer);
@@ -350,6 +413,7 @@ export class SessionManager {
     finish: FinishFn,
     timeoutMs: number
   ): boolean {
+    if (this.destroyed) return false;
     const state = this.runtime.get(sessionId);
     const info = this.sessions.get(sessionId);
     if (!state || !info) return false;
@@ -439,10 +503,12 @@ export class SessionManager {
   }
 
   getPendingPermissionCount(sessionId: string): number {
+    if (this.destroyed) return 0;
     return this.runtime.get(sessionId)?.pendingPermissions.size ?? 0;
   }
 
   listPendingPermissions(sessionId: string): PermissionRequestRecord[] {
+    if (this.destroyed) return [];
     const state = this.runtime.get(sessionId);
     if (!state) return [];
     return Array.from(state.pendingPermissions.values())
@@ -456,6 +522,7 @@ export class SessionManager {
     result: PermissionResult,
     source: FinishSource
   ): boolean {
+    if (this.destroyed) return false;
     const state = this.runtime.get(sessionId);
     const info = this.sessions.get(sessionId);
     if (!state || !info) return false;
@@ -552,6 +619,7 @@ export class SessionManager {
     source: FinishSource,
     opts?: { restoreRunning?: boolean }
   ): void {
+    if (this.destroyed) return;
     const state = this.runtime.get(sessionId);
     if (!state) return;
     if (state.pendingPermissions.size === 0) return;
@@ -595,6 +663,7 @@ export class SessionManager {
 
   /** Remove sessions that have been idle for too long, or stuck running too long */
   private cleanup(): void {
+    if (this.destroyed) return;
     const now = Date.now();
     for (const [id, info] of this.sessions) {
       const lastActive = new Date(info.lastActiveAt).getTime();
@@ -610,12 +679,12 @@ export class SessionManager {
         this.sessions.delete(id);
         this.runtime.delete(id);
       } else if (info.status === "running" && now - lastActive > this.runningSessionMaxMs) {
-        // Stuck running session — abort and mark as error
+        // Stuck running session — abort and mark as cancelled (timeout).
         if (info.abortController) info.abortController.abort();
         info.cancelledAt = info.cancelledAt ?? new Date().toISOString();
         info.cancelledReason = info.cancelledReason ?? "Session timed out";
         info.cancelledSource = info.cancelledSource ?? "cleanup";
-        info.status = "error";
+        info.status = "cancelled";
         info.lastActiveAt = new Date().toISOString();
       } else if (
         info.status === "waiting_permission" &&
@@ -631,7 +700,7 @@ export class SessionManager {
         info.cancelledAt = info.cancelledAt ?? new Date().toISOString();
         info.cancelledReason = info.cancelledReason ?? "Session timed out";
         info.cancelledSource = info.cancelledSource ?? "cleanup";
-        info.status = "error";
+        info.status = "cancelled";
         info.lastActiveAt = new Date().toISOString();
       } else if (
         info.status !== "running" &&
@@ -644,6 +713,7 @@ export class SessionManager {
           "cleanup",
           { restoreRunning: false }
         );
+        // Deleting current entries during Map iteration is safe in JavaScript.
         this.drainingSessions.delete(id);
         this.sessions.delete(id);
         this.runtime.delete(id);
@@ -694,6 +764,7 @@ export class SessionManager {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
     clearInterval(this.cleanupTimer);
     for (const info of this.sessions.values()) {
       this.finishAllPending(
@@ -716,8 +787,10 @@ export class SessionManager {
       info.cancelledSource = info.cancelledSource ?? "destroy";
       info.lastActiveAt = new Date().toISOString();
     }
-    // Don't clear immediately — in-flight operations may still reference sessions.
-    // Sessions will be garbage-collected when the process exits.
+    this.drainingSessions.clear();
+    this.runtime.clear();
+    this.sessions.clear();
+    this.destroyed = true;
   }
 
   private static pushEvent(
@@ -742,42 +815,75 @@ export class SessionManager {
 
     buffer.events.push(full);
 
-    while (buffer.events.length > buffer.maxSize) {
-      const idx = buffer.events.findIndex((e) => !e.pinned);
-      if (idx !== -1) {
-        buffer.events.splice(idx, 1);
-        continue;
-      }
-
-      // If everything is pinned, prefer dropping old permission-related events first.
-      const pinnedDropIdx = buffer.events.findIndex((e) => {
-        if (e.type === "permission_result") return true;
-        if (e.type === "permission_request") {
-          const requestId = (e.data as { requestId?: unknown } | null)?.requestId;
-          if (typeof requestId !== "string") return true;
-          return isActivePermissionRequest ? !isActivePermissionRequest(requestId) : true;
-        }
-        return false;
-      });
-      if (pinnedDropIdx === -1) break;
-      buffer.events.splice(pinnedDropIdx, 1);
-    }
-
-    while (buffer.events.length > buffer.hardMaxSize) {
-      const idx = buffer.events.findIndex((e) => {
-        if (e.type === "permission_request") {
-          const requestId = (e.data as { requestId?: unknown } | null)?.requestId;
-          if (typeof requestId !== "string") return true;
-          return isActivePermissionRequest ? !isActivePermissionRequest(requestId) : true;
-        }
-        if (e.type === "permission_result") return true;
-        return false;
-      });
-      if (idx === -1) break;
-      buffer.events.splice(idx, 1);
-    }
+    SessionManager.evictEventsToLimits(buffer, isActivePermissionRequest);
 
     return full;
+  }
+
+  private static evictEventsToLimits(
+    buffer: EventBuffer,
+    isActivePermissionRequest?: (requestId: string) => boolean
+  ): void {
+    if (buffer.events.length <= buffer.maxSize && buffer.events.length <= buffer.hardMaxSize) {
+      return;
+    }
+
+    const droppedIds = new Set<number>();
+    let remaining = buffer.events.length;
+
+    const dropOldestMatching = (count: number, predicate: (e: SessionEvent) => boolean): number => {
+      if (count <= 0) return 0;
+      let dropped = 0;
+      for (const event of buffer.events) {
+        if (dropped >= count) break;
+        if (droppedIds.has(event.id)) continue;
+        if (!predicate(event)) continue;
+        droppedIds.add(event.id);
+        dropped += 1;
+      }
+      if (dropped > 0) {
+        remaining -= dropped;
+      }
+      return dropped;
+    };
+
+    const isDroppablePermissionEvent = (event: SessionEvent): boolean => {
+      if (event.type === "permission_result") return true;
+      if (event.type !== "permission_request") return false;
+      const requestId = (event.data as { requestId?: unknown } | null)?.requestId;
+      if (typeof requestId !== "string") return true;
+      return isActivePermissionRequest ? !isActivePermissionRequest(requestId) : true;
+    };
+
+    // Soft limit: prefer dropping unpinned events first.
+    let toDropForSoftLimit = remaining - buffer.maxSize;
+    if (toDropForSoftLimit > 0) {
+      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, (event) => !event.pinned);
+    }
+    if (toDropForSoftLimit > 0) {
+      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, isDroppablePermissionEvent);
+    }
+
+    // Hard limit: only drop permission-related pinned events that are safe to evict.
+    let toDropForHardLimit = remaining - buffer.hardMaxSize;
+    if (toDropForHardLimit > 0) {
+      toDropForHardLimit -= dropOldestMatching(toDropForHardLimit, isDroppablePermissionEvent);
+    }
+
+    if (droppedIds.size > 0) {
+      buffer.events = buffer.events.filter((event) => !droppedIds.has(event.id));
+    }
+  }
+
+  private static lowerBoundByEventId(events: SessionEvent[], startFrom: number): number {
+    let left = 0;
+    let right = events.length;
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      if (events[mid]!.id < startFrom) left = mid + 1;
+      else right = mid;
+    }
+    return left;
   }
 
   private static readEvents(
@@ -792,7 +898,8 @@ export class SessionManager {
     }
 
     const startFrom = cursorResetTo ?? cursor ?? 0;
-    const filtered = buffer.events.filter((e) => e.id >= startFrom);
+    const startIndex = SessionManager.lowerBoundByEventId(buffer.events, startFrom);
+    const filtered = buffer.events.slice(startIndex);
     const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].id + 1 : startFrom;
 
     return { events: filtered, nextCursor, cursorResetTo };
