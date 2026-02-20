@@ -152,8 +152,6 @@ export function createServerContext(serverCwd: string): {
 
   const advancedOptionFieldsSchemaShape = {
     ...sharedOptionFieldsSchemaShape,
-    effort: effortOptionSchema.describe("Deprecated, use top-level. Default: SDK"),
-    thinking: thinkingOptionSchema.describe("Deprecated, use top-level. Default: SDK"),
   } as const;
 
   const diskResumeOptionFieldsSchemaShape = {
@@ -278,12 +276,6 @@ export function createServerContext(serverCwd: string): {
           .positive()
           .optional()
           .describe("Default: 60000, clamped to 300000"),
-        sessionInitTimeoutMs: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe("Deprecated, use advanced.sessionInitTimeoutMs. Default: 10000"),
         advanced: advancedOptionsSchema,
       },
       outputSchema: startResultSchema,

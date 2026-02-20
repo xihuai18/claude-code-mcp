@@ -114,7 +114,6 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `thinking`                   | object           | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default                                                                    |
 | `systemPrompt`               | string \| object | No       | Override the agent's system prompt. Default: SDK/Claude Code default. Pass a string for full replacement, or `{ type: "preset", preset: "claude_code", append?: "..." }` to extend the default prompt         |
 | `permissionRequestTimeoutMs` | number           | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min)                                                                                      |
-| `sessionInitTimeoutMs`       | number           | No       | **Compatibility alias** for `advanced.sessionInitTimeoutMs` (deprecated for `claude_code`). Default: `10000`. If both are provided, `advanced.sessionInitTimeoutMs` wins                                      |
 | `advanced`                   | object           | No       | Advanced/low-frequency parameters (see below)                                                                                                                                                                 |
 
 <details>
@@ -124,7 +123,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | ------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `advanced.tools`                      | string[] \| object | Define the base tool set. Default: SDK/Claude Code default toolset. Array of tool name strings, or `{ type: "preset", preset: "claude_code" }` for the default toolset. `allowedTools`/`disallowedTools` further filter on top of this |
 | `advanced.persistSession`             | boolean            | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                                                                                                      |
-| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`. **Recommended location for `claude_code` callers.**                                                                                                  |
+| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`.                                                                                                                                                |
 | `advanced.agents`                     | object             | Define custom sub-agents the main agent can delegate tasks to. Default: none. SDK default: if a sub-agent omits `tools`, it inherits all tools from the parent.                                                                        |
 | `advanced.agent`                      | string             | Name of a custom agent (defined in `agents`) to use as the primary agent. Default: omitted                                                                                                                                             |
 | `advanced.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                                                                                                                |
@@ -143,8 +142,6 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `advanced.debugFile`                  | string             | Write debug logs to a specific file path (implicitly enables debug mode). Default: omitted                                                                                                                                             |
 | `advanced.env`                        | object             | Environment variables to merge with process.env and pass to the Claude Code process (user values take precedence). Default: inherit process.env                                                                                        |
 
-Deprecated aliases: `advanced.effort` and `advanced.thinking` are still accepted for compatibility, but prefer top-level `effort` / `thinking` (top-level wins if both are set).
-
 </details>
 
 **Returns:** `{ sessionId, status: "running", pollInterval, resumeToken? }`
@@ -153,7 +150,6 @@ Notes:
 
 - `resumeToken` is omitted by default, and is only returned when `CLAUDE_CODE_MCP_RESUME_SECRET` is set on the server.
 - On error: `{ sessionId: "", status: "error", error }`
-- If `sessionInitTimeoutMs` (top-level alias) is used, `claude_code` may return `compatWarnings` to guide migration to `advanced.sessionInitTimeoutMs`.
 
 Use `claude_code_check` to poll events and obtain the final `result`.
 

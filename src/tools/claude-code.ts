@@ -26,7 +26,6 @@ import {
 
 /**
  * Low-frequency / SDK-passthrough options grouped under `advanced`.
- * `effort` and `thinking` are promoted to top-level (advanced aliases are kept for compatibility).
  */
 export interface ClaudeCodeAdvancedOptions {
   tools?: string[] | { type: "preset"; preset: "claude_code" };
@@ -35,13 +34,9 @@ export interface ClaudeCodeAdvancedOptions {
   agents?: Record<string, AgentDefinition>;
   agent?: string;
   maxBudgetUsd?: number;
-  /** @deprecated Use top-level `effort` instead. */
-  effort?: EffortLevel;
   betas?: string[];
   additionalDirectories?: string[];
   outputFormat?: { type: "json_schema"; schema: Record<string, unknown> };
-  /** @deprecated Use top-level `thinking` instead. */
-  thinking?: ThinkingConfig;
   pathToClaudeCodeExecutable?: string;
   mcpServers?: Record<string, McpServerConfig>;
   sandbox?: SandboxSettings;
@@ -69,8 +64,6 @@ export interface ClaudeCodeInput {
   systemPrompt?: string | { type: "preset"; preset: "claude_code"; append?: string };
   /** Timeout waiting for permission decision (default 60000ms) */
   permissionRequestTimeoutMs?: number;
-  /** @deprecated Use `advanced.sessionInitTimeoutMs` instead. */
-  sessionInitTimeoutMs?: number;
   /** Low-frequency SDK options. All fields are optional and have sensible defaults. */
   advanced?: ClaudeCodeAdvancedOptions;
 }
@@ -135,22 +128,7 @@ export async function executeClaudeCode(
   const adv = input.advanced ?? {};
 
   const permissionRequestTimeoutMs = input.permissionRequestTimeoutMs ?? 60_000;
-  const sessionInitTimeoutMs = adv.sessionInitTimeoutMs ?? input.sessionInitTimeoutMs ?? 10_000;
-  const compatWarnings: string[] = [];
-  if (input.sessionInitTimeoutMs !== undefined) {
-    compatWarnings.push(
-      "Top-level sessionInitTimeoutMs for claude_code is a compatibility alias; prefer advanced.sessionInitTimeoutMs."
-    );
-  }
-  if (
-    input.sessionInitTimeoutMs !== undefined &&
-    adv.sessionInitTimeoutMs !== undefined &&
-    input.sessionInitTimeoutMs !== adv.sessionInitTimeoutMs
-  ) {
-    compatWarnings.push(
-      `Both advanced.sessionInitTimeoutMs (${adv.sessionInitTimeoutMs}) and top-level sessionInitTimeoutMs (${input.sessionInitTimeoutMs}) were provided; using advanced.sessionInitTimeoutMs.`
-    );
-  }
+  const sessionInitTimeoutMs = adv.sessionInitTimeoutMs ?? 10_000;
 
   // Flatten top-level + advanced into a single object for buildOptions / sessionManager.
   const flat = {
@@ -162,8 +140,8 @@ export async function executeClaudeCode(
     model: input.model,
     systemPrompt: input.systemPrompt,
     ...adv,
-    effort: input.effort ?? adv.effort,
-    thinking: input.thinking ?? adv.thinking,
+    effort: input.effort,
+    thinking: input.thinking,
   };
   const normalizedFlat = {
     ...flat,
@@ -216,7 +194,6 @@ export async function executeClaudeCode(
       status: "running",
       pollInterval: 3000,
       resumeToken: resumeSecret ? computeResumeToken(sessionId, resumeSecret) : undefined,
-      compatWarnings: compatWarnings.length > 0 ? compatWarnings : undefined,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

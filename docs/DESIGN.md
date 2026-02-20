@@ -29,25 +29,22 @@
 | `model`           | string   | 否   | 模型选择                                                    |
 | `systemPrompt`    | string / object | 否 | 自定义系统提示 (字符串或 preset 对象)                       |
 | `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000（服务端上限 300000） |
-| `sessionInitTimeoutMs` | number | 否 | `advanced.sessionInitTimeoutMs` 的兼容别名（不推荐在 `claude_code` 中作为主配置） |
 | `advanced`        | object   | 否   | 低频高级参数（见下方折叠表）                                |
 
 <details>
-<summary><code>advanced</code> 对象参数（20 个低频参数 + 2 个兼容别名）</summary>
+<summary><code>advanced</code> 对象参数（20 个低频参数）</summary>
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | `advanced.tools` | string[] / object | 可用工具集 (工具名数组或 preset) |
 | `advanced.persistSession` | boolean | 是否将会话历史持久化到磁盘（`~/.claude/projects/`，默认 true；设为 false 可禁用） |
-| `advanced.sessionInitTimeoutMs` | number | 等待 `system/init` 的超时 (毫秒)，默认 10000（`claude_code` 推荐配置位置） |
+| `advanced.sessionInitTimeoutMs` | number | 等待 `system/init` 的超时 (毫秒)，默认 10000 |
 | `advanced.agents` | object | 子 Agent 定义 |
 | `advanced.agent` | string | 主线程 agent 名称（应用自定义 agent 系统提示、工具限制和模型） |
 | `advanced.maxBudgetUsd` | number | 最大费用限制 (USD) |
-| `advanced.effort` | string | 努力程度: low/medium/high/max |
 | `advanced.betas` | string[] | Beta 功能 (如 1M 上下文) |
 | `advanced.additionalDirectories` | string[] | 额外可访问目录 |
 | `advanced.outputFormat` | object | 输出格式: `{ type: "json_schema", schema: {...} }` |
-| `advanced.thinking` | object | 思考模式: adaptive/enabled(含 budgetTokens)/disabled |
 | `advanced.pathToClaudeCodeExecutable` | string | Claude Code 可执行文件路径 |
 | `advanced.mcpServers` | object | MCP 服务器配置（key: 服务器名, value: 服务器配置） |
 | `advanced.sandbox` | object | 沙箱设置（命令执行隔离） |
@@ -59,9 +56,6 @@
 | `advanced.debug` | boolean | 启用调试模式 |
 | `advanced.debugFile` | string | 调试日志文件路径（隐式启用调试模式） |
 | `advanced.env` | object | 传递给 Claude Code 进程的环境变量 |
-
-兼容别名：`advanced.effort` 与 `advanced.thinking` 仍可用，但推荐使用顶层 `effort` / `thinking`（若同时传入，顶层优先）。
-
 </details>
 
 **返回值**：`{ sessionId, status: "running", pollInterval }`

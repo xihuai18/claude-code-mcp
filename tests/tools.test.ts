@@ -176,9 +176,6 @@ describe("executeClaudeCode (async)", () => {
           additionalDirectories: ["/extra"],
           persistSession: false,
           outputFormat: { type: "json_schema", schema: { type: "object" } },
-          // Deprecated aliases should not override top-level.
-          effort: "low",
-          thinking: { type: "disabled" },
           env: { TEST_ENV: "1" },
         },
       },
@@ -263,87 +260,6 @@ describe("executeClaudeCode (async)", () => {
       }
     } finally {
       vi.useRealTimers();
-    }
-  });
-
-  it("should support top-level sessionInitTimeoutMs as a compatibility alias", async () => {
-    vi.useFakeTimers();
-    try {
-      mockQuery.mockImplementation((params: QueryParams): QueryReturn => {
-        const ac = (params.options as unknown as { abortController: AbortController })
-          .abortController;
-        return (async function* () {
-          const abortPromise = new Promise<void>((_resolve, reject) => {
-            ac.signal.addEventListener(
-              "abort",
-              () => {
-                const e = new Error("The operation was aborted");
-                e.name = "AbortError";
-                reject(e);
-              },
-              { once: true }
-            );
-          });
-          await abortPromise;
-          yield; // unreachable
-        })() as unknown as QueryReturn;
-      });
-
-      const promise = executeClaudeCode(
-        { prompt: "Test", sessionInitTimeoutMs: 10 },
-        manager,
-        "/tmp",
-        toolCache
-      );
-      await vi.advanceTimersByTimeAsync(10);
-      const start = await promise;
-      expect(start.status).toBe("error");
-      if (start.status === "error") {
-        expect(start.error).toContain("TIMEOUT");
-      }
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("should prefer advanced.sessionInitTimeoutMs when both timeout fields are provided", async () => {
-    mockQuery.mockReturnValue(
-      (async function* () {
-        yield {
-          type: "system",
-          subtype: "init",
-          session_id: "sess-timeout-compat",
-          uuid: "u1",
-          cwd: "/tmp",
-          tools: ["Read"],
-          claude_code_version: "x",
-          model: "m",
-          permissionMode: "default",
-          apiKeySource: "env",
-          mcp_servers: [],
-          slash_commands: [],
-          output_style: "",
-          skills: [],
-          plugins: [],
-        };
-      })() as unknown as QueryReturn
-    );
-
-    const start = await executeClaudeCode(
-      { prompt: "Test", sessionInitTimeoutMs: 5000, advanced: { sessionInitTimeoutMs: 1000 } },
-      manager,
-      "/tmp",
-      toolCache
-    );
-
-    expect(start.status).toBe("running");
-    if (start.status === "running") {
-      expect(start.compatWarnings).toContain(
-        "Top-level sessionInitTimeoutMs for claude_code is a compatibility alias; prefer advanced.sessionInitTimeoutMs."
-      );
-      expect(start.compatWarnings).toContain(
-        "Both advanced.sessionInitTimeoutMs (1000) and top-level sessionInitTimeoutMs (5000) were provided; using advanced.sessionInitTimeoutMs."
-      );
     }
   });
 

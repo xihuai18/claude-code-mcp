@@ -14,6 +14,7 @@
 - Add configurable event-buffer limits via `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE` and `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE`.
 - Runtime tool-discovery updates now notify both tools and resources (internal-tools resource change notification).
 - Enrich compatibility resources with package version, disk-resume diagnostics, and runtime limits.
+- Remove deprecated `claude_code` parameter aliases: top-level `sessionInitTimeoutMs` and `advanced.effort` / `advanced.thinking`.
 
 ### Documentation
 
@@ -88,7 +89,7 @@
 - New tool: `claude_code_check` (poll + respond_permission)
 - Legacy `bypassPermissions` mode is no longer exposed in MCP schemas for 2.x.
 - **Parameter nesting refactor**: low-frequency parameters have been folded into nested objects to reduce top-level clutter. This is a breaking change for callers that pass these parameters at the top level:
-  - `claude_code`: 22 low-frequency params moved into `advanced` object in 2.0.0 (current versions expose 20 low-frequency params + 2 compatibility aliases: `advanced.effort`, `advanced.thinking`)
+  - `claude_code`: 22 low-frequency params moved into `advanced` object in 2.0.0 (including `advanced.effort` / `advanced.thinking`, later removed)
   - `claude_code_reply`: 28 disk-resume params moved into `diskResumeConfig` object (e.g. `resumeToken` → `diskResumeConfig.resumeToken`, `cwd` → `diskResumeConfig.cwd`)
   - `claude_code_check`: 9 poll control params moved into `pollOptions` object (e.g. `includeTools` → `pollOptions.includeTools`); 2 permission response params moved into `permissionOptions` object (e.g. `updatedInput` → `permissionOptions.updatedInput`)
 
