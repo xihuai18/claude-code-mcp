@@ -29,14 +29,14 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 | --------------------- | ------------------------------------ | -------------------- |
 | `claude_code`         | 启动新 session                       | 仅等 init（~几百ms） |
 | `claude_code_reply`   | 继续已有 session（含 fork/磁盘恢复） | 立即返回             |
-| `claude_code_session` | 管理 session（list/get/cancel）      | 同步                 |
+| `claude_code_session` | 管理 session（list/get/cancel/interrupt） | 同步                 |
 | `claude_code_check`   | 轮询事件 + 处理权限请求              | 同步                 |
 
 不暴露额外的配置工具（已移除 `claude_code_configure`）、不暴露内部工具代理。核心调用能力通过这 4 个工具实现，另提供少量只读 resources 作为补充信息。
 
 ### 3. 最少配置（Minimum Configuration）
 
-`claude_code` 仅 `prompt` 为必填参数，其余高频参数（`cwd`, `allowedTools`, `disallowedTools`, `maxTurns`, `model`, `systemPrompt`, `permissionRequestTimeoutMs`）保留在顶层，20 个低频参数折叠到 `advanced` 对象中（另保留 2 个兼容别名：`advanced.effort`、`advanced.thinking`）：
+`claude_code` 仅 `prompt` 为必填参数，其余高频参数（`cwd`, `allowedTools`, `disallowedTools`, `maxTurns`, `model`, `systemPrompt`, `permissionRequestTimeoutMs`）保留在顶层，21 个低频参数折叠到 `advanced` 对象中：
 
 - **工作目录**：默认为 server 进程的 cwd
 - **权限**：默认 `permissionMode="default"` + 空 `allowedTools`/`disallowedTools`（所有工具调用都会触发权限请求）
@@ -112,6 +112,15 @@ This repository is a TypeScript (ESM) MCP server that wraps the Claude Agent SDK
 - 合并结果用于动态生成 `claude_code` 的工具描述，并通过 `tools/list_changed` 通知支持 discovery 的 Client；`internal-tools` 资源会同步发送资源更新通知
 - `claude_code_check` 的 `pollOptions.includeTools=true` 返回权威的 `availableTools` 列表
 
+### 7. 接口对齐与升级规范（本次约定）
+
+- **权威来源优先级**：以 Claude Agent SDK 的类型/接口定义（如 `sdk.d.ts`、`Options`、消息类型联合）为准；实现代码与文档必须追随该定义。`CHANGELOG` 仅作辅助。
+- **参数命名策略（严格）**：对“直接透传到 SDK `Options`”的字段，MCP 参数名必须与 SDK 同名（通常为 `camelCase`）。对非 SDK 直传字段（如本项目策略字段、MCP 协议枚举）沿用既有契约名，不做无意义重命名。
+- **无兼容别名策略**：默认不保留旧参数别名；若发生破坏性重命名，采用一次性切换并同步更新文档、示例和测试。
+- **升级核对流程**：升级 SDK 后，先用现有文档快速定位上下文，再以 SDK 类型定义逐项核对 permission mode、option 字段、query stream 消息类型映射；不要只依赖升级日志。
+- **变更闭环要求**：接口变更必须同步到 `src/server.ts` schema、tool handler、`SessionManager`、`src/utils/build-options.ts`、`src/tools/query-consumer.ts`、类型定义、README、DESIGN、AGENTS、CHANGELOG 和对应测试。
+- **审查方式**：优先使用多智能体并行探索；合并前建议通过 `claude-code-mcp` 发起一次独立交叉验证。
+
 ## Quick Commands
 
 - Install deps: `npm install`
@@ -145,7 +154,7 @@ src/
 ├── tools/
 │   ├── claude-code.ts          # claude_code tool (start session)
 │   ├── claude-code-reply.ts    # claude_code_reply tool (continue session)
-│   ├── claude-code-session.ts  # claude_code_session tool (list/get/cancel)
+│   ├── claude-code-session.ts  # claude_code_session tool (list/get/cancel/interrupt)
 │   ├── claude-code-check.ts    # claude_code_check tool (poll + permission decisions)
 │   ├── query-consumer.ts       # Shared background query consumer (consumeQuery)
 │   └── tool-discovery.ts       # Runtime tool discovery, TOOL_CATALOG, dynamic description

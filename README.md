@@ -117,7 +117,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `advanced`                   | object           | No       | Advanced/low-frequency parameters (see below)                                                                                                                                                                 |
 
 <details>
-<summary><code>advanced</code> object parameters (20 low-frequency parameters)</summary>
+<summary><code>advanced</code> object parameters (21 low-frequency parameters)</summary>
 
 | Parameter                             | Type               | Description                                                                                                                                                                                                                            |
 | ------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -136,6 +136,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `advanced.fallbackModel`              | string             | Fallback model if the primary model fails or is unavailable. Default: none                                                                                                                                                             |
 | `advanced.enableFileCheckpointing`    | boolean            | Enable file checkpointing to track file changes during the session. Default: `false`                                                                                                                                                   |
 | `advanced.includePartialMessages`     | boolean            | When true, includes intermediate streaming messages in the response. Useful for real-time progress monitoring. Default: false                                                                                                          |
+| `advanced.promptSuggestions`          | boolean            | When true, emits post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                                                                                                                                           |
 | `advanced.strictMcpConfig`            | boolean            | Enforce strict validation of MCP server configurations. Default: `false`                                                                                                                                                               |
 | `advanced.settingSources`             | string[]           | Which filesystem settings to load. Defaults to `["user", "project", "local"]` (loads all settings and CLAUDE.md). Pass `[]` for SDK isolation mode                                                                                     |
 | `advanced.debug`                      | boolean            | Enable debug mode for verbose logging. Default: `false`                                                                                                                                                                                |
@@ -177,7 +178,7 @@ Continue an existing session by sending a follow-up message. The agent retains f
 | `diskResumeConfig`           | object  | No       | Disk resume parameters (see below). Used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` and in-memory session is missing     |
 
 <details>
-<summary><code>diskResumeConfig</code> object parameters (28 disk-resume-only parameters)</summary>
+<summary><code>diskResumeConfig</code> object parameters (31 disk-resume-only parameters)</summary>
 
 | Parameter                                     | Type               | Description                                                                                     |
 | --------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
@@ -185,6 +186,7 @@ Continue an existing session by sending a follow-up message. The agent retains f
 | `diskResumeConfig.cwd`                        | string             | Working directory. Required for disk resume.                                                    |
 | `diskResumeConfig.allowedTools`               | string[]           | Auto-approved tool names (see `claude_code`). Default: `[]`                                     |
 | `diskResumeConfig.disallowedTools`            | string[]           | Forbidden tool names (see `claude_code`). Default: `[]`                                         |
+| `diskResumeConfig.strictAllowedTools`         | boolean            | Enforce strict allow-list behavior for `allowedTools`. Default: `false`                         |
 | `diskResumeConfig.tools`                      | string[] \| object | Base tool set (see `claude_code`). Default: SDK/Claude Code default                             |
 | `diskResumeConfig.persistSession`             | boolean            | Persist session history to disk. Default: `true`                                                |
 | `diskResumeConfig.maxTurns`                   | number             | Maximum number of agent reasoning steps. Default: SDK/Claude Code default                       |
@@ -205,6 +207,7 @@ Continue an existing session by sending a follow-up message. The agent retains f
 | `diskResumeConfig.fallbackModel`              | string             | Fallback model. Default: none                                                                   |
 | `diskResumeConfig.enableFileCheckpointing`    | boolean            | Enable file checkpointing. Default: `false`                                                     |
 | `diskResumeConfig.includePartialMessages`     | boolean            | Include intermediate streaming messages. Default: `false`                                       |
+| `diskResumeConfig.promptSuggestions`          | boolean            | Emit post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                |
 | `diskResumeConfig.strictMcpConfig`            | boolean            | Strict MCP config validation. Default: `false`                                                  |
 | `diskResumeConfig.settingSources`             | string[]           | Which filesystem settings to load. Default: `["user", "project", "local"]`                      |
 | `diskResumeConfig.debug`                      | boolean            | Debug mode. Default: `false`                                                                    |

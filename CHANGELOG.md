@@ -8,6 +8,8 @@
 
 ### Improvements
 
+- Upgrade `@anthropic-ai/claude-agent-sdk` to `^0.2.49` and align MCP-facing schemas with the current SDK surface.
+- Permission mode enum now follows SDK 0.2.49 (`default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk`; `delegate` removed).
 - Session cleanup now marks timed-out running/waiting sessions as `cancelled` for consistent status semantics.
 - `SessionManager.destroy()` now clears in-memory session/runtime maps after aborting active runs, so post-destroy reads are no longer stale.
 - Event buffer eviction now uses batch compaction (instead of repeated `findIndex` + `splice`) and `readEvents` now uses binary search for cursor start.
@@ -15,6 +17,8 @@
 - Runtime tool-discovery updates now notify both tools and resources (internal-tools resource change notification).
 - Enrich compatibility resources with package version, disk-resume diagnostics, and runtime limits.
 - Remove deprecated `claude_code` parameter aliases: top-level `sessionInitTimeoutMs` and `advanced.effort` / `advanced.thinking`.
+- Add support for SDK `promptSuggestions` option passthrough and expose `promptSuggestions` in `advanced`/`diskResumeConfig`.
+- Query consumer now maps additional SDK stream messages (`system/task_started`, `rate_limit`, `prompt_suggestion`) to progress events.
 
 ### Documentation
 

@@ -13,6 +13,15 @@
 - **配置灵活**：支持权限、模型、工具集、effort 等细粒度控制
 - **可审计**：所有操作可追踪
 
+## 1.1 接口对齐与升级规范（本次约定）
+
+- 以 Claude Agent SDK 的接口定义为准（`Options` 字段、permission mode 枚举、query stream 消息类型），实现与文档必须严格对齐。
+- 升级 SDK 时，先阅读仓库文档获取上下文，再逐项对照 SDK 类型定义核对变化；发生冲突时以 SDK 定义为最终判据。升级日志仅作辅助，不作为唯一判断依据。
+- 参数命名采用“直传字段同名”策略：直接映射 SDK `Options` 的字段与 SDK 保持同名（通常 `camelCase`）；非 SDK 直传字段沿用本项目既有契约名，不强制改名。
+- 默认不保留旧字段兼容别名；采用“直接对齐 + 全链路同步”策略，避免双写字段长期共存。
+- 每次接口变化必须同步更新：工具 schema、handler、SessionManager、`build-options`、`query-consumer`、类型定义、README、DESIGN、AGENTS、CHANGELOG 与测试。
+- 建议使用多智能体并行探索进行差异确认，并在收尾阶段做一次独立交叉验证。
+
 ## 2. 工具设计
 
 ### Tool 1: `claude_code` — 启动新会话
@@ -32,7 +41,7 @@
 | `advanced`        | object   | 否   | 低频高级参数（见下方折叠表）                                |
 
 <details>
-<summary><code>advanced</code> 对象参数（20 个低频参数）</summary>
+<summary><code>advanced</code> 对象参数（21 个低频参数）</summary>
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -51,6 +60,7 @@
 | `advanced.fallbackModel` | string | 备用模型（主模型不可用时使用） |
 | `advanced.enableFileCheckpointing` | boolean | 启用文件检查点（跟踪文件变更） |
 | `advanced.includePartialMessages` | boolean | 控制底层 SDK 是否产出更多中间事件（通过 `claude_code_check` 的 events 轮询可见） |
+| `advanced.promptSuggestions` | boolean | 产出 `prompt_suggestion` 事件（默认 false） |
 | `advanced.strictMcpConfig` | boolean | 严格验证 MCP 服务器配置 |
 | `advanced.settingSources` | string[] | 控制加载哪些文件系统设置 ("user"/"project"/"local")，默认加载全部 `["user", "project", "local"]`，传 `[]` 可切换为 SDK 隔离模式 |
 | `advanced.debug` | boolean | 启用调试模式 |
@@ -74,7 +84,7 @@
 | `diskResumeConfig` | object | 否 | 磁盘恢复参数（见下方折叠表） |
 
 <details>
-<summary><code>diskResumeConfig</code> 对象参数（28 个仅磁盘恢复场景参数，当 <code>CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1</code> 且内存中 session 缺失时使用）</summary>
+<summary><code>diskResumeConfig</code> 对象参数（31 个仅磁盘恢复场景参数，当 <code>CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1</code> 且内存中 session 缺失时使用）</summary>
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -82,6 +92,7 @@
 | `diskResumeConfig.cwd` | string | 工作目录 |
 | `diskResumeConfig.allowedTools` | string[] | 自动批准工具列表 |
 | `diskResumeConfig.disallowedTools` | string[] | 工具黑名单 |
+| `diskResumeConfig.strictAllowedTools` | boolean | `allowedTools` 严格白名单语义 |
 | `diskResumeConfig.tools` | string[] / object | 可用工具集 |
 | `diskResumeConfig.persistSession` | boolean | 是否持久化会话历史 |
 | `diskResumeConfig.maxTurns` | number | 最大对话轮次 |
@@ -102,6 +113,7 @@
 | `diskResumeConfig.fallbackModel` | string | 备用模型 |
 | `diskResumeConfig.enableFileCheckpointing` | boolean | 启用文件检查点 |
 | `diskResumeConfig.includePartialMessages` | boolean | 包含部分/流式消息事件 |
+| `diskResumeConfig.promptSuggestions` | boolean | 产出 `prompt_suggestion` 事件（默认 false） |
 | `diskResumeConfig.strictMcpConfig` | boolean | 严格验证 MCP 服务器配置 |
 | `diskResumeConfig.settingSources` | string[] | 文件系统设置来源 |
 | `diskResumeConfig.debug` | boolean | 调试模式 |
@@ -120,8 +132,8 @@
 
 | 参数               | 类型    | 必需          | 说明            |
 | ------------------ | ------- | ------------- | --------------- |
-| `action`           | string  | 是            | list/get/cancel |
-| `sessionId`        | string  | get/cancel 时 | 目标会话 ID     |
+| `action`           | string  | 是            | list/get/cancel/interrupt |
+| `sessionId`        | string  | get/cancel/interrupt 时 | 目标会话 ID     |
 | `includeSensitive` | boolean | 否            | 是否包含敏感字段（cwd/systemPrompt/agents/additionalDirectories，默认 false） |
 
 **返回值**：`{ sessions, message?, isError? }`（默认会对敏感字段做脱敏；`includeSensitive=true` 时返回完整字段）
@@ -133,10 +145,10 @@
 | `action` | string | 是 | poll / respond_permission |
 | `sessionId` | string | 是 | 目标会话 ID |
 | `cursor` | number | 否 | 事件 cursor（增量轮询） |
-| `responseMode` | string | 否 | `"minimal"`（默认）或 `"full"` — 控制返回体积和裁剪行为 |
-| `maxEvents` | number | 否 | 每次轮询最大事件数。minimal 默认 200 |
+| `responseMode` | string | 否 | `"minimal"`（默认）/`"full"`/`"delta_compact"` — 控制返回体积和裁剪行为 |
+| `maxEvents` | number | 否 | 每次轮询最大事件数。`minimal` 默认 200，`full`/`delta_compact` 默认 unlimited |
 | `requestId` | string | respond_permission 时 | 权限请求 ID |
-| `decision` | string | respond_permission 时 | allow / deny |
+| `decision` | string | respond_permission 时 | allow / deny / allow_for_session |
 | `denyMessage` | string | 否 | deny 的原因 |
 | `interrupt` | boolean | 否 | deny 时是否中断整个 agent |
 | `pollOptions` | object | 否 | 细粒度 poll 控制（见下方折叠表） |
@@ -165,8 +177,8 @@
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `permissionOptions.updatedInput` | object | allow 时可修改工具输入 |
-| `permissionOptions.updatedPermissions` | array | allow 时可更新权限规则 |
+| `permissionOptions.updatedInput` | object | allow 或 allow_for_session 时可修改工具输入 |
+| `permissionOptions.updatedPermissions` | array | allow 或 allow_for_session 时可更新权限规则 |
 
 </details>
 
