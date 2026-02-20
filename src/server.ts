@@ -140,6 +140,7 @@ export function createServerContext(serverCwd: string): {
     fallbackModel: z.string().optional().describe("Default: none"),
     enableFileCheckpointing: z.boolean().optional().describe("Default: false"),
     includePartialMessages: z.boolean().optional().describe("Default: false"),
+    promptSuggestions: z.boolean().optional().describe("Default: false"),
     strictMcpConfig: z.boolean().optional().describe("Default: false"),
     settingSources: z
       .array(z.enum(["user", "project", "local"]))

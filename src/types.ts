@@ -6,13 +6,20 @@
  */
 
 import type {
+  PermissionMode as SDKPermissionMode,
   PermissionResult as SDKPermissionResult,
   PermissionUpdate as SDKPermissionUpdate,
 } from "@anthropic-ai/claude-agent-sdk";
 
 /** Permission modes supported by Claude Agent SDK */
-export const PERMISSION_MODES = ["default", "acceptEdits", "plan", "delegate", "dontAsk"] as const;
-export type PermissionMode = (typeof PERMISSION_MODES)[number];
+export const PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "plan",
+  "dontAsk",
+] as const satisfies readonly SDKPermissionMode[];
+export type PermissionMode = SDKPermissionMode;
 
 /** Effort levels */
 export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
@@ -107,6 +114,8 @@ export interface SessionInfo {
   enableFileCheckpointing?: boolean;
   /** When true, includes intermediate streaming messages in the response */
   includePartialMessages?: boolean;
+  /** When true, emits prompt_suggestion messages after turns */
+  promptSuggestions?: boolean;
   /** Enforce strict validation of MCP server configurations */
   strictMcpConfig?: boolean;
   /** Control which filesystem settings are loaded */
@@ -152,6 +161,7 @@ export interface PublicSessionInfo {
   fallbackModel?: string;
   enableFileCheckpointing?: boolean;
   includePartialMessages?: boolean;
+  promptSuggestions?: boolean;
   strictMcpConfig?: boolean;
   debug?: boolean;
   lastToolUseId?: string;

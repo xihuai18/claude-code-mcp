@@ -192,6 +192,7 @@ export class SessionManager {
     fallbackModel?: SessionInfo["fallbackModel"];
     enableFileCheckpointing?: SessionInfo["enableFileCheckpointing"];
     includePartialMessages?: SessionInfo["includePartialMessages"];
+    promptSuggestions?: SessionInfo["promptSuggestions"];
     strictMcpConfig?: SessionInfo["strictMcpConfig"];
     settingSources?: SessionInfo["settingSources"];
     debug?: SessionInfo["debug"];
@@ -240,6 +241,7 @@ export class SessionManager {
       fallbackModel: params.fallbackModel,
       enableFileCheckpointing: params.enableFileCheckpointing,
       includePartialMessages: params.includePartialMessages,
+      promptSuggestions: params.promptSuggestions,
       strictMcpConfig: params.strictMcpConfig,
       settingSources: params.settingSources,
       debug: params.debug,

@@ -43,6 +43,7 @@ export interface ClaudeCodeAdvancedOptions {
   fallbackModel?: string;
   enableFileCheckpointing?: boolean;
   includePartialMessages?: boolean;
+  promptSuggestions?: boolean;
   strictMcpConfig?: boolean;
   strictAllowedTools?: boolean;
   settingSources?: SettingSource[];

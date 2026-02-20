@@ -45,6 +45,7 @@ export interface OptionSource {
   fallbackModel?: string;
   enableFileCheckpointing?: boolean;
   includePartialMessages?: boolean;
+  promptSuggestions?: boolean;
   strictMcpConfig?: boolean;
   strictAllowedTools?: boolean;
   settingSources?: SettingSource[];
@@ -88,6 +89,7 @@ export function buildOptions(src: OptionSource): Partial<Options> {
     opts.enableFileCheckpointing = src.enableFileCheckpointing;
   if (src.includePartialMessages !== undefined)
     opts.includePartialMessages = src.includePartialMessages;
+  if (src.promptSuggestions !== undefined) opts.promptSuggestions = src.promptSuggestions;
   if (src.strictMcpConfig !== undefined) opts.strictMcpConfig = src.strictMcpConfig;
   if (src.settingSources !== undefined) opts.settingSources = src.settingSources;
   else opts.settingSources = DEFAULT_SETTING_SOURCES;

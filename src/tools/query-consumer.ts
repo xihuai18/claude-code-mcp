@@ -242,6 +242,28 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
     };
   }
 
+  if (msg.type === "system" && msg.subtype === "task_started") {
+    return {
+      type: "progress",
+      data: {
+        type: "task_started",
+        task_id: msg.task_id,
+        tool_use_id: msg.tool_use_id,
+        description: msg.description,
+        task_type: msg.task_type,
+      },
+    };
+  }
+
+  if (msg.type === "rate_limit" || msg.type === "prompt_suggestion") {
+    const rest = { ...(msg as unknown as Record<string, unknown>) };
+    delete rest.type;
+    return {
+      type: "progress",
+      data: { type: msg.type, ...rest },
+    };
+  }
+
   return null;
 }
 
@@ -460,6 +482,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
 
     // Outer loop: retries on transient errors (C1 fix)
     while (true) {
+      let streamReceivedResult = false;
       try {
         for await (const message of currentStream) {
           if (isSystemInitMessage(message)) {
@@ -506,6 +529,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
           }
 
           if (message.type === "result") {
+            streamReceivedResult = true;
             const sessionId = message.session_id ?? (await getSessionId());
             const agentResult = sdkResultToAgentResult(message);
             const current = params.sessionManager.get(sessionId);
@@ -558,7 +582,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
               });
             }
 
-            return;
+            continue;
           }
 
           const sessionId = message.session_id ?? (await getSessionId());
@@ -572,14 +596,14 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
           }
         }
 
-        // Stream ended normally without a result message
+        // Stream ended normally. If no result was received, convert to an explicit error.
         if (shouldWaitForInit && !sessionIdResolved) {
           rejectSessionId(
             new Error(
               `Error [${ErrorCode.INTERNAL}]: query stream ended before receiving session init.`
             )
           );
-        } else if (activeSessionId) {
+        } else if (activeSessionId && !streamReceivedResult) {
           const sessionId = activeSessionId;
           const current = params.sessionManager.get(sessionId);
           if (current && current.status !== "cancelled") {
@@ -628,6 +652,12 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
                 : `Error [${ErrorCode.INTERNAL}]: ${enhanceWindowsError(err instanceof Error ? err.message : String(err))}`
             )
           );
+          return;
+        }
+
+        // If a result was already delivered, ignore trailing stream errors so that
+        // post-result events (e.g. prompt_suggestion) don't turn the session into error.
+        if (streamReceivedResult) {
           return;
         }
 

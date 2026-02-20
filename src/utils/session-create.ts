@@ -39,6 +39,7 @@ export function toSessionCreateParams(input: {
     fallbackModel: src.fallbackModel,
     enableFileCheckpointing: src.enableFileCheckpointing,
     includePartialMessages: src.includePartialMessages,
+    promptSuggestions: src.promptSuggestions,
     strictMcpConfig: src.strictMcpConfig,
     settingSources: src.settingSources ?? DEFAULT_SETTING_SOURCES,
     debug: src.debug,
