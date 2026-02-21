@@ -667,7 +667,7 @@ describe("executeClaudeCodeCheck", () => {
     );
   });
 
-  it("warns for POSIX home paths in pending permission requests on Windows", () => {
+  it("warns for POSIX absolute paths in pending permission requests on Windows", () => {
     const platformDesc = Object.getOwnPropertyDescriptor(process, "platform");
     Object.defineProperty(process, "platform", { value: "win32" });
     try {
@@ -696,11 +696,51 @@ describe("executeClaudeCodeCheck", () => {
       expect(
         polled.compatWarnings?.some((w) =>
           w.includes(
-            "Permission request 'r-home' uses POSIX home path '/home/user/project/a.txt' on Windows."
+            "Permission request 'r-home' uses POSIX absolute path '/home/user/project/a.txt' on Windows."
           )
         )
       ).toBe(true);
       expect(polled.compatWarnings?.some((w) => w.includes("under cwd 'D:\\repo'"))).toBe(true);
+    } finally {
+      if (platformDesc) Object.defineProperty(process, "platform", platformDesc);
+    }
+  });
+
+  it("warns for MSYS drive-like POSIX paths in pending permission requests on Windows", () => {
+    const platformDesc = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "win32" });
+    try {
+      manager.create({ sessionId: "s-win-msys", cwd: "D:\\repo" });
+      manager.setPendingPermission(
+        "s-win-msys",
+        {
+          requestId: "r-drive",
+          toolName: "Bash",
+          input: {
+            command: "cat /d/Lab/Claude_code-Codex-Bridge/README.md",
+          },
+          summary: "Read file",
+          blockedPath: "/d/Lab/Claude_code-Codex-Bridge/README.md",
+          toolUseID: "tu-drive",
+          createdAt: new Date().toISOString(),
+        },
+        vi.fn(),
+        60_000
+      );
+
+      const polled = executeClaudeCodeCheck(
+        { action: "poll", sessionId: "s-win-msys" },
+        manager,
+        toolCache
+      ) as CheckResult;
+
+      expect(
+        polled.compatWarnings?.some((w) =>
+          w.includes(
+            "Permission request 'r-drive' uses POSIX absolute path '/d/Lab/Claude_code-Codex-Bridge/README.md' on Windows."
+          )
+        )
+      ).toBe(true);
     } finally {
       if (platformDesc) Object.defineProperty(process, "platform", platformDesc);
     }

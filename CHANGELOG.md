@@ -22,6 +22,8 @@
 
 ### Documentation
 
+- Restructure documentation architecture: `AGENTS.md` is now execution-first, while `docs/DESIGN.md` is the single detailed source for interface/mapping semantics.
+- Add explicit doc-governance rules, upgrade submission template, and document DoD to reduce AGENTS/DESIGN duplication regression.
 - Align README/DESIGN/AGENTS with current defaults and behavior (timeout clamp, advanced parameter count, lifecycle semantics).
 - Clarify package positioning as CLI-first and remove stale guidance that implied a public programmatic API surface.
 - Update CONTRIBUTING with local environment requirements (Node/npm and Windows Git Bash notes).

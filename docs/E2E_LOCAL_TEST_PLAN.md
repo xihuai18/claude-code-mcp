@@ -424,6 +424,18 @@ Windows 场景重要约束：若你生成的路径包含 /home/ 或其他 POSIX 
    - 说明会话仍在 `running` 或 `waiting_permission` 状态，不可接受新 prompt。
    - 先等待会话到达终态（`idle` / `error` / `cancelled`），再调用 `claude_code_reply`。
    - 若需要中断当前执行，先调用 `claude_code_session(action=interrupt)` 或 `cancel`，等终态后再 reply。
+8. `cancel/interrupt` 后出现 `Query closed before response received`，随后连接中断。
+   - 这是 SDK teardown 阶段常见的良性错误，不应直接导致 server 退出。
+   - 先检查 server 是否将该错误归类为 benign runtime error（可在 stderr 看到 `Ignored benign runtime abort`）。
+   - 使用 `scripts/e2e/stdio-cancel-regression.mjs` 分别跑 `--mode fast-cancel` / `--mode waiting-permission-cancel` / `--mode fast-interrupt` / `--mode waiting-permission-interrupt` 做回归。
+9. Windows 下权限请求仍出现 POSIX 绝对路径（如 `/home/...`、`/d/...`、`/c/...`）。
+   - 优先检查 `permission_request.input` 最终参数，而不是仅看模型 `tool_use` 文本。
+   - 若最终参数仍是 POSIX 绝对路径，执行 `deny` 并要求改写为 Windows 绝对路径后重试。
+10. `claude_code_reply` 与 `claude_code_session(action=interrupt|cancel)` 并发时出现不稳定。
+   - 运行黑盒回归：`npm run e2e:stdio:reply-race`。
+   - 如需自定义轮数或轮询参数，建议直接运行：`node scripts/e2e/stdio-reply-race-regression.mjs --case all --iterations 2 --max-polls 40`。
+   - 该回归会覆盖 `running-interrupt`、`running-cancel`、`waiting-permission-interrupt`、`waiting-permission-cancel` 四类场景。
+   - 若 runtime 自动批准工具调用导致无法观测 `waiting_permission`，脚本会记录 `autoApprovalLikely=true` 并自动回退到 running 态并发竞争验证，不判定为失败。
 
 ---
 

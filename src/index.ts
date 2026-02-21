@@ -7,6 +7,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServerContext } from "./server.js";
 import { isBenignRuntimeError } from "./utils/runtime-errors.js";
+import { decideStdinShutdown } from "./utils/stdin-shutdown.js";
 import { checkWindowsBashAvailability } from "./utils/windows.js";
 
 const STDIN_SHUTDOWN_CHECK_MS = 750;
@@ -103,28 +104,31 @@ async function main(): Promise<void> {
 
     const stdinUnavailable =
       process.stdin.destroyed || process.stdin.readableEnded || !process.stdin.readable;
-    if (!stdinUnavailable) {
+    const elapsedMs = Date.now() - stdinClosedAt;
+    const active = hasActiveSessions();
+    const connected = server.isConnected();
+    const decision = decideStdinShutdown({
+      stdinUnavailable,
+      elapsedMs,
+      maxWaitMs: STDIN_SHUTDOWN_MAX_WAIT_MS,
+      hasActiveSessions: active,
+      isConnected: connected,
+    });
+    if (decision === "clear") {
       // Defensive: if the stream recovered, drop this shutdown attempt.
       stdinClosedAt = undefined;
       stdinClosedReason = undefined;
       return;
     }
-
-    const elapsedMs = Date.now() - stdinClosedAt;
-    const active = hasActiveSessions();
-    const connected = server.isConnected();
-
-    if (!active && !connected) {
+    if (decision === "shutdown_now") {
       void shutdown(`stdin_${stdinClosedReason ?? "closed"}`);
       return;
     }
-
-    if (elapsedMs >= STDIN_SHUTDOWN_MAX_WAIT_MS) {
-      // Last-resort shutdown: stdio is gone and this process can no longer serve requests.
+    if (decision === "shutdown_timeout") {
+      // Last-resort shutdown: stdio is gone and transport is disconnected.
       void shutdown(`stdin_${stdinClosedReason ?? "closed"}_timeout`);
       return;
     }
-
     stdinShutdownTimer = setTimeout(evaluateStdinTermination, STDIN_SHUTDOWN_CHECK_MS);
     if (stdinShutdownTimer.unref) stdinShutdownTimer.unref();
   };
@@ -160,7 +164,11 @@ async function main(): Promise<void> {
     void shutdown("SIGHUP");
   });
   process.on("beforeExit", () => {
-    void shutdown("beforeExit");
+    // Do not eagerly shutdown while transport still appears connected.
+    // Some runtimes can emit beforeExit during transient idle windows.
+    if (!server.isConnected()) {
+      void shutdown("beforeExit");
+    }
   });
   process.on("uncaughtException", handleUnexpectedError);
   process.on("unhandledRejection", handleUnexpectedError);

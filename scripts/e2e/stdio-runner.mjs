@@ -75,6 +75,8 @@ function main() {
   const startedAt = new Date().toISOString();
   const fastCancel = runMode("fast-cancel", cfg);
   const waitingPermissionCancel = runMode("waiting-permission-cancel", cfg);
+  const fastInterrupt = runMode("fast-interrupt", cfg);
+  const waitingPermissionInterrupt = runMode("waiting-permission-interrupt", cfg);
   const endedAt = new Date().toISOString();
 
   const summary = {
@@ -83,11 +85,16 @@ function main() {
     iterations: cfg.iterations,
     pollIntervalMs: cfg.pollIntervalMs,
     maxPolls: cfg.maxPolls,
-    runs: [fastCancel, waitingPermissionCancel],
+    runs: [fastCancel, waitingPermissionCancel, fastInterrupt, waitingPermissionInterrupt],
   };
 
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-  if (fastCancel.exitCode !== 0 || waitingPermissionCancel.exitCode !== 0) {
+  if (
+    fastCancel.exitCode !== 0 ||
+    waitingPermissionCancel.exitCode !== 0 ||
+    fastInterrupt.exitCode !== 0 ||
+    waitingPermissionInterrupt.exitCode !== 0
+  ) {
     process.exitCode = 1;
   }
 }

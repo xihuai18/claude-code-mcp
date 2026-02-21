@@ -357,7 +357,9 @@ export class SessionManager {
     if (info.status === "waiting_permission") {
       this.finishAllPending(
         sessionId,
-        { behavior: "deny", message: opts?.reason ?? "Session interrupted", interrupt: true },
+        // Similar to cancel(), avoid emitting interrupt=true while the query stream is
+        // being torn down to reduce SDK-level write/teardown races on stdio clients.
+        { behavior: "deny", message: opts?.reason ?? "Session interrupted", interrupt: false },
         "interrupt"
       );
     }

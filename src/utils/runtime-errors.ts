@@ -14,6 +14,7 @@ const BENIGN_MESSAGE_PATTERNS = [
   "stream was destroyed",
   "cannot call write after a stream was destroyed",
   "the pipe is being closed",
+  "query closed before response received",
 ];
 
 /**

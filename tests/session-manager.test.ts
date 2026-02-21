@@ -147,7 +147,7 @@ describe("SessionManager", () => {
     expect(finish.mock.calls[0]?.[0]).toMatchObject({
       behavior: "deny",
       message: "manual-stop",
-      interrupt: true,
+      interrupt: false,
     });
     expect(manager.getPendingPermissionCount("int-waiting")).toBe(0);
     expect(manager.get("int-waiting")?.status).toBe("running");

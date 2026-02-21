@@ -19,6 +19,11 @@ describe("isBenignRuntimeError", () => {
     expect(isBenignRuntimeError(err)).toBe(true);
   });
 
+  it("returns true for query-close teardown messages", () => {
+    const err = new Error("Query closed before response received");
+    expect(isBenignRuntimeError(err)).toBe(true);
+  });
+
   it("returns false for normal runtime errors", () => {
     const err = new Error("ReferenceError: x is not defined");
     expect(isBenignRuntimeError(err)).toBe(false);

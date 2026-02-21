@@ -1,321 +1,321 @@
-# Claude Code MCP Server - 设计文档
+# Claude Code MCP Server - 设计与接口文档
 
-## 1. 概述
+> Last Updated: 2026-02-21
+>
+> 本文档是项目的“实现级”设计说明，面向维护者和实现者。
+> `AGENTS.md` 是执行手册；本文件是详细原理与契约权威来源。
 
-本项目实现一个 MCP (Model Context Protocol) Server，将 Claude Code (Claude Agent SDK) 的能力暴露为 MCP 工具，使任何 MCP 客户端（如 Claude Desktop、Cursor、其他 AI Agent）能够调用 Claude Code 进行自主编程。
+## 1. 文档定位与去重边界
 
-### 设计哲学
+### 1.1 目标
 
-参考 OpenAI Codex MCP 的极简设计（仅 `codex` + `codex-reply` 两个工具），本项目采用 **最少工具、最大能力** 的原则：
+本项目是一个 TypeScript (ESM) MCP server，将 Claude Agent SDK / Claude Code CLI 封装为 4 个 MCP 工具，提供：
 
-- **工具数量精简**：仅暴露 4 个工具，覆盖完整生命周期
-- **会话状态管理**：通过 sessionId 维护多轮对话上下文
-- **配置灵活**：支持权限、模型、工具集、effort 等细粒度控制
-- **可审计**：所有操作可追踪
+- 最少工具（4 tools）
+- 最少默认配置（默认即开箱）
+- 最大 SDK 能力暴露（Options 尽量完整映射）
+- 完全异步无阻塞执行（启动即返回 + 轮询）
+- 完整权限治理（可见性 + allow/deny + 异步裁决）
 
-## 1.1 接口对齐与升级规范（本次约定）
+### 1.2 文档主权表（Source of Truth）
 
-- 以 Claude Agent SDK 的接口定义为准（`Options` 字段、permission mode 枚举、query stream 消息类型），实现与文档必须严格对齐。
-- 升级 SDK 时，先阅读仓库文档获取上下文，再逐项对照 SDK 类型定义核对变化；发生冲突时以 SDK 定义为最终判据。升级日志仅作辅助，不作为唯一判断依据。
-- 参数命名采用“直传字段同名”策略：直接映射 SDK `Options` 的字段与 SDK 保持同名（通常 `camelCase`）；非 SDK 直传字段沿用本项目既有契约名，不强制改名。
-- 默认不保留旧字段兼容别名；采用“直接对齐 + 全链路同步”策略，避免双写字段长期共存。
-- 每次接口变化必须同步更新：工具 schema、handler、SessionManager、`build-options`、`query-consumer`、类型定义、README、DESIGN、AGENTS、CHANGELOG 与测试。
-- 建议使用多智能体并行探索进行差异确认，并在收尾阶段做一次独立交叉验证。
-
-## 2. 工具设计
-
-### Tool 1: `claude_code` — 启动新会话
-
-启动一个新的 Claude Code Agent 会话，执行编程任务。
-
-| 参数              | 类型     | 必需 | 说明                                                        |
-| ----------------- | -------- | ---- | ----------------------------------------------------------- |
-| `prompt`          | string   | 是   | 用户提示/任务描述                                           |
-| `cwd`             | string   | 否   | 工作目录，默认为服务器进程目录                              |
-| `allowedTools`    | string[] | 否   | 自动批准工具列表（未在 allow/deny 中的工具可能通过 `claude_code_check` 发起权限请求） |
-| `disallowedTools` | string[] | 否   | 工具黑名单（从可用工具集中剔除）                            |
-| `maxTurns`        | number   | 否   | 最大对话轮次                                                |
-| `model`           | string   | 否   | 模型选择                                                    |
-| `systemPrompt`    | string / object | 否 | 自定义系统提示 (字符串或 preset 对象)                       |
-| `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000（服务端上限 300000） |
-| `advanced`        | object   | 否   | 低频高级参数（见下方折叠表）                                |
-
-<details>
-<summary><code>advanced</code> 对象参数（21 个低频参数）</summary>
-
-| 参数 | 类型 | 说明 |
+| 信息类型 | 权威文档 | 说明 |
 | --- | --- | --- |
-| `advanced.tools` | string[] / object | 可用工具集 (工具名数组或 preset) |
-| `advanced.persistSession` | boolean | 是否将会话历史持久化到磁盘（`~/.claude/projects/`，默认 true；设为 false 可禁用） |
-| `advanced.sessionInitTimeoutMs` | number | 等待 `system/init` 的超时 (毫秒)，默认 10000 |
-| `advanced.agents` | object | 子 Agent 定义 |
-| `advanced.agent` | string | 主线程 agent 名称（应用自定义 agent 系统提示、工具限制和模型） |
-| `advanced.maxBudgetUsd` | number | 最大费用限制 (USD) |
-| `advanced.betas` | string[] | Beta 功能 (如 1M 上下文) |
-| `advanced.additionalDirectories` | string[] | 额外可访问目录 |
-| `advanced.outputFormat` | object | 输出格式: `{ type: "json_schema", schema: {...} }` |
-| `advanced.pathToClaudeCodeExecutable` | string | Claude Code 可执行文件路径 |
-| `advanced.mcpServers` | object | MCP 服务器配置（key: 服务器名, value: 服务器配置） |
-| `advanced.sandbox` | object | 沙箱设置（命令执行隔离） |
-| `advanced.fallbackModel` | string | 备用模型（主模型不可用时使用） |
-| `advanced.enableFileCheckpointing` | boolean | 启用文件检查点（跟踪文件变更） |
-| `advanced.includePartialMessages` | boolean | 控制底层 SDK 是否产出更多中间事件（通过 `claude_code_check` 的 events 轮询可见） |
-| `advanced.promptSuggestions` | boolean | 产出 `prompt_suggestion` 事件（默认 false） |
-| `advanced.strictMcpConfig` | boolean | 严格验证 MCP 服务器配置 |
-| `advanced.settingSources` | string[] | 控制加载哪些文件系统设置 ("user"/"project"/"local")，默认加载全部 `["user", "project", "local"]`，传 `[]` 可切换为 SDK 隔离模式 |
-| `advanced.debug` | boolean | 启用调试模式 |
-| `advanced.debugFile` | string | 调试日志文件路径（隐式启用调试模式） |
-| `advanced.env` | object | 传递给 Claude Code 进程的环境变量 |
-</details>
+| 执行流程、提交前检查、升级 Runbook（操作清单） | `AGENTS.md` | 面向“怎么做” |
+| 架构原理、状态机、时序、字段语义 | `docs/DESIGN.md` | 面向“为什么这样做 + 具体契约” |
+| 终端用户使用说明、参数释义示例 | `README.md` | 面向使用者 |
+| 版本历史 | `CHANGELOG.md` | 面向发布与变更记录 |
 
-**返回值**：`{ sessionId, status: "running", pollInterval }`
+### 1.3 去重规则
 
-调用方需通过 `claude_code_check` 轮询获取最终 `result`。
+- `AGENTS.md` 不维护长参数表、消息映射表、协议长文。
+- 本文件维护所有详细映射与语义边界。
+- 两份文档允许少量摘要重复，但详细内容只能在一个地方出现。
 
-### Tool 2: `claude_code_reply` — 继续已有会话
+## 2. 系统概览
 
-| 参数          | 类型    | 必需 | 说明               |
-| ------------- | ------- | ---- | ------------------ |
-| `sessionId`   | string  | 是   | 要继续的会话 ID    |
-| `prompt`      | string  | 是   | 后续提示           |
-| `forkSession` | boolean | 否   | 是否 fork 到新会话 |
-| `permissionRequestTimeoutMs` | number | 否 | 等待权限裁决的超时 (毫秒)，默认 60000（服务端上限 300000） |
-| `sessionInitTimeoutMs` | number | 否 | 等待 fork `system/init` 的超时 (毫秒)，默认 10000 |
-| `diskResumeConfig` | object | 否 | 磁盘恢复参数（见下方折叠表） |
+### 2.1 工具与职责
 
-<details>
-<summary><code>diskResumeConfig</code> 对象参数（31 个仅磁盘恢复场景参数，当 <code>CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1</code> 且内存中 session 缺失时使用）</summary>
-
-| 参数 | 类型 | 说明 |
+| 工具 | 职责 | 阻塞行为 |
 | --- | --- | --- |
-| `diskResumeConfig.resumeToken` | string | 恢复令牌（磁盘恢复必需） |
-| `diskResumeConfig.cwd` | string | 工作目录 |
-| `diskResumeConfig.allowedTools` | string[] | 自动批准工具列表 |
-| `diskResumeConfig.disallowedTools` | string[] | 工具黑名单 |
-| `diskResumeConfig.strictAllowedTools` | boolean | `allowedTools` 严格白名单语义 |
-| `diskResumeConfig.tools` | string[] / object | 可用工具集 |
-| `diskResumeConfig.persistSession` | boolean | 是否持久化会话历史 |
-| `diskResumeConfig.maxTurns` | number | 最大对话轮次 |
-| `diskResumeConfig.model` | string | 模型选择 |
-| `diskResumeConfig.systemPrompt` | string / object | 自定义系统提示 |
-| `diskResumeConfig.agents` | object | 子 Agent 定义 |
-| `diskResumeConfig.agent` | string | 主线程 agent 名称 |
-| `diskResumeConfig.maxBudgetUsd` | number | 最大费用限制 (USD) |
-| `diskResumeConfig.effort` | string | 努力程度 |
-| `diskResumeConfig.betas` | string[] | Beta 功能 |
-| `diskResumeConfig.additionalDirectories` | string[] | 额外可访问目录 |
-| `diskResumeConfig.outputFormat` | object | 输出格式 |
-| `diskResumeConfig.thinking` | object | 思考模式 |
-| `diskResumeConfig.resumeSessionAt` | string | 恢复到指定消息 UUID |
-| `diskResumeConfig.pathToClaudeCodeExecutable` | string | Claude Code 可执行文件路径 |
-| `diskResumeConfig.mcpServers` | object | MCP 服务器配置 |
-| `diskResumeConfig.sandbox` | object | 沙箱设置 |
-| `diskResumeConfig.fallbackModel` | string | 备用模型 |
-| `diskResumeConfig.enableFileCheckpointing` | boolean | 启用文件检查点 |
-| `diskResumeConfig.includePartialMessages` | boolean | 包含部分/流式消息事件 |
-| `diskResumeConfig.promptSuggestions` | boolean | 产出 `prompt_suggestion` 事件（默认 false） |
-| `diskResumeConfig.strictMcpConfig` | boolean | 严格验证 MCP 服务器配置 |
-| `diskResumeConfig.settingSources` | string[] | 文件系统设置来源 |
-| `diskResumeConfig.debug` | boolean | 调试模式 |
-| `diskResumeConfig.debugFile` | string | 调试日志文件路径 |
-| `diskResumeConfig.env` | object | 环境变量 |
+| `claude_code` | 启动新会话 | 仅等待 init，随后后台运行 |
+| `claude_code_reply` | 继续会话 / fork / 磁盘恢复 | 立即返回，后台运行 |
+| `claude_code_session` | list/get/cancel/interrupt | 同步返回 |
+| `claude_code_check` | 轮询事件 + 权限裁决 | 同步返回 |
 
-</details>
+### 2.2 核心运行路径
 
-**返回值**：`{ sessionId, status: "running", pollInterval }`
+1. `claude_code` / `claude_code_reply` 接收参数并构建 `Partial<Options>`
+2. 交给 `query-consumer` 后台消费 SDK `query()` 异步流
+3. 事件写入 `SessionManager` 的事件缓冲
+4. 调用方用 `claude_code_check action=poll` 轮询增量事件
+5. 需要授权时，调用方通过 `respond_permission` 做裁决
+6. 终态为 `idle` / `error` / `cancelled`
 
-调用方需通过 `claude_code_check` 轮询获取最终 `result`。
+### 2.3 关键代码锚点
 
-> 可选增强：当设置 `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` 时，如果内存中的 session 元数据丢失（重启/TTL 清理），`claude_code_reply` 会尝试使用 Claude Code CLI 的磁盘 transcript 进行恢复；此时需传入 `diskResumeConfig` 对象以控制恢复行为。
+- Schema 与工具注册：`src/server.ts`
+- Options 映射中心：`src/utils/build-options.ts`
+- SDK 消息消费与权限回调：`src/tools/query-consumer.ts`
+- 会话状态与权限请求生命周期：`src/session/manager.ts`
+- 共享类型与常量：`src/types.ts`
+- 资源注册：`src/resources/register-resources.ts`
 
-### Tool 3: `claude_code_session` — 会话管理
+## SDK Interface Baseline
 
-| 参数               | 类型    | 必需          | 说明            |
-| ------------------ | ------- | ------------- | --------------- |
-| `action`           | string  | 是            | list/get/cancel/interrupt |
-| `sessionId`        | string  | get/cancel/interrupt 时 | 目标会话 ID     |
-| `includeSensitive` | boolean | 否            | 是否包含敏感字段（cwd/systemPrompt/agents/additionalDirectories，默认 false） |
+升级时以本地依赖安装后的类型定义为准：
 
-**返回值**：`{ sessions, message?, isError? }`（默认会对敏感字段做脱敏；`includeSensitive=true` 时返回完整字段）
+- Claude Agent SDK：`node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`
+- MCP SDK（必要时）：`node_modules/@modelcontextprotocol/sdk`
 
-### Tool 4: `claude_code_check` — 轮询事件 + 处理权限请求
+补充来源：
 
-| 参数 | 类型 | 必需 | 说明 |
+- 官方 changelog / release notes（仅用于“线索”，不是最终判据）
+
+### 对齐原则
+
+1. 直接映射到 SDK `Options` 的字段，参数名与 SDK 同名（通常 `camelCase`）。
+2. 非 SDK 直传字段（例如 MCP action 枚举、服务端策略字段）保留现有契约名。
+3. 默认不保留兼容别名；发生重命名时执行一次性切换，并同步文档与测试。
+4. 冲突时，以 `sdk.d.ts` 和代码实现事实为准，文档追随实现。
+
+### 关键 SDK 接口关注面
+
+- `Options` 字段全集
+- `CanUseTool` 回调签名与行为
+- `PermissionMode` 枚举
+- `SDKMessage` / `SDKResultMessage` / `SDKSystemMessage` 联合类型
+- `query()` 流式语义（init、assistant、progress、result、error）
+
+## 4. MCP 参数到 SDK Options 映射矩阵
+
+> 维护原则：每次 SDK 升级都必须核对并更新本节；这是“字段级”对齐清单。
+
+### 4.1 `claude_code` / `claude_code_reply` 常见映射
+
+| MCP 参数位置 | SDK Options 字段 | 映射落点 | 默认值来源 |
 | --- | --- | --- | --- |
-| `action` | string | 是 | poll / respond_permission |
-| `sessionId` | string | 是 | 目标会话 ID |
-| `cursor` | number | 否 | 事件 cursor（增量轮询） |
-| `responseMode` | string | 否 | `"minimal"`（默认）/`"full"`/`"delta_compact"` — 控制返回体积和裁剪行为 |
-| `maxEvents` | number | 否 | 每次轮询最大事件数。`minimal` 默认 200，`full`/`delta_compact` 默认 unlimited |
-| `requestId` | string | respond_permission 时 | 权限请求 ID |
-| `decision` | string | respond_permission 时 | allow / deny / allow_for_session |
-| `denyMessage` | string | 否 | deny 的原因 |
-| `interrupt` | boolean | 否 | deny 时是否中断整个 agent |
-| `pollOptions` | object | 否 | 细粒度 poll 控制（见下方折叠表） |
-| `permissionOptions` | object | 否 | 高级权限响应选项（见下方折叠表） |
+| `cwd` | `cwd` | `build-options.ts` | Server cwd |
+| `allowedTools` | `allowedTools` | `build-options.ts` | none |
+| `disallowedTools` | `disallowedTools` | `build-options.ts` | none |
+| `maxTurns` | `maxTurns` | `build-options.ts` | SDK |
+| `model` | `model` | `build-options.ts` | SDK |
+| `systemPrompt` | `systemPrompt` | `build-options.ts` | SDK |
+| `permissionRequestTimeoutMs` | (server policy) | `query-consumer.ts` | 60000，clamp 到 300000 |
+| `advanced.tools` | `tools` | `build-options.ts` | SDK |
+| `advanced.agents` | `agents` | `build-options.ts` | SDK |
+| `advanced.agent` | `agent` | `build-options.ts` | SDK |
+| `advanced.maxBudgetUsd` | `maxBudgetUsd` | `build-options.ts` | SDK |
+| `advanced.effort` | `effort` | `build-options.ts` | SDK |
+| `advanced.thinking` | `thinking` | `build-options.ts` | SDK |
+| `advanced.betas` | `betas` | `build-options.ts` | SDK |
+| `advanced.additionalDirectories` | `additionalDirectories` | `build-options.ts` | SDK |
+| `advanced.outputFormat` | `outputFormat` | `build-options.ts` | SDK |
+| `advanced.pathToClaudeCodeExecutable` | `pathToClaudeCodeExecutable` | `build-options.ts` | SDK-bundled |
+| `advanced.mcpServers` | `mcpServers` | `build-options.ts` | SDK |
+| `advanced.sandbox` | `sandbox` | `build-options.ts` | SDK |
+| `advanced.fallbackModel` | `fallbackModel` | `build-options.ts` | SDK |
+| `advanced.enableFileCheckpointing` | `enableFileCheckpointing` | `build-options.ts` | SDK |
+| `advanced.includePartialMessages` | `includePartialMessages` | `build-options.ts` | SDK |
+| `advanced.promptSuggestions` | `promptSuggestions` | `build-options.ts` | false |
+| `advanced.strictMcpConfig` | `strictMcpConfig` | `build-options.ts` | SDK |
+| `advanced.settingSources` | `settingSources` | `build-options.ts` | `["user","project","local"]` |
+| `advanced.debug` | `debug` | `build-options.ts` | false |
+| `advanced.debugFile` | `debugFile` | `build-options.ts` | none |
+| `advanced.env` | `env` | `build-options.ts` | `{...process.env, ...input.env}` |
 
-<details>
-<summary><code>pollOptions</code> 对象参数（10 个细粒度 poll 控制）</summary>
+### 4.2 `claude_code_reply.diskResumeConfig` 映射
 
-| 参数 | 类型 | 说明 |
+`diskResumeConfig` 共享同一套 `buildOptions()` 逻辑，额外关注：
+
+- `resumeToken` 是本项目安全策略字段，不属于 SDK `Options`
+- `resumeSessionAt` 仅在恢复场景使用
+- `forkSession` 是 reply 行为字段，非 `diskResumeConfig` 内配置
+
+### 4.3 非 Options 直传字段（服务端策略）
+
+| 字段 | 所属工具 | 语义 |
 | --- | --- | --- |
-| `pollOptions.includeTools` | boolean | 是否返回 availableTools（来自 SDK 的 system/init.tools，内部能力可能不会出现） |
-| `pollOptions.includeEvents` | boolean | 为 false 时省略 events 数组。默认 true |
-| `pollOptions.includeActions` | boolean | 为 false 时省略 actions[]。默认 true |
-| `pollOptions.includeResult` | boolean | 为 false 时省略顶层 result。默认 true |
-| `pollOptions.includeUsage` | boolean | 包含 result.usage（full=true, minimal=false） |
-| `pollOptions.includeModelUsage` | boolean | 包含 result.modelUsage（full=true, minimal=false） |
-| `pollOptions.includeStructuredOutput` | boolean | 包含 result.structuredOutput（full=true, minimal=false） |
-| `pollOptions.includeTerminalEvents` | boolean | 包含终端 result/error 事件（full=true, minimal=false） |
-| `pollOptions.includeProgressEvents` | boolean | 包含进度事件 tool_progress/auth_status（full=true, minimal=false） |
-| `pollOptions.maxBytes` | number | 单次返回 events 的近似 JSON 字节上限；超出时截断并在 `truncatedFields` 标记 `events_bytes` |
+| `action` | `claude_code_check` / `claude_code_session` | MCP 协议动作分支 |
+| `requestId` / `decision` / `interrupt` / `denyMessage` | `claude_code_check` | 权限请求裁决协议 |
+| `pollOptions` | `claude_code_check` | 返回裁剪与体积控制 |
+| `includeSensitive` | `claude_code_session` | 会话信息脱敏开关 |
+| `sessionInitTimeoutMs` | `claude_code` / `claude_code_reply` | init 等待策略 |
 
-</details>
+## 5. SDK 消息到 MCP 事件映射矩阵
 
-<details>
-<summary><code>permissionOptions</code> 对象参数（2 个高级权限响应选项）</summary>
+> 维护原则：每次 SDK 新增/变更消息 subtype，都必须评估是否需要映射或过滤。
 
-| 参数 | 类型 | 说明 |
-| --- | --- | --- |
-| `permissionOptions.updatedInput` | object | allow 或 allow_for_session 时可修改工具输入 |
-| `permissionOptions.updatedPermissions` | array | allow 或 allow_for_session 时可更新权限规则 |
+### 5.1 消息映射（`query-consumer.ts`）
 
-</details>
+| SDK Message | MCP 事件类型 | 关键字段 | 备注 |
+| --- | --- | --- | --- |
+| `assistant` | `output` | `message`, `parent_tool_use_id`, `error` | 主要文本输出 |
+| `tool_use_summary` | `progress` | `summary` | 工具执行摘要 |
+| `tool_progress` | `progress` | `tool_use_id`, `tool_name`, `elapsed_time_seconds` | 可在 minimal 过滤 |
+| `auth_status` | `progress` | `isAuthenticating`, `output`, `error` | 可在 minimal 过滤 |
+| `system/status` | `progress` | `status`, `permissionMode` | 系统状态 |
+| `system/task_started` | `progress` | `task_id`, `tool_use_id`, `description`, `task_type` | 子任务开始 |
+| `system/task_notification` | `progress` | `task_id`, `status`, `summary`, `output_file` | 子任务状态 |
+| `rate_limit` | `progress` | subtype 原字段 | 保留 |
+| `prompt_suggestion` | `progress` | subtype 原字段 | 需开启 promptSuggestions |
+| `result/success` | 顶层 `result` | turns/cost/usage/result | 终态成功 |
+| `result/error_*` | 顶层 `result` + `isError` | `errorSubtype` + 错误文本 | 终态失败 |
 
-**返回值**：统一事件流结构 `{ sessionId, status, pollInterval?, cursorResetTo?, truncated?, truncatedFields?, events, nextCursor?, availableTools?, toolValidation?, compatWarnings?, actions?, result? }`。
+### 5.2 `responseMode` 与 `pollOptions` 裁剪语义
 
-> minimal 模式（默认）下：assistant 消息精简（去除 usage/model/id/cache_control）；过滤 tool_progress/auth_status 进度事件；省略 lastEventId/lastToolUseId；AgentResult 省略 durationApiMs/sessionTotalTurns/sessionTotalCostUsd。使用 `responseMode: "full"` 或单独的 `include*` 标志可恢复。
->
-> 权限请求 `actions[]` 会包含 `timeoutMs` / `expiresAt` / `remainingMs`（尽力计算）用于调用方展示倒计时；到期后会自动 deny。
->
-> `compatWarnings` 属于兼容性提示（warning），默认不阻断会话执行（例如 unknown allowed/disallowed tool 名称）。
->
-> `events=[]` 且 `nextCursor` 不变可能是正常瞬态空轮询；建议按同一 cursor 重试最多 3 次后再判定异常。
->
-> Windows 场景下，若权限请求中出现 `/home/user/...` 路径，建议改用当前 `cwd` 下的绝对 Windows 路径（如 `C:\\repo\\...`），以减少越界权限请求。
+- `minimal`（默认）：返回轻量字段，过滤部分进度事件与冗余 usage 元数据
+- `full`：尽量完整返回
+- `delta_compact`：增量压缩导向
+- `pollOptions.include*`：对结果与事件逐项开关；用于精细控制带宽
 
-## 3. 架构
+### 5.3 权限请求事件
 
-```
-MCP Client ←→ (stdio/JSON-RPC) ←→ MCP Server
-                                      ├── Session Manager
-                                      │   ├── 会话状态跟踪 (Map<id, SessionInfo>)
-                                      │   ├── 空闲超时清理 (30 分钟)
-                                      │   └── 卡死会话清理 (4 小时)
-                                      └── Claude Agent SDK (query())
-```
+当 `canUseTool` 触发裁决时：
 
-## 4. 技术栈
+1. 生成 pending request（含超时）
+2. 会话进入 `waiting_permission`
+3. `claude_code_check poll` 返回 `actions[]`
+4. `respond_permission` 处理 allow/deny/allow_for_session
+5. request 幂等收尾（respond/timeout/cancel/signal 任一路径只会完成一次）
 
-| 组件      | 技术选型                         |
-| --------- | -------------------------------- |
-| 语言      | TypeScript (strict mode)         |
-| 运行时    | Node.js >= 18                    |
-| MCP SDK   | `@modelcontextprotocol/sdk` v1.x |
-| Agent SDK | `@anthropic-ai/claude-agent-sdk` |
-| 构建      | tsup (ESM bundle)                |
-| 测试      | vitest                           |
-| Schema    | zod v4                           |
-| 格式化    | prettier                         |
-| Lint      | eslint                           |
-| Git hooks | husky + lint-staged              |
+## 6. 状态机与生命周期
 
-## 5. 项目结构
+### 6.1 会话状态机
 
-```
-claude-code-mcp/
-├── src/
-│   ├── index.ts                # 入口，启动 MCP Server
-│   ├── server.ts               # MCP Server 定义与工具注册
-│   ├── types.ts                # 类型定义
-│   ├── tools/
-│   │   ├── claude-code.ts      # claude_code 工具
-│   │   ├── claude-code-reply.ts # claude_code_reply 工具
-│   │   ├── claude-code-session.ts # claude_code_session 工具
-│   │   ├── claude-code-check.ts # claude_code_check 工具
-│   │   ├── query-consumer.ts   # 共享后台 query 消费逻辑
-│   │   └── tool-discovery.ts   # 运行时工具发现 + 动态描述生成
-│   ├── session/
-│   │   └── manager.ts          # 会话管理器
-│   └── utils/
-│       ├── build-options.ts    # 共享 SDK Options 构建逻辑
-│       ├── race-with-abort.ts  # Promise 与 AbortSignal 竞争
-│       ├── resume-token.ts     # HMAC 恢复令牌生成
-│       └── windows.ts          # Git Bash 检测，Windows 错误提示
-├── tests/                      # 测试文件
-├── docs/                       # 设计文档、重构日志
-├── mcp_demo/                   # MCP 客户端配置示例
-├── package.json
-├── tsconfig.json
-├── tsup.config.ts
-├── .gitignore
-├── LICENSE
-├── CHANGELOG.md
-└── README.md
+```text
+running <-> waiting_permission -> idle | error | cancelled
 ```
 
-## 6. 安全设计
+- `cancelled` 为终态，不可继续回复
+- `reply` 需要会话可被重新 acquire（`tryAcquire`）
 
-- **异步权限裁决**：当工具调用需要授权时，会话进入 waiting_permission 并通过 `claude_code_check` 返回 actions[]，调用方需 respond_permission 批准/拒绝
-- **工具白/黑名单**：`allowedTools` / `disallowedTools`
-> 重要：若使用 `agents`（子 agent），主 agent 需要具备 `Task` 工具权限，否则无法调用子 agent。
-- **费用控制**：`advanced.maxBudgetUsd` 限制单次费用
-- **轮次限制**：`maxTurns` 防止无限循环
-- **会话自动清理**：空闲 30 分钟自动删除；运行超时（4 小时）会被标记为 `cancelled`
-- **AbortController 生命周期**：完成后清除，取消时正确 abort
-- **取消语义**：cancelled 状态不会被后续 update 覆盖
+### 6.2 清理策略
 
-## 7. 会话状态机
+- 空闲会话 TTL：默认 30 分钟
+- 运行会话硬超时：默认 4 小时（超时后 force abort 并标记 `cancelled`）
 
-```
-                 ┌──────────┐
-    create() ──► │ running  │
-                 └────┬─────┘
-                      │
-         ┌────────────┼────────────┬────────────┐
-          ▼            ▼            ▼
-     ┌─────────────────────┐
-     │ waiting_permission   │
-     └──────────┬──────────┘
-                │
-                ▼
-     ┌────────┐  ┌──────────┐  ┌───────────┐
-     │  idle  │  │  error   │  │ cancelled │
-     └────┬───┘  └──────────┘  └───────────┘
-          │
-     reply() ──► running ──► idle/error/cancelled
-```
+### 6.3 事件缓冲策略
 
-## 8. Turn/Cost 语义
+- 软上限：`CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE`（默认 1000）
+- 硬上限：`CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE`（默认 2000）
+- 关键事件 pin（权限请求、权限结果、错误）优先保留
 
-- `numTurns` / `totalCostUsd`：**本次调用**（一次 `claude_code` 或一次 `claude_code_reply`）的增量
-- `sessionTotalTurns` / `sessionTotalCostUsd`：该 session 的**累计值**（新会话时通常等于本次增量；reply 非 fork 会在原 session 上累计）
-- 当 `forkSession=true` 时，返回的 `sessionId`（以及 `sessionTotal*`）对应 **fork 后的新 session**；原 session 的累计值保持不变
+## 7. 安全模型
 
-## 9. 错误码
+### 7.1 三层权限防护
 
-参数校验/策略错误以 `Error [CODE]: message` 形式返回，`CODE` 取值：
+1. 可见性层：`advanced.tools`
+2. 硬策略层：`allowedTools` / `disallowedTools`
+3. 交互裁决层：`canUseTool` + `claude_code_check respond_permission`
 
-- `INVALID_ARGUMENT`
-- `SESSION_NOT_FOUND`
-- `SESSION_BUSY`
-- `PERMISSION_DENIED`
-- `PERMISSION_REQUEST_NOT_FOUND`
-- `TIMEOUT`
-- `CANCELLED`
-- `INTERNAL`
+### 7.2 数据与信息安全
 
-Claude Agent SDK 的执行错误请同时查看 `errorSubtype`（如 `error_max_turns` / `error_max_budget_usd` / `error_during_execution`）以及返回的 `result` 文本。
+- `advanced.env` 不会出现在公开 session 信息中
+- `includeSensitive=false` 默认脱敏 `cwd/systemPrompt/agents/...`
+- `resumeToken` 依赖 `CLAUDE_CODE_MCP_RESUME_SECRET` 的 HMAC 校验
 
-## 10. 会话持久化说明
+## Upgrade Methodology
 
-本 MCP server 的 `SessionManager` 仅在内存中保存 session 元数据（状态/累计 cost/turn/以及创建时的配置快照）。
-Claude Code CLI 会把对话历史持久化到磁盘（通常在 `~/.claude/projects/`，由 SDK 管理）。
+### 触发条件
 
-> 默认行为：`claude_code_reply` 需要该 session 仍存在于当前进程的 `SessionManager` 中；如果 MCP server 重启或 session 过期被清理，即使 CLI 的磁盘历史仍在，也会返回 `SESSION_NOT_FOUND`。
->
-> 可选增强：设置 `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` 后，`claude_code_reply` 会在内存缺失时尝试从磁盘 transcript 恢复。
+- 升级 `@anthropic-ai/claude-agent-sdk`
+- 升级 `@modelcontextprotocol/sdk`
+- 升级引起 zod schema、消息联合类型、权限模式、工具发现行为变化
 
-### 10.1 会话清理
+### 变更分类
 
-会话在空闲 30 分钟后自动清理，运行中的会话最长保留 4 小时。
+1. 字段新增：新增映射与 schema 描述，并补测试
+2. 字段重命名：一次性切换，移除旧名，不留长期别名
+3. 语义变化：更新行为逻辑与文档语义
+4. 字段移除：删除映射、参数与测试，更新兼容提示
+5. 消息类型变化：更新 query consumer 映射和 poll 裁剪策略
+
+### 升级核对顺序
+
+1. 阅读 `sdk.d.ts` / SDK 类型定义
+2. 对照本文件第 4 节（Options 映射矩阵）
+3. 对照本文件第 5 节（消息映射矩阵）
+4. 同步修改：
+   - `src/server.ts`（zod schema / describe）
+   - `src/utils/build-options.ts`（字段复制与默认）
+   - `src/tools/query-consumer.ts`（消息映射与权限行为）
+   - `src/session/manager.ts`（状态与权限请求生命周期）
+   - `src/types.ts`（共享类型与枚举）
+5. 更新文档与变更记录：`README.md`、`docs/DESIGN.md`、`AGENTS.md`、`CHANGELOG.md`
+6. 运行检查：`typecheck` / `lint` / `test` / `format:check`
+
+### 升级验收标准
+
+- 所有直传字段均有 schema + 映射 + 测试
+- 新消息 subtype 的处理决策明确（映射/忽略/过滤）
+- 无过期参数名与旧别名残留
+- 文档与代码一致
+
+### 升级提交模板（建议）
+
+当升级影响接口时，建议在 PR 描述固定包含：
+
+1. 变更输入：升级了哪些依赖版本
+2. 类型基线：核对了哪些 `sdk.d.ts` 位置
+3. 字段对齐：新增/变更/移除了哪些 Options 映射
+4. 消息对齐：新增/变更/忽略了哪些 SDK 消息 subtype
+5. 代码触点：改动了哪些核心文件（`server.ts`, `build-options.ts`, `query-consumer.ts`, `manager.ts`, `types.ts`）
+6. 测试覆盖：新增或更新了哪些测试文件
+7. 文档闭环：同步更新了哪些文档（README/DESIGN/AGENTS/CHANGELOG）
+
+### 文档 DoD（Definition of Done）
+
+文档更新满足以下条件才算完成：
+
+- `AGENTS.md` 与 `docs/DESIGN.md` 的边界声明保持一致
+- `AGENTS.md` 未出现长参数表/消息映射表的重复内容
+- `docs/DESIGN.md` 的 Options 映射矩阵与消息映射矩阵与代码一致
+- 锚点 `#sdk-interface-baseline` 与 `#upgrade-methodology` 可从 AGENTS 跳转
+- `CHANGELOG.md` 的 Documentation 分组记录了本次文档结构变化
+
+## 9. 测试矩阵（接口变更相关）
+
+| 变更类型 | 最低测试覆盖 |
+| --- | --- |
+| 参数 schema 变化 | `tests/server.test.ts`, `tests/tools.test.ts` |
+| Options 映射变化 | `tests/build-options.test.ts`, 相关 tool tests |
+| 消息映射变化 | `tests/query-consumer.test.ts`, `tests/claude-code-check.test.ts` |
+| 权限生命周期变化 | `tests/session-manager.test.ts`, `tests/permission-updated-input.test.ts` |
+| resume token / 恢复流程变化 | `tests/resume-token.test.ts`, `tests/claude-code-reply.test.ts` |
+| tool discovery 变化 | `tests/tool-discovery.test.ts`, `tests/resources.test.ts` |
+
+## 10. API 语义与兼容策略
+
+### 10.1 命名策略
+
+- SDK 直传字段保持同名
+- 项目策略字段保留契约名
+
+### 10.2 兼容策略
+
+- 默认不维持旧字段别名
+- 如需破坏性变更，版本说明必须清晰，并同步全部文档与测试
+
+### 10.3 错误表达
+
+工具 handler 统一返回 `{ content, isError }`，不向 MCP 层直接抛异常。
+错误消息使用 `Error [CODE]: message` 格式，`CODE` 由 `ErrorCode` 统一管理。
+
+## 11. 附录 A：MCP 协议要点（简版）
+
+- 协议：JSON-RPC 2.0
+- 三类消息：Request / Response / Notification
+- 本项目使用 stdio 传输
+- 已使用能力：tools、resources、logging
+
+> 历史上的详细生态对比与客户端能力差异，应放在 README 或专项调研文档，避免污染设计主干。
+
+## 12. 附录 B：对 `AGENTS.md` 的引用锚点
+
+`AGENTS.md` 可引用本文件的关键锚点：
+
+- SDK 权威接口：`#sdk-interface-baseline`
+- 升级方法学：`#upgrade-methodology`
+- Options 映射矩阵：第 4 节
+- 消息映射矩阵：第 5 节

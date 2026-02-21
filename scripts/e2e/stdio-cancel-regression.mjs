@@ -70,7 +70,7 @@ function startArguments(mode) {
     },
   };
 
-  if (mode === "waiting-permission-cancel") {
+  if (mode === "waiting-permission-cancel" || mode === "waiting-permission-interrupt") {
     return {
       ...base,
       prompt:
@@ -133,30 +133,46 @@ async function runIteration(client, i, config) {
 
   const sessionId = started.sessionId;
   let cursor;
-  if (config.mode === "waiting-permission-cancel") {
+  if (config.mode === "waiting-permission-cancel" || config.mode === "waiting-permission-interrupt") {
     const polled = await pollUntilWaitingOrTerminal(client, sessionId, config);
     record.preCancelPoll = polled;
     cursor = polled.cursor;
   }
 
-  record.cancel = parseToolResponse(
+  const sessionAction = config.mode.includes("interrupt") ? "interrupt" : "cancel";
+  record.sessionAction = sessionAction;
+  const actionResult = parseToolResponse(
     await client.callTool({
       name: "claude_code_session",
-      arguments: { action: "cancel", sessionId },
+      arguments: { action: sessionAction, sessionId },
     })
   );
-  record.pollAfterCancel = parseToolResponse(
+  const pollAfterAction = parseToolResponse(
     await client.callTool({
       name: "claude_code_check",
       arguments: { action: "poll", sessionId, cursor, responseMode: "full" },
     })
   );
-  record.sessionListAfterCancel = parseToolResponse(
+  const sessionListAfterAction = parseToolResponse(
     await client.callTool({
       name: "claude_code_session",
       arguments: { action: "list" },
     })
   );
+  record.actionResult = actionResult;
+  record.pollAfterAction = pollAfterAction;
+  record.sessionListAfterAction = sessionListAfterAction;
+  // Backward-compatible field aliases retained for existing consumers.
+  if (sessionAction === "cancel") {
+    record.cancel = actionResult;
+    record.pollAfterCancel = pollAfterAction;
+    record.sessionListAfterCancel = sessionListAfterAction;
+  } else {
+    record.interrupt = actionResult;
+    record.pollAfterInterrupt = pollAfterAction;
+    record.sessionListAfterInterrupt = sessionListAfterAction;
+  }
+
   const resources = await client.listResources();
   record.resourcesAfterCancel = resources.resources.map((r) => r.uri);
   record.failed = false;

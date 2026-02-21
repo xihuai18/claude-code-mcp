@@ -216,12 +216,19 @@ function detectPathCompatibilityWarnings(session: SessionInfo | undefined): stri
   return warnings;
 }
 
-function isPosixHomePath(value: string): boolean {
-  return /^\/home\/[^/\s]+(?:\/|$)/.test(value);
+function isSuspiciousPosixAbsolutePathOnWindows(value: string): boolean {
+  if (!value.startsWith("/") || value.startsWith("//")) return false;
+  return (
+    /^\/home\/[^/\s]+(?:\/|$)/.test(value) ||
+    /^\/(?:mnt\/)?[a-zA-Z](?:\/|$)/.test(value) ||
+    /^\/(tmp|var|etc|opt|usr|bin|sbin)(?:\/|$)/.test(value)
+  );
 }
 
-function extractPosixHomePath(value: string): string | undefined {
-  const match = value.match(/\/home\/[^/\s"'`]+(?:\/[^\s"'`]*)?/);
+function extractSuspiciousPosixAbsolutePath(value: string): string | undefined {
+  const match = value.match(
+    /\/(?:home\/[^/\s"'`]+(?:\/[^\s"'`]*)?|(?:mnt\/)?[a-zA-Z](?:\/[^\s"'`]*)?|(?:tmp|var|etc|opt|usr|bin|sbin)(?:\/[^\s"'`]*)?)/
+  );
   return match?.[0];
 }
 
@@ -260,14 +267,14 @@ function detectPendingPermissionPathWarnings(
     // Also check command field for embedded POSIX home paths.
     const command = req.input.command;
     if (typeof command === "string") {
-      const embeddedPath = extractPosixHomePath(command);
+      const embeddedPath = extractSuspiciousPosixAbsolutePath(command);
       if (embeddedPath) candidates.push(embeddedPath);
     }
 
-    const badPath = candidates.find((p) => isPosixHomePath(p));
+    const badPath = candidates.find((p) => isSuspiciousPosixAbsolutePathOnWindows(p));
     if (!badPath) continue;
     warnings.push(
-      `Permission request '${req.requestId}' uses POSIX home path '${badPath}' on Windows. Prefer an absolute Windows path${cwdHint} to avoid out-of-bounds permission prompts.`
+      `Permission request '${req.requestId}' uses POSIX absolute path '${badPath}' on Windows. Prefer an absolute Windows path${cwdHint} to avoid out-of-bounds permission prompts.`
     );
   }
   return warnings;
