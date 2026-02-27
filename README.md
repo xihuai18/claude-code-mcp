@@ -32,7 +32,7 @@ See `CHANGELOG.md` for release history.
 
 This MCP server uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) package, which **bundles its own Claude Code CLI** (`cli.js`). It does not use the `claude` binary from your system PATH.
 
-- The SDK's bundled CLI version is determined by the SDK package version (e.g. SDK 0.2.38 = Claude Code 2.1.38)
+- The SDK bundles a Claude Code CLI; its version generally tracks the SDK package version, but the exact scheme is not guaranteed
 - **Configuration is shared** — the bundled CLI reads API keys and settings from `~/.claude/`, same as the system-installed `claude`
 - **All local settings are loaded by default** — unlike the raw SDK (which defaults to isolation mode), this MCP server loads `user`, `project`, and `local` settings automatically, including `CLAUDE.md` project context. Pass `advanced.settingSources: []` to opt out
 - You must have Claude Code configured (API key set up) before using this MCP server: see [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code/overview)
@@ -62,7 +62,7 @@ Add to your MCP client configuration (Claude Desktop, Cursor, etc.):
 }
 ```
 
-> Some clients cache tool/resource metadata at connect-time. This server emits `notifications/tools/list_changed` and resource update notifications after runtime tool discovery so clients can refresh both the `claude_code` tool description and `internal-tools` resource.
+> Some clients cache tool/resource metadata at connect-time. This server emits `notifications/tools/list_changed` and `notifications/resources/list_changed` after runtime tool discovery so clients can refresh both the `claude_code` tool description and `internal-tools` resource.
 
 ### Anthropic Claude Code CLI (as an MCP client)
 
@@ -123,7 +123,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | ------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `advanced.tools`                      | string[] \| object | Define the base tool set. Default: SDK/Claude Code default toolset. Array of tool name strings, or `{ type: "preset", preset: "claude_code" }` for the default toolset. `allowedTools`/`disallowedTools` further filter on top of this |
 | `advanced.persistSession`             | boolean            | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                                                                                                      |
-| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`.                                                                                                                                                |
+| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`.                                                                                                                                                      |
 | `advanced.agents`                     | object             | Define custom sub-agents the main agent can delegate tasks to. Default: none. SDK default: if a sub-agent omits `tools`, it inherits all tools from the parent.                                                                        |
 | `advanced.agent`                      | string             | Name of a custom agent (defined in `agents`) to use as the primary agent. Default: omitted                                                                                                                                             |
 | `advanced.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                                                                                                                |
@@ -136,7 +136,7 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 | `advanced.fallbackModel`              | string             | Fallback model if the primary model fails or is unavailable. Default: none                                                                                                                                                             |
 | `advanced.enableFileCheckpointing`    | boolean            | Enable file checkpointing to track file changes during the session. Default: `false`                                                                                                                                                   |
 | `advanced.includePartialMessages`     | boolean            | When true, includes intermediate streaming messages in the response. Useful for real-time progress monitoring. Default: false                                                                                                          |
-| `advanced.promptSuggestions`          | boolean            | When true, emits post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                                                                                                                                           |
+| `advanced.promptSuggestions`          | boolean            | When true, emits post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                                                                                                                                            |
 | `advanced.strictMcpConfig`            | boolean            | Enforce strict validation of MCP server configurations. Default: `false`                                                                                                                                                               |
 | `advanced.settingSources`             | string[]           | Which filesystem settings to load. Defaults to `["user", "project", "local"]` (loads all settings and CLAUDE.md). Pass `[]` for SDK isolation mode                                                                                     |
 | `advanced.debug`                      | boolean            | Enable debug mode for verbose logging. Default: `false`                                                                                                                                                                                |
@@ -207,7 +207,7 @@ Continue an existing session by sending a follow-up message. The agent retains f
 | `diskResumeConfig.fallbackModel`              | string             | Fallback model. Default: none                                                                   |
 | `diskResumeConfig.enableFileCheckpointing`    | boolean            | Enable file checkpointing. Default: `false`                                                     |
 | `diskResumeConfig.includePartialMessages`     | boolean            | Include intermediate streaming messages. Default: `false`                                       |
-| `diskResumeConfig.promptSuggestions`          | boolean            | Emit post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                |
+| `diskResumeConfig.promptSuggestions`          | boolean            | Emit post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                 |
 | `diskResumeConfig.strictMcpConfig`            | boolean            | Strict MCP config validation. Default: `false`                                                  |
 | `diskResumeConfig.settingSources`             | string[]           | Which filesystem settings to load. Default: `["user", "project", "local"]`                      |
 | `diskResumeConfig.debug`                      | boolean            | Debug mode. Default: `false`                                                                    |
@@ -291,18 +291,18 @@ Poll session events/results and approve/deny pending permission requests.
 <details>
 <summary><code>pollOptions</code> object parameters (10 fine-grained poll controls)</summary>
 
-| Parameter                             | Type    | Description                                                                                                                                                                             |
-| ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pollOptions.includeTools`            | boolean | When true, includes `availableTools` (`poll` only). Default: `false` (omitted until session init is received). Derived from SDK `system/init.tools` (internal features may not appear). |
-| `pollOptions.includeEvents`           | boolean | When false, omits `events` (but `nextCursor` still advances). Default: `true`                                                                                                           |
-| `pollOptions.includeActions`          | boolean | When false, omits `actions[]` even if `waiting_permission`. Default: `true`                                                                                                             |
-| `pollOptions.includeResult`           | boolean | When false, omits top-level `result` even when `idle`/`error`. Default: `true`                                                                                                          |
-| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                          |
-| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                     |
-| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                               |
-| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`             |
-| `pollOptions.includeProgressEvents`   | boolean | When true, includes progress events (`tool_progress`, `auth_status`) in the events stream. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`                        |
-| `pollOptions.maxBytes`                | number  | Approximate max JSON bytes for `events` in this response. When exceeded, events are truncated and `truncatedFields` includes `"events_bytes"`. Default: unlimited                       |
+| Parameter                             | Type    | Description                                                                                                                                                                                                                           |
+| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pollOptions.includeTools`            | boolean | When true, includes `availableTools` (`poll` only). Default: `false` (omitted until session init is received). Derived from SDK `system/init.tools` (internal features may not appear).                                               |
+| `pollOptions.includeEvents`           | boolean | When false, omits `events` (but `nextCursor` still advances). Default: `true`                                                                                                                                                         |
+| `pollOptions.includeActions`          | boolean | When false, omits `actions[]` even if `waiting_permission`. Default: `true`                                                                                                                                                           |
+| `pollOptions.includeResult`           | boolean | When false, omits top-level `result` even when `idle`/`error`. Default: `true`                                                                                                                                                        |
+| `pollOptions.includeUsage`            | boolean | Include `result.usage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                                                                        |
+| `pollOptions.includeModelUsage`       | boolean | Include `result.modelUsage` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                                                                   |
+| `pollOptions.includeStructuredOutput` | boolean | Include `result.structuredOutput` (default: `true` in `"full"`, `false` in `"minimal"`/`"delta_compact"`)                                                                                                                             |
+| `pollOptions.includeTerminalEvents`   | boolean | When true, keeps terminal `result`/`error` events in `events` even if top-level `result` is included. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"`                                                           |
+| `pollOptions.includeProgressEvents`   | boolean | When true, includes noisy SDK progress subtypes (e.g. `tool_progress`, `auth_status`, `system/task_progress`, `system/hook_progress`) as MCP `progress` events. Default: `false` in `"minimal"`/`"delta_compact"`, `true` in `"full"` |
+| `pollOptions.maxBytes`                | number  | Approximate max JSON bytes for `events` in this response. When exceeded, events are truncated and `truncatedFields` includes `"events_bytes"`. Default: unlimited                                                                     |
 
 </details>
 
@@ -331,7 +331,7 @@ Notes:
 - `compatWarnings` surfaces compatibility hints (for example, unresolved tool names or path/platform mismatch signals) and is **non-blocking**; treat it as advisory unless the session actually fails.
 - Permission `actions[]` include `timeoutMs`, `expiresAt`, and best-effort `remainingMs` to help callers avoid auto-deny timeouts.
 - `permission_result` event data is `{ requestId, toolName, behavior, source, message?, interrupt? }` (denial details only present for `deny`).
-- In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy progress events (`tool_progress`, `auth_status`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
+- In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy SDK progress subtypes (`tool_progress`, `auth_status`, `system/task_progress`, `system/hook_progress`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
 - In `"delta_compact"` mode: defaults are optimized for high-frequency polling (`events` and top-level `result` omitted unless explicitly enabled via `pollOptions`), while still returning session status/actions/cursors.
 
 ## Usage Example

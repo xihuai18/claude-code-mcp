@@ -8,8 +8,9 @@
 
 ### Improvements
 
-- Upgrade `@anthropic-ai/claude-agent-sdk` to `^0.2.49` and align MCP-facing schemas with the current SDK surface.
-- Permission mode enum now follows SDK 0.2.49 (`default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk`; `delegate` removed).
+- Upgrade `@anthropic-ai/claude-agent-sdk` to `^0.2.62` and align MCP-facing schemas with the current SDK surface.
+- Upgrade `@modelcontextprotocol/sdk` to `^1.27.1`.
+- Permission mode enum now follows SDK 0.2.62 (`default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk`; `delegate` removed).
 - Session cleanup now marks timed-out running/waiting sessions as `cancelled` for consistent status semantics.
 - `SessionManager.destroy()` now clears in-memory session/runtime maps after aborting active runs, so post-destroy reads are no longer stale.
 - Event buffer eviction now uses batch compaction (instead of repeated `findIndex` + `splice`) and `readEvents` now uses binary search for cursor start.
@@ -18,7 +19,8 @@
 - Enrich compatibility resources with package version, disk-resume diagnostics, and runtime limits.
 - Remove deprecated `claude_code` parameter aliases: top-level `sessionInitTimeoutMs` and `advanced.effort` / `advanced.thinking`.
 - Add support for SDK `promptSuggestions` option passthrough and expose `promptSuggestions` in `advanced`/`diskResumeConfig`.
-- Query consumer now maps additional SDK stream messages (`system/task_started`, `rate_limit`, `prompt_suggestion`) to progress events.
+- Query consumer now maps additional SDK stream messages (`system/task_started`, `system/task_progress`, `system/hook_*`, `system/files_persisted`, `rate_limit`, `prompt_suggestion`) to progress events.
+- Event buffer eviction now prefers dropping noisy progress events before output events to reduce missed output under high-frequency streams.
 
 ### Documentation
 
@@ -41,7 +43,7 @@
 - Add `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS` (default: `64`) to cap outstanding permission requests per session.
 - Promote `effort` and `thinking` to top-level parameters on `claude_code` and `claude_code_reply` (deprecated aliases: `advanced.effort`, `advanced.thinking`).
 - Tool responses now include `structuredContent` (in addition to JSON text) for easier MCP client consumption.
-- Emit `tools/list_changed` and `resources/list_changed` once after connect; update `claude_code` tool description dynamically when runtime tool discovery changes.
+- Emit `notifications/tools/list_changed` and `notifications/resources/list_changed` once after connect; update `claude_code` tool description dynamically when runtime tool discovery changes.
 - Align declared MCP capabilities with implemented primitives (`logging`, `tools`, `resources`) and remove prompt primitive exposure.
 - Add unit tests for `build-options.ts` and `race-with-abort.ts`.
 

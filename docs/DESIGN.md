@@ -1,6 +1,6 @@
 # Claude Code MCP Server - 设计与接口文档
 
-> Last Updated: 2026-02-21
+> Last Updated: 2026-02-27
 >
 > 本文档是项目的“实现级”设计说明，面向维护者和实现者。
 > `AGENTS.md` 是执行手册；本文件是详细原理与契约权威来源。
@@ -19,12 +19,12 @@
 
 ### 1.2 文档主权表（Source of Truth）
 
-| 信息类型 | 权威文档 | 说明 |
-| --- | --- | --- |
-| 执行流程、提交前检查、升级 Runbook（操作清单） | `AGENTS.md` | 面向“怎么做” |
-| 架构原理、状态机、时序、字段语义 | `docs/DESIGN.md` | 面向“为什么这样做 + 具体契约” |
-| 终端用户使用说明、参数释义示例 | `README.md` | 面向使用者 |
-| 版本历史 | `CHANGELOG.md` | 面向发布与变更记录 |
+| 信息类型                                       | 权威文档         | 说明                          |
+| ---------------------------------------------- | ---------------- | ----------------------------- |
+| 执行流程、提交前检查、升级 Runbook（操作清单） | `AGENTS.md`      | 面向“怎么做”                  |
+| 架构原理、状态机、时序、字段语义               | `docs/DESIGN.md` | 面向“为什么这样做 + 具体契约” |
+| 终端用户使用说明、参数释义示例                 | `README.md`      | 面向使用者                    |
+| 版本历史                                       | `CHANGELOG.md`   | 面向发布与变更记录            |
 
 ### 1.3 去重规则
 
@@ -36,12 +36,12 @@
 
 ### 2.1 工具与职责
 
-| 工具 | 职责 | 阻塞行为 |
-| --- | --- | --- |
-| `claude_code` | 启动新会话 | 仅等待 init，随后后台运行 |
-| `claude_code_reply` | 继续会话 / fork / 磁盘恢复 | 立即返回，后台运行 |
-| `claude_code_session` | list/get/cancel/interrupt | 同步返回 |
-| `claude_code_check` | 轮询事件 + 权限裁决 | 同步返回 |
+| 工具                  | 职责                       | 阻塞行为                  |
+| --------------------- | -------------------------- | ------------------------- |
+| `claude_code`         | 启动新会话                 | 仅等待 init，随后后台运行 |
+| `claude_code_reply`   | 继续会话 / fork / 磁盘恢复 | 立即返回，后台运行        |
+| `claude_code_session` | list/get/cancel/interrupt  | 同步返回                  |
+| `claude_code_check`   | 轮询事件 + 权限裁决        | 同步返回                  |
 
 ### 2.2 核心运行路径
 
@@ -93,36 +93,36 @@
 
 ### 4.1 `claude_code` / `claude_code_reply` 常见映射
 
-| MCP 参数位置 | SDK Options 字段 | 映射落点 | 默认值来源 |
-| --- | --- | --- | --- |
-| `cwd` | `cwd` | `build-options.ts` | Server cwd |
-| `allowedTools` | `allowedTools` | `build-options.ts` | none |
-| `disallowedTools` | `disallowedTools` | `build-options.ts` | none |
-| `maxTurns` | `maxTurns` | `build-options.ts` | SDK |
-| `model` | `model` | `build-options.ts` | SDK |
-| `systemPrompt` | `systemPrompt` | `build-options.ts` | SDK |
-| `permissionRequestTimeoutMs` | (server policy) | `query-consumer.ts` | 60000，clamp 到 300000 |
-| `advanced.tools` | `tools` | `build-options.ts` | SDK |
-| `advanced.agents` | `agents` | `build-options.ts` | SDK |
-| `advanced.agent` | `agent` | `build-options.ts` | SDK |
-| `advanced.maxBudgetUsd` | `maxBudgetUsd` | `build-options.ts` | SDK |
-| `advanced.effort` | `effort` | `build-options.ts` | SDK |
-| `advanced.thinking` | `thinking` | `build-options.ts` | SDK |
-| `advanced.betas` | `betas` | `build-options.ts` | SDK |
-| `advanced.additionalDirectories` | `additionalDirectories` | `build-options.ts` | SDK |
-| `advanced.outputFormat` | `outputFormat` | `build-options.ts` | SDK |
-| `advanced.pathToClaudeCodeExecutable` | `pathToClaudeCodeExecutable` | `build-options.ts` | SDK-bundled |
-| `advanced.mcpServers` | `mcpServers` | `build-options.ts` | SDK |
-| `advanced.sandbox` | `sandbox` | `build-options.ts` | SDK |
-| `advanced.fallbackModel` | `fallbackModel` | `build-options.ts` | SDK |
-| `advanced.enableFileCheckpointing` | `enableFileCheckpointing` | `build-options.ts` | SDK |
-| `advanced.includePartialMessages` | `includePartialMessages` | `build-options.ts` | SDK |
-| `advanced.promptSuggestions` | `promptSuggestions` | `build-options.ts` | false |
-| `advanced.strictMcpConfig` | `strictMcpConfig` | `build-options.ts` | SDK |
-| `advanced.settingSources` | `settingSources` | `build-options.ts` | `["user","project","local"]` |
-| `advanced.debug` | `debug` | `build-options.ts` | false |
-| `advanced.debugFile` | `debugFile` | `build-options.ts` | none |
-| `advanced.env` | `env` | `build-options.ts` | `{...process.env, ...input.env}` |
+| MCP 参数位置                          | SDK Options 字段             | 映射落点            | 默认值来源                       |
+| ------------------------------------- | ---------------------------- | ------------------- | -------------------------------- |
+| `cwd`                                 | `cwd`                        | `build-options.ts`  | Server cwd                       |
+| `allowedTools`                        | `allowedTools`               | `build-options.ts`  | none                             |
+| `disallowedTools`                     | `disallowedTools`            | `build-options.ts`  | none                             |
+| `maxTurns`                            | `maxTurns`                   | `build-options.ts`  | SDK                              |
+| `model`                               | `model`                      | `build-options.ts`  | SDK                              |
+| `systemPrompt`                        | `systemPrompt`               | `build-options.ts`  | SDK                              |
+| `permissionRequestTimeoutMs`          | (server policy)              | `query-consumer.ts` | 60000，clamp 到 300000           |
+| `advanced.tools`                      | `tools`                      | `build-options.ts`  | SDK                              |
+| `advanced.agents`                     | `agents`                     | `build-options.ts`  | SDK                              |
+| `advanced.agent`                      | `agent`                      | `build-options.ts`  | SDK                              |
+| `advanced.maxBudgetUsd`               | `maxBudgetUsd`               | `build-options.ts`  | SDK                              |
+| `advanced.effort`                     | `effort`                     | `build-options.ts`  | SDK                              |
+| `advanced.thinking`                   | `thinking`                   | `build-options.ts`  | SDK                              |
+| `advanced.betas`                      | `betas`                      | `build-options.ts`  | SDK                              |
+| `advanced.additionalDirectories`      | `additionalDirectories`      | `build-options.ts`  | SDK                              |
+| `advanced.outputFormat`               | `outputFormat`               | `build-options.ts`  | SDK                              |
+| `advanced.pathToClaudeCodeExecutable` | `pathToClaudeCodeExecutable` | `build-options.ts`  | SDK-bundled                      |
+| `advanced.mcpServers`                 | `mcpServers`                 | `build-options.ts`  | SDK                              |
+| `advanced.sandbox`                    | `sandbox`                    | `build-options.ts`  | SDK                              |
+| `advanced.fallbackModel`              | `fallbackModel`              | `build-options.ts`  | SDK                              |
+| `advanced.enableFileCheckpointing`    | `enableFileCheckpointing`    | `build-options.ts`  | SDK                              |
+| `advanced.includePartialMessages`     | `includePartialMessages`     | `build-options.ts`  | SDK                              |
+| `advanced.promptSuggestions`          | `promptSuggestions`          | `build-options.ts`  | false                            |
+| `advanced.strictMcpConfig`            | `strictMcpConfig`            | `build-options.ts`  | SDK                              |
+| `advanced.settingSources`             | `settingSources`             | `build-options.ts`  | `["user","project","local"]`     |
+| `advanced.debug`                      | `debug`                      | `build-options.ts`  | false                            |
+| `advanced.debugFile`                  | `debugFile`                  | `build-options.ts`  | none                             |
+| `advanced.env`                        | `env`                        | `build-options.ts`  | `{...process.env, ...input.env}` |
 
 ### 4.2 `claude_code_reply.diskResumeConfig` 映射
 
@@ -134,13 +134,13 @@
 
 ### 4.3 非 Options 直传字段（服务端策略）
 
-| 字段 | 所属工具 | 语义 |
-| --- | --- | --- |
-| `action` | `claude_code_check` / `claude_code_session` | MCP 协议动作分支 |
-| `requestId` / `decision` / `interrupt` / `denyMessage` | `claude_code_check` | 权限请求裁决协议 |
-| `pollOptions` | `claude_code_check` | 返回裁剪与体积控制 |
-| `includeSensitive` | `claude_code_session` | 会话信息脱敏开关 |
-| `sessionInitTimeoutMs` | `claude_code` / `claude_code_reply` | init 等待策略 |
+| 字段                                                   | 所属工具                                    | 语义               |
+| ------------------------------------------------------ | ------------------------------------------- | ------------------ |
+| `action`                                               | `claude_code_check` / `claude_code_session` | MCP 协议动作分支   |
+| `requestId` / `decision` / `interrupt` / `denyMessage` | `claude_code_check`                         | 权限请求裁决协议   |
+| `pollOptions`                                          | `claude_code_check`                         | 返回裁剪与体积控制 |
+| `includeSensitive`                                     | `claude_code_session`                       | 会话信息脱敏开关   |
+| `sessionInitTimeoutMs`                                 | `claude_code` / `claude_code_reply`         | init 等待策略      |
 
 ## 5. SDK 消息到 MCP 事件映射矩阵
 
@@ -148,19 +148,24 @@
 
 ### 5.1 消息映射（`query-consumer.ts`）
 
-| SDK Message | MCP 事件类型 | 关键字段 | 备注 |
-| --- | --- | --- | --- |
-| `assistant` | `output` | `message`, `parent_tool_use_id`, `error` | 主要文本输出 |
-| `tool_use_summary` | `progress` | `summary` | 工具执行摘要 |
-| `tool_progress` | `progress` | `tool_use_id`, `tool_name`, `elapsed_time_seconds` | 可在 minimal 过滤 |
-| `auth_status` | `progress` | `isAuthenticating`, `output`, `error` | 可在 minimal 过滤 |
-| `system/status` | `progress` | `status`, `permissionMode` | 系统状态 |
-| `system/task_started` | `progress` | `task_id`, `tool_use_id`, `description`, `task_type` | 子任务开始 |
-| `system/task_notification` | `progress` | `task_id`, `status`, `summary`, `output_file` | 子任务状态 |
-| `rate_limit` | `progress` | subtype 原字段 | 保留 |
-| `prompt_suggestion` | `progress` | subtype 原字段 | 需开启 promptSuggestions |
-| `result/success` | 顶层 `result` | turns/cost/usage/result | 终态成功 |
-| `result/error_*` | 顶层 `result` + `isError` | `errorSubtype` + 错误文本 | 终态失败 |
+| SDK Message                | MCP 事件类型              | 关键字段                                                                                   | 备注                            |
+| -------------------------- | ------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
+| `assistant`                | `output`                  | `message`, `parent_tool_use_id`, `error`                                                   | 主要文本输出                    |
+| `tool_use_summary`         | `progress`                | `summary`                                                                                  | 工具执行摘要                    |
+| `tool_progress`            | `progress`                | `tool_use_id`, `tool_name`, `parent_tool_use_id`, `task_id`, `elapsed_time_seconds`        | 可在 minimal 过滤               |
+| `auth_status`              | `progress`                | `isAuthenticating`, `output`, `error`                                                      | 可在 minimal 过滤               |
+| `system/status`            | `progress`                | `status`, `permissionMode`                                                                 | 系统状态                        |
+| `system/hook_started`      | `progress`                | `hook_id`, `hook_name`, `hook_event`                                                       | hook 开始                       |
+| `system/hook_progress`     | `progress`                | `hook_id`, `hook_name`, `hook_event`, `stdout`, `stderr`, `output`                         | hook 进度（可在 minimal 过滤）  |
+| `system/hook_response`     | `progress`                | `hook_id`, `hook_name`, `hook_event`, `outcome`, `exit_code`, `stdout`, `stderr`, `output` | hook 终态结果                   |
+| `system/files_persisted`   | `progress`                | `files`, `failed`, `processed_at`                                                          | 文件持久化结果                  |
+| `system/task_started`      | `progress`                | `task_id`, `tool_use_id`, `description`, `task_type`                                       | 子任务开始                      |
+| `system/task_progress`     | `progress`                | `task_id`, `tool_use_id`, `description`, `usage`, `last_tool_name`                         | 子任务进度（可在 minimal 过滤） |
+| `system/task_notification` | `progress`                | `task_id`, `tool_use_id`, `status`, `summary`, `output_file`, `usage?`                     | 子任务状态                      |
+| `rate_limit`               | `progress`                | subtype 原字段                                                                             | 保留                            |
+| `prompt_suggestion`        | `progress`                | subtype 原字段                                                                             | 需开启 promptSuggestions        |
+| `result/success`           | 顶层 `result`             | turns/cost/usage/result                                                                    | 终态成功                        |
+| `result/error_*`           | 顶层 `result` + `isError` | `errorSubtype` + 错误文本                                                                  | 终态失败                        |
 
 ### 5.2 `responseMode` 与 `pollOptions` 裁剪语义
 
@@ -276,14 +281,14 @@ running <-> waiting_permission -> idle | error | cancelled
 
 ## 9. 测试矩阵（接口变更相关）
 
-| 变更类型 | 最低测试覆盖 |
-| --- | --- |
-| 参数 schema 变化 | `tests/server.test.ts`, `tests/tools.test.ts` |
-| Options 映射变化 | `tests/build-options.test.ts`, 相关 tool tests |
-| 消息映射变化 | `tests/query-consumer.test.ts`, `tests/claude-code-check.test.ts` |
-| 权限生命周期变化 | `tests/session-manager.test.ts`, `tests/permission-updated-input.test.ts` |
-| resume token / 恢复流程变化 | `tests/resume-token.test.ts`, `tests/claude-code-reply.test.ts` |
-| tool discovery 变化 | `tests/tool-discovery.test.ts`, `tests/resources.test.ts` |
+| 变更类型                    | 最低测试覆盖                                                              |
+| --------------------------- | ------------------------------------------------------------------------- |
+| 参数 schema 变化            | `tests/server.test.ts`, `tests/tools.test.ts`                             |
+| Options 映射变化            | `tests/build-options.test.ts`, 相关 tool tests                            |
+| 消息映射变化                | `tests/query-consumer.test.ts`, `tests/claude-code-check.test.ts`         |
+| 权限生命周期变化            | `tests/session-manager.test.ts`, `tests/permission-updated-input.test.ts` |
+| resume token / 恢复流程变化 | `tests/resume-token.test.ts`, `tests/claude-code-reply.test.ts`           |
+| tool discovery 变化         | `tests/tool-discovery.test.ts`, `tests/resources.test.ts`                 |
 
 ## 10. API 语义与兼容策略
 

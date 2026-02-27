@@ -4,18 +4,18 @@ This repository is a TypeScript (ESM) MCP server wrapping Claude Agent SDK / Cla
 Package: `@leo000001/claude-code-mcp`.
 Assumption: MCP server and client run on the same machine (same platform), via stdio.
 
-> Last Updated: 2026-02-21
+> Last Updated: 2026-02-27
 
 ## Document Boundary (Must Read)
 
 This repo intentionally separates **execution rules** from **design details**:
 
-| Topic | Primary Doc |
-| --- | --- |
-| How to execute work, upgrade flow, required checks | `AGENTS.md` |
+| Topic                                                            | Primary Doc      |
+| ---------------------------------------------------------------- | ---------------- |
+| How to execute work, upgrade flow, required checks               | `AGENTS.md`      |
 | Architecture internals, field/message mapping, lifecycle details | `docs/DESIGN.md` |
-| End-user usage guide | `README.md` |
-| Release history | `CHANGELOG.md` |
+| End-user usage guide                                             | `README.md`      |
+| Release history                                                  | `CHANGELOG.md`   |
 
 Non-negotiable dedupe rule:
 
@@ -63,6 +63,100 @@ When dependency interfaces change (`@anthropic-ai/claude-agent-sdk`, `@modelcont
    - `npm run lint`
    - `npm test`
    - `npm run format:check`
+
+## Full Maintenance & Dependency Update Workflow
+
+This section is the authoritative end-to-end workflow for updating dependencies and keeping code + docs + tests aligned.
+
+### 0) Goals and Constraints
+
+- **Goal:** keep MCP tool contracts stable while staying current with the upstream SDKs.
+- **Rule:** SDK type definitions are authoritative (`sdk.d.ts`), changelogs are hints.
+- **Rule:** avoid duplicating long tables here; update detailed matrices only in `docs/DESIGN.md`.
+- **Rule:** do not ship stale lockfiles when `package.json` uses `^` ranges (users will resolve newer versions).
+- **Hygiene:** any temporary audit artifacts must be deleted before finishing.
+
+### 1) Detect Updates (Local, Reproducible)
+
+Run:
+
+- `npm outdated` (top-level)
+- `npm outdated --all` (transitive signal only; don't chase majors unless needed)
+
+Record:
+
+- current / wanted / latest for `@anthropic-ai/claude-agent-sdk` and `@modelcontextprotocol/sdk`
+- whether `zod` stays compatible (SDK peers `zod@^4`)
+
+### 2) Establish the Interface Baseline (Authoritative)
+
+Always treat the installed type surface as the source of truth:
+
+- Claude Agent SDK: `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`
+- MCP SDK: `node_modules/@modelcontextprotocol/sdk/dist/**` (only the surfaces we import)
+
+If you need to compare two versions without changing the workspace yet:
+
+1. Create a temporary directory under `tmp/` (example: `tmp/deps-audit/`).
+2. Download tarballs via `npm pack` (example):
+   - `npm pack @anthropic-ai/claude-agent-sdk@<old>`
+   - `npm pack @anthropic-ai/claude-agent-sdk@<new>`
+3. Extract and diff `package/sdk.d.ts`.
+4. Delete `tmp/deps-audit/` after the report is done.
+
+### 3) Impact Analysis Checklist (What Can Break)
+
+For each upgraded runtime dependency:
+
+- **Options surface:** compare SDK `Options` fields to `src/utils/build-options.ts` (`OptionSource` + copy logic).
+- **Message surface:** compare SDK `SDKMessage` union (new `type`/`subtype`) to `src/tools/query-consumer.ts` mapping.
+- **Tool discovery:** if `system/init.tools` adds new tool names, decide whether to add descriptions to `src/tools/tool-discovery.ts`.
+- **Policy filters:** if new progress events appear, confirm `claude_code_check` filtering rules in `src/tools/claude-code-check.ts`.
+- **Docs:** update `docs/DESIGN.md` matrices (Section 4 and 5) and ensure `README.md` matches behavior.
+
+### 4) Apply Updates (Code + Docs + Tests)
+
+#### 4.1 Update dependency ranges
+
+- Edit `package.json` versions.
+
+#### 4.2 Refresh the lockfile
+
+- Run `npm install` to update `package-lock.json`.
+
+#### 4.3 Close the code loop
+
+- If SDK adds a new stream message subtype (e.g. `system/task_progress`), add mapping in `src/tools/query-consumer.ts`.
+- If new progress events should be suppressed in minimal polling, update filtering logic in `src/tools/claude-code-check.ts`.
+
+#### 4.4 Close the documentation loop
+
+- Update `README.md` for user-visible behavior changes (polling semantics, event types, defaults).
+- Update `docs/DESIGN.md` for detailed mapping truth.
+- Update `NOTICE.md` direct dependency versions when they change.
+- Update `CHANGELOG.md` under `Unreleased` with concise bullets.
+
+#### 4.5 Close the test loop
+
+- Add/adjust Vitest tests whenever:
+  - a new SDK message is mapped/filtered
+  - an Option mapping changes
+  - a tool contract/schema changes
+
+### 5) Verify (Definition of Done)
+
+Run (in this order):
+
+1. `npm run typecheck`
+2. `npm run lint`
+3. `npm test`
+4. `npm run format:check`
+
+Also verify:
+
+- `docs/DESIGN.md#sdk-interface-baseline` + `docs/DESIGN.md#upgrade-methodology` still reflect reality.
+- No new long mapping tables were added to `AGENTS.md`.
+- `tmp/` contains no leftover audit artifacts.
 
 ## Documentation Update Pass (One Iteration)
 
