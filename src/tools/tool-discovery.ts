@@ -57,6 +57,23 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
     description: "Ask user a question",
     category: "interaction",
   },
+  SubscribeMcpResource: {
+    description: "Subscribe to an MCP resource stream",
+    category: "mcp",
+    notes: ["Requires an MCP server that supports resource subscriptions."],
+  },
+  UnsubscribeMcpResource: {
+    description: "Unsubscribe from an MCP resource stream",
+    category: "mcp",
+  },
+  SubscribePolling: {
+    description: "Subscribe to periodic polling",
+    category: "mcp",
+  },
+  UnsubscribePolling: {
+    description: "Unsubscribe from periodic polling",
+    category: "mcp",
+  },
   TeamDelete: {
     description: "Delete team (may need shutdown_approved first)",
     category: "agent",

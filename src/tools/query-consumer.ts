@@ -63,7 +63,10 @@ export function classifyError(err: unknown, abortSignal: AbortSignal): ErrorClas
   return "fatal";
 }
 
-type QueryLike = AsyncIterable<SDKMessage> & { close?: () => void; interrupt?: () => void };
+type QueryLike = AsyncIterable<SDKMessage> & {
+  close?: () => void;
+  interrupt?: () => void | Promise<void>;
+};
 
 export type ConsumeQueryParams =
   | {
@@ -205,7 +208,9 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
         type: "tool_progress",
         tool_use_id: msg.tool_use_id,
         tool_name: msg.tool_name,
+        parent_tool_use_id: msg.parent_tool_use_id,
         elapsed_time_seconds: msg.elapsed_time_seconds,
+        task_id: msg.task_id,
       },
     };
   }
@@ -229,15 +234,58 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
     };
   }
 
-  if (msg.type === "system" && msg.subtype === "task_notification") {
+  if (msg.type === "system" && msg.subtype === "hook_started") {
     return {
       type: "progress",
       data: {
-        type: "task_notification",
-        task_id: msg.task_id,
-        status: msg.status,
-        summary: msg.summary,
-        output_file: msg.output_file,
+        type: "hook_started",
+        hook_id: msg.hook_id,
+        hook_name: msg.hook_name,
+        hook_event: msg.hook_event,
+      },
+    };
+  }
+
+  if (msg.type === "system" && msg.subtype === "hook_progress") {
+    return {
+      type: "progress",
+      data: {
+        type: "hook_progress",
+        hook_id: msg.hook_id,
+        hook_name: msg.hook_name,
+        hook_event: msg.hook_event,
+        stdout: msg.stdout,
+        stderr: msg.stderr,
+        output: msg.output,
+      },
+    };
+  }
+
+  if (msg.type === "system" && msg.subtype === "hook_response") {
+    return {
+      type: "progress",
+      data: {
+        type: "hook_response",
+        hook_id: msg.hook_id,
+        hook_name: msg.hook_name,
+        hook_event: msg.hook_event,
+        output: msg.output,
+        stdout: msg.stdout,
+        stderr: msg.stderr,
+        exit_code: msg.exit_code,
+        outcome: msg.outcome,
+      },
+    };
+  }
+
+  if (msg.type === "system" && msg.subtype === "files_persisted") {
+    return {
+      type: "progress",
+      data: {
+        type: "files_persisted",
+        files: msg.files,
+        failed: msg.failed,
+        processed_at: msg.processed_at,
       },
     };
   }
@@ -255,9 +303,40 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
     };
   }
 
+  if (msg.type === "system" && msg.subtype === "task_progress") {
+    return {
+      type: "progress",
+      data: {
+        type: "task_progress",
+        task_id: msg.task_id,
+        tool_use_id: msg.tool_use_id,
+        description: msg.description,
+        usage: msg.usage,
+        last_tool_name: msg.last_tool_name,
+      },
+    };
+  }
+
+  if (msg.type === "system" && msg.subtype === "task_notification") {
+    return {
+      type: "progress",
+      data: {
+        type: "task_notification",
+        task_id: msg.task_id,
+        tool_use_id: msg.tool_use_id,
+        status: msg.status,
+        summary: msg.summary,
+        output_file: msg.output_file,
+        usage: msg.usage,
+      },
+    };
+  }
+
   if (msg.type === "rate_limit" || msg.type === "prompt_suggestion") {
     const rest = { ...(msg as unknown as Record<string, unknown>) };
     delete rest.type;
+    delete rest.uuid;
+    delete rest.session_id;
     return {
       type: "progress",
       data: { type: msg.type, ...rest },
@@ -459,7 +538,13 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
   };
 
   const interrupt = (): void => {
-    activeQuery.interrupt?.();
+    try {
+      void Promise.resolve(activeQuery.interrupt?.()).catch(() => {
+        // Best-effort: interrupt failures should not crash the server.
+      });
+    } catch {
+      // ignore interrupt errors
+    }
   };
 
   const done = (async (): Promise<void> => {

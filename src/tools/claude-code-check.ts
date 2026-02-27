@@ -419,13 +419,18 @@ function buildResult(
       filtered = filtered.filter((e) => e.type !== "result" && e.type !== "error");
     }
 
-    // In minimal mode, filter out noisy progress events (tool_progress, auth_status).
+    // In minimal mode, filter out noisy progress events (tool_progress, auth_status, task_progress, hook_progress).
     if (!includeProgressEvents) {
       filtered = filtered.filter((e) => {
         if (e.type !== "progress") return true;
         const d = e.data as Record<string, unknown> | null;
         const progressType = d?.type;
-        return progressType !== "tool_progress" && progressType !== "auth_status";
+        return (
+          progressType !== "tool_progress" &&
+          progressType !== "auth_status" &&
+          progressType !== "task_progress" &&
+          progressType !== "hook_progress"
+        );
       });
     }
 

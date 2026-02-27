@@ -1011,8 +1011,24 @@ export class SessionManager {
       return isActivePermissionRequest ? !isActivePermissionRequest(requestId) : true;
     };
 
+    const isNoisyProgressEvent = (event: SessionEvent): boolean => {
+      if (event.type !== "progress") return false;
+      const t = (event.data as { type?: unknown } | null)?.type;
+      return (
+        t === "tool_progress" ||
+        t === "auth_status" ||
+        t === "task_progress" ||
+        t === "hook_progress"
+      );
+    };
+
     // Soft limit: prefer dropping unpinned events first.
     let toDropForSoftLimit = remaining - buffer.maxSize;
+    if (toDropForSoftLimit > 0) {
+      // Prefer dropping noisy progress events before dropping other unpinned events,
+      // so caller-visible output is less likely to be evicted under high-frequency streams.
+      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, isNoisyProgressEvent);
+    }
     if (toDropForSoftLimit > 0) {
       toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, (event) => !event.pinned);
     }
