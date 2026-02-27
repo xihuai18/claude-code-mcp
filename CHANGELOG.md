@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+- (TBD)
+
+## 2.5.0 (2026-02-27)
+
 ### Security
 
 - Validate `resumeToken` using timing-safe comparison (`timingSafeEqual` for fixed-length HMAC tokens) to reduce timing side-channel risk.
+- Refresh transitive dependencies via `npm audit fix` (0 known vulnerabilities after update).
 
 ### Improvements
 
