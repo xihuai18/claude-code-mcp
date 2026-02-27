@@ -117,6 +117,461 @@ describe("consumeQuery", () => {
     manager.destroy();
   });
 
+  it("should map system/task_progress messages into progress events", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-task",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Read"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        yield {
+          type: "system",
+          subtype: "task_progress",
+          session_id: "sess-task",
+          uuid: "u-task-progress",
+          task_id: "task-1",
+          tool_use_id: "tu-task-1",
+          description: "Doing work",
+          usage: {
+            total_tokens: 123,
+            tool_uses: 4,
+            duration_ms: 567,
+          },
+          last_tool_name: "Bash",
+        };
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-task",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn
+    );
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+
+    const events = manager.readEvents("sess-task").events;
+    const taskProgress = events.filter((e) => {
+      if (e.type !== "progress") return false;
+      const d = e.data as { type?: unknown } | null;
+      return d?.type === "task_progress";
+    });
+
+    expect(taskProgress).toHaveLength(1);
+    expect((taskProgress[0]!.data as Record<string, unknown>).task_id).toBe("task-1");
+    expect((taskProgress[0]!.data as Record<string, unknown>).last_tool_name).toBe("Bash");
+    expect((taskProgress[0]!.data as Record<string, unknown>).usage).toEqual({
+      total_tokens: 123,
+      tool_uses: 4,
+      duration_ms: 567,
+    });
+
+    manager.destroy();
+  });
+
+  it("should map tool_progress with parent/tool/task correlation fields", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-tool-progress",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Bash"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        yield {
+          type: "tool_progress",
+          tool_use_id: "tu1",
+          tool_name: "Bash",
+          parent_tool_use_id: null,
+          elapsed_time_seconds: 1,
+          task_id: "task-1",
+          uuid: "u-tp",
+          session_id: "sess-tool-progress",
+        };
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-tool-progress",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn
+    );
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+
+    const events = manager.readEvents("sess-tool-progress").events;
+    const tp = events.find(
+      (e) =>
+        e.type === "progress" && (e.data as { type?: unknown } | null)?.type === "tool_progress"
+    );
+    expect(tp?.data).toMatchObject({
+      type: "tool_progress",
+      tool_use_id: "tu1",
+      tool_name: "Bash",
+      parent_tool_use_id: null,
+      elapsed_time_seconds: 1,
+      task_id: "task-1",
+    });
+
+    manager.destroy();
+  });
+
+  it("should include task_notification.usage when present", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-task-notify",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Task"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        yield {
+          type: "system",
+          subtype: "task_notification",
+          session_id: "sess-task-notify",
+          uuid: "u-task-notify",
+          task_id: "task-1",
+          tool_use_id: "tu-task-1",
+          status: "completed",
+          output_file: "out.txt",
+          summary: "done",
+          usage: { total_tokens: 10, tool_uses: 2, duration_ms: 3 },
+        };
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-task-notify",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn
+    );
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+
+    const events = manager.readEvents("sess-task-notify").events;
+    const tn = events.find(
+      (e) =>
+        e.type === "progress" && (e.data as { type?: unknown } | null)?.type === "task_notification"
+    );
+    expect((tn?.data as Record<string, unknown>)?.usage).toEqual({
+      total_tokens: 10,
+      tool_uses: 2,
+      duration_ms: 3,
+    });
+
+    manager.destroy();
+  });
+
+  it("should drop uuid/session_id for rate_limit progress events", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-rate-limit",
+          uuid: "u1",
+          cwd: "/tmp",
+          tools: ["Read"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+
+        yield {
+          type: "rate_limit",
+          uuid: "u-rate",
+          session_id: "sess-rate-limit",
+          reason: "test",
+        };
+
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u2",
+          session_id: "sess-rate-limit",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn
+    );
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    await handle.sdkSessionIdPromise;
+    await handle.done;
+
+    const events = manager.readEvents("sess-rate-limit").events;
+    const rl = events.find(
+      (e) => e.type === "progress" && (e.data as { type?: unknown } | null)?.type === "rate_limit"
+    );
+    expect(rl).toBeTruthy();
+    expect(rl?.data).toMatchObject({ type: "rate_limit", reason: "test" });
+    expect(Object.prototype.hasOwnProperty.call(rl?.data ?? {}, "uuid")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(rl?.data ?? {}, "session_id")).toBe(false);
+
+    manager.destroy();
+  });
+
+  it("should not crash when interrupt() returns a rejected promise", async () => {
+    const manager = new SessionManager();
+    const toolCache = new ToolDiscoveryCache();
+    const abortController = new AbortController();
+
+    const stream = (async function* () {
+      yield {
+        type: "system",
+        subtype: "init",
+        session_id: "sess-interrupt",
+        uuid: "u1",
+        cwd: "/tmp",
+        tools: ["Read"],
+        claude_code_version: "x",
+        model: "m",
+        permissionMode: "default",
+        apiKeySource: "env",
+        mcp_servers: [],
+        slash_commands: [],
+        output_style: "",
+        skills: [],
+        plugins: [],
+      };
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      yield {
+        type: "result",
+        subtype: "success",
+        result: "ok",
+        duration_ms: 1,
+        num_turns: 1,
+        total_cost_usd: 0,
+        is_error: false,
+        uuid: "u2",
+        session_id: "sess-interrupt",
+        duration_api_ms: 1,
+        stop_reason: null,
+        usage: {},
+        modelUsage: {},
+        permission_denials: [],
+      };
+    })();
+    (stream as unknown as { interrupt?: () => Promise<void> }).interrupt = async () => {
+      throw new Error("boom");
+    };
+
+    mockQuery.mockReturnValue(stream as unknown as QueryReturn);
+
+    const handle = consumeQuery({
+      mode: "start",
+      prompt: "test",
+      abortController,
+      options: { cwd: "/tmp" },
+      permissionRequestTimeoutMs: 60_000,
+      sessionInitTimeoutMs: 10_000,
+      sessionManager: manager,
+      toolCache,
+      onInit: (init) => {
+        manager.create({
+          sessionId: init.session_id,
+          cwd: init.cwd,
+          permissionMode: "default",
+          abortController,
+        });
+      },
+    });
+
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      await handle.sdkSessionIdPromise;
+      handle.interrupt();
+      await new Promise((r) => setTimeout(r, 0));
+      await handle.done;
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      manager.destroy();
+    }
+  });
+
   it("should cap pre-init message buffering", async () => {
     const manager = new SessionManager();
     const toolCache = new ToolDiscoveryCache();

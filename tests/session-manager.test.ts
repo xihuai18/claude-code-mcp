@@ -456,6 +456,31 @@ describe("SessionManager", () => {
       expect(res.cursorResetTo).toBeGreaterThan(1);
     });
 
+    it("should prefer evicting noisy progress events before output", () => {
+      const mgr = new SessionManager({ eventBufferMaxSize: 5, eventBufferHardMaxSize: 5 });
+      try {
+        mgr.create({ sessionId: "evict", cwd: "/tmp" });
+        mgr.pushEvent("evict", {
+          type: "output",
+          data: { msg: "keep" },
+          timestamp: new Date().toISOString(),
+        });
+        for (let i = 0; i < 10; i++) {
+          mgr.pushEvent("evict", {
+            type: "progress",
+            data: { type: "task_progress", task_id: `t${i}`, usage: { total_tokens: i } },
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        const res = mgr.readEvents("evict");
+        expect(res.events.length).toBeLessThanOrEqual(5);
+        expect(res.events.some((e) => e.type === "output")).toBe(true);
+      } finally {
+        mgr.destroy();
+      }
+    });
+
     it("should track pending permission and resolve via finishRequest", () => {
       const ac = new AbortController();
       manager.create({ sessionId: "perm", cwd: "/tmp", abortController: ac });

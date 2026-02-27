@@ -142,6 +142,48 @@ describe("executeClaudeCodeCheck", () => {
     });
   });
 
+  it("filters task_progress events in minimal mode unless includeProgressEvents=true", () => {
+    manager.create({ sessionId: "s1", cwd: "/tmp" });
+    manager.update("s1", { status: "running" });
+
+    manager.pushEvent("s1", {
+      type: "progress",
+      data: {
+        type: "task_progress",
+        task_id: "t1",
+        tool_use_id: "tu1",
+        description: "Working",
+        usage: { total_tokens: 1, tool_uses: 1, duration_ms: 1 },
+        last_tool_name: "Read",
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    const minimal = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s1", cursor: 0 },
+      manager,
+      toolCache
+    ) as CheckResult;
+    expect("isError" in minimal).toBe(false);
+    expect(minimal.events).toHaveLength(0);
+    // Even when events are filtered, the cursor still advances past them.
+    expect(minimal.nextCursor).toBe(1);
+
+    const fullProgress = executeClaudeCodeCheck(
+      {
+        action: "poll",
+        sessionId: "s1",
+        cursor: 0,
+        pollOptions: { includeProgressEvents: true },
+      },
+      manager,
+      toolCache
+    ) as CheckResult;
+    expect(fullProgress.nextCursor).toBe(1);
+    expect(fullProgress.events).toHaveLength(1);
+    expect((fullProgress.events[0]!.data as { type?: unknown } | null)?.type).toBe("task_progress");
+  });
+
   it("supports decision=allow_for_session, preserves updates, and promotes tool to session allowlist", () => {
     manager.create({ sessionId: "s1", cwd: "/tmp" });
     const originalPath = process.platform === "win32" ? "C:\\repo\\a.txt" : "/tmp/a.txt";
