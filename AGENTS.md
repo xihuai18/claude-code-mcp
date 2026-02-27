@@ -151,6 +151,7 @@ Run (in this order):
 2. `npm run lint`
 3. `npm test`
 4. `npm run format:check`
+5. `npm audit` (optional; if you apply `npm audit fix`, re-run 1-4 and commit the lockfile change)
 
 Also verify:
 
