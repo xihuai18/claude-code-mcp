@@ -142,6 +142,7 @@ describe("Resources", () => {
       expect(quickstartText).toContain("quickstart");
       expect(quickstartText).toContain("claude_code_check(action='poll')");
       expect(quickstartText).toContain("respond_permission");
+      expect(quickstartText).toContain("allow_for_session");
       expect(quickstartText).toContain("`respond_user_input` is not supported");
 
       const errorsRes = await client.readResource({ uri: "claude-code-mcp:///errors" });

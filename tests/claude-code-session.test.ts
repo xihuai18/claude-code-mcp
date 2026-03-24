@@ -62,14 +62,20 @@ describe("claude_code_session tool", () => {
         cwd: "/tmp",
         systemPrompt: "secret",
         additionalDirectories: ["/private"],
+        toolConfig: { askUserQuestion: { previewFormat: "html" } },
+        settings: { model: "claude-sonnet-4-6" },
       });
       const result = executeClaudeCodeSession({ action: "get", sessionId: "s-sensitive" }, manager);
       expect(result.sessions).toHaveLength(1);
       expect(result.sessions[0]).not.toHaveProperty("cwd");
       expect(result.sessions[0]).not.toHaveProperty("systemPrompt");
       expect(result.sessions[0]).not.toHaveProperty("additionalDirectories");
+      expect(result.sessions[0]).not.toHaveProperty("toolConfig");
+      expect(result.sessions[0]).not.toHaveProperty("settings");
       const redactions = result.sessions[0].redactions ?? [];
       expect(redactions.some((r) => r.field === "cwd")).toBe(true);
+      expect(redactions.some((r) => r.field === "toolConfig")).toBe(true);
+      expect(redactions.some((r) => r.field === "settings")).toBe(true);
     });
 
     it("should include sensitive fields when requested", () => {
@@ -78,6 +84,8 @@ describe("claude_code_session tool", () => {
         cwd: "/tmp",
         systemPrompt: "secret",
         additionalDirectories: ["/private"],
+        toolConfig: { askUserQuestion: { previewFormat: "html" } },
+        settings: { model: "claude-sonnet-4-6" },
       });
       const result = executeClaudeCodeSession(
         { action: "get", sessionId: "s-sensitive-yes", includeSensitive: true },
@@ -87,9 +95,13 @@ describe("claude_code_session tool", () => {
       expect(result.sessions[0]).toHaveProperty("cwd", "/tmp");
       expect(result.sessions[0]).toHaveProperty("systemPrompt", "secret");
       expect(result.sessions[0]).toHaveProperty("additionalDirectories");
+      expect(result.sessions[0]).toHaveProperty("toolConfig");
+      expect(result.sessions[0]).not.toHaveProperty("settings");
       const redactions = result.sessions[0].redactions ?? [];
       expect(redactions.some((r) => r.field === "cwd")).toBe(false);
       expect(redactions.some((r) => r.field === "env")).toBe(true);
+      expect(redactions.some((r) => r.field === "toolConfig")).toBe(false);
+      expect(redactions.some((r) => r.field === "settings")).toBe(true);
     });
 
     it("should not leak secrets even with includeSensitive", () => {

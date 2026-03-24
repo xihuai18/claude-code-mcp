@@ -98,12 +98,17 @@ function toPermissionResult(params: {
 
 function appendAllowForSessionUpdate(
   updates: Array<Record<string, unknown>> | undefined,
+  suggestions: PermissionRequestRecord["suggestions"],
   toolName: string | undefined
 ): Array<Record<string, unknown>> | undefined {
+  const merged = [...(updates ?? [])];
+  if (Array.isArray(suggestions) && suggestions.length > 0) {
+    return [...merged, ...suggestions];
+  }
   const normalizedToolName = toolName?.trim();
-  if (!normalizedToolName) return updates;
+  if (!normalizedToolName) return merged.length > 0 ? merged : undefined;
   return [
-    ...(updates ?? []),
+    ...merged,
     {
       type: "addRules",
       behavior: "allow",
@@ -419,7 +424,7 @@ function buildResult(
       filtered = filtered.filter((e) => e.type !== "result" && e.type !== "error");
     }
 
-    // In minimal mode, filter out noisy progress events (tool_progress, auth_status, task_progress, hook_progress).
+    // In minimal mode, filter out noisy progress events.
     if (!includeProgressEvents) {
       filtered = filtered.filter((e) => {
         if (e.type !== "progress") return true;
@@ -428,6 +433,7 @@ function buildResult(
         return (
           progressType !== "tool_progress" &&
           progressType !== "auth_status" &&
+          progressType !== "api_retry" &&
           progressType !== "task_progress" &&
           progressType !== "hook_progress"
         );
@@ -494,6 +500,8 @@ function buildResult(
               toolName: req.toolName,
               input: req.input,
               summary: req.summary,
+              title: req.title,
+              displayName: req.displayName,
               decisionReason: req.decisionReason,
               blockedPath: req.blockedPath,
               toolUseID: req.toolUseID,
@@ -630,6 +638,7 @@ export function executeClaudeCodeCheck(
     input.decision === "allow_for_session"
       ? appendAllowForSessionUpdate(
           input.permissionOptions?.updatedPermissions,
+          pendingRequest?.suggestions,
           pendingRequest?.toolName
         )
       : input.permissionOptions?.updatedPermissions;

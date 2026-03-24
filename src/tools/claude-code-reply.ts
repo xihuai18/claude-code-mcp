@@ -11,10 +11,12 @@ import type {
   McpServerConfig,
   OutputFormat,
   SandboxSettings,
+  Settings,
   SessionStartResult,
   SettingSource,
   SystemPrompt,
   ThinkingConfig,
+  ToolConfig,
   ToolsConfig,
 } from "../types.js";
 import { ErrorCode } from "../types.js";
@@ -57,9 +59,12 @@ export interface DiskResumeConfig {
   sandbox?: SandboxSettings;
   fallbackModel?: string;
   enableFileCheckpointing?: boolean;
+  toolConfig?: ToolConfig;
   includePartialMessages?: boolean;
   promptSuggestions?: boolean;
+  agentProgressSummaries?: boolean;
   strictMcpConfig?: boolean;
+  settings?: string | Settings;
   strictAllowedTools?: boolean;
   settingSources?: SettingSource[];
   debug?: boolean;

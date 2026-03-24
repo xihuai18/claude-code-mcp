@@ -191,12 +191,16 @@ export class SessionManager {
     sandbox?: SessionInfo["sandbox"];
     fallbackModel?: SessionInfo["fallbackModel"];
     enableFileCheckpointing?: SessionInfo["enableFileCheckpointing"];
+    toolConfig?: SessionInfo["toolConfig"];
     includePartialMessages?: SessionInfo["includePartialMessages"];
     promptSuggestions?: SessionInfo["promptSuggestions"];
+    agentProgressSummaries?: SessionInfo["agentProgressSummaries"];
     strictMcpConfig?: SessionInfo["strictMcpConfig"];
+    settings?: SessionInfo["settings"];
     settingSources?: SessionInfo["settingSources"];
     debug?: SessionInfo["debug"];
     debugFile?: SessionInfo["debugFile"];
+    fastModeState?: SessionInfo["fastModeState"];
     env?: SessionInfo["env"];
     abortController?: AbortController;
     queryInterrupt?: SessionInfo["queryInterrupt"];
@@ -240,12 +244,16 @@ export class SessionManager {
       sandbox: params.sandbox,
       fallbackModel: params.fallbackModel,
       enableFileCheckpointing: params.enableFileCheckpointing,
+      toolConfig: params.toolConfig,
       includePartialMessages: params.includePartialMessages,
       promptSuggestions: params.promptSuggestions,
+      agentProgressSummaries: params.agentProgressSummaries,
       strictMcpConfig: params.strictMcpConfig,
+      settings: params.settings,
       settingSources: params.settingSources,
       debug: params.debug,
       debugFile: params.debugFile,
+      fastModeState: params.fastModeState,
       env: params.env,
       abortController: params.abortController,
       queryInterrupt: params.queryInterrupt,
@@ -893,6 +901,7 @@ export class SessionManager {
       systemPrompt: info.systemPrompt,
       agents: info.agents,
       additionalDirectories: info.additionalDirectories,
+      toolConfig: info.toolConfig,
     };
   }
 
@@ -907,8 +916,10 @@ export class SessionManager {
       agents: _agents,
       additionalDirectories: _additionalDirectories,
       pathToClaudeCodeExecutable: _pathToClaudeCodeExecutable,
+      toolConfig: _toolConfig,
       mcpServers: _mcpServers,
       sandbox: _sandbox,
+      settings: _settings,
       settingSources: _settingSources,
       debugFile: _debugFile,
       env: _env,
@@ -1017,6 +1028,7 @@ export class SessionManager {
       return (
         t === "tool_progress" ||
         t === "auth_status" ||
+        t === "api_retry" ||
         t === "task_progress" ||
         t === "hook_progress"
       );

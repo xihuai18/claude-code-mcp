@@ -12,7 +12,6 @@ import { buildInternalToolsDescription, ToolDiscoveryCache } from "./tools/tool-
 import { registerResources } from "./resources/register-resources.js";
 import {
   EFFORT_LEVELS,
-  AGENT_MODELS,
   CHECK_ACTIONS,
   CHECK_RESPONSE_MODES,
   SESSION_ACTIONS,
@@ -78,7 +77,7 @@ export function createServerContext(serverCwd: string): {
     prompt: z.string(),
     tools: z.array(z.string()).optional().describe("Default: inherit"),
     disallowedTools: z.array(z.string()).optional().describe("Default: none"),
-    model: z.enum(AGENT_MODELS).optional().describe("Default: inherit"),
+    model: z.string().optional().describe("Default: inherit"),
     maxTurns: z.number().int().positive().optional().describe("Default: none"),
     mcpServers: z
       .array(z.union([z.string(), z.record(z.string(), z.unknown())]))
@@ -139,9 +138,15 @@ export function createServerContext(serverCwd: string): {
     sandbox: z.record(z.string(), z.unknown()).optional().describe("Default: none"),
     fallbackModel: z.string().optional().describe("Default: none"),
     enableFileCheckpointing: z.boolean().optional().describe("Default: false"),
+    toolConfig: z.record(z.string(), z.unknown()).optional().describe("Default: none"),
     includePartialMessages: z.boolean().optional().describe("Default: false"),
     promptSuggestions: z.boolean().optional().describe("Default: false"),
+    agentProgressSummaries: z.boolean().optional().describe("Default: false"),
     strictMcpConfig: z.boolean().optional().describe("Default: false"),
+    settings: z
+      .union([z.string(), z.record(z.string(), z.unknown())])
+      .optional()
+      .describe("Default: none"),
     settingSources: z
       .array(z.enum(["user", "project", "local"]))
       .optional()

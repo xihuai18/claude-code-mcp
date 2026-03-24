@@ -144,6 +144,7 @@ function sdkResultToAgentResult(result: SDKResultMessage): AgentResult {
     sessionTotalTurns: typeof sessionTotalTurns === "number" ? sessionTotalTurns : undefined,
     sessionTotalCostUsd: typeof sessionTotalCostUsd === "number" ? sessionTotalCostUsd : undefined,
     stopReason: result.stop_reason,
+    fastModeState: result.fast_mode_state,
     usage: result.usage,
     modelUsage: result.modelUsage,
     permissionDenials: result.permission_denials,
@@ -197,8 +198,29 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
     };
   }
 
+  if (msg.type === "stream_event") {
+    return {
+      type: "output",
+      data: {
+        type: "stream_event",
+        event: msg.event,
+        parent_tool_use_id: msg.parent_tool_use_id,
+      },
+    };
+  }
+
   if (msg.type === "tool_use_summary") {
     return { type: "progress", data: { type: "tool_use_summary", summary: msg.summary } };
+  }
+
+  if (msg.type === "system" && msg.subtype === "local_command_output") {
+    return {
+      type: "output",
+      data: {
+        type: "local_command_output",
+        content: msg.content,
+      },
+    };
   }
 
   if (msg.type === "tool_progress") {
@@ -231,6 +253,16 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
     return {
       type: "progress",
       data: { type: "status", status: msg.status, permissionMode: msg.permissionMode },
+    };
+  }
+
+  if (msg.type === "system" && msg.subtype === "compact_boundary") {
+    return {
+      type: "progress",
+      data: {
+        type: "compact_boundary",
+        compact_metadata: msg.compact_metadata,
+      },
     };
   }
 
@@ -290,6 +322,20 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
     };
   }
 
+  if (msg.type === "system" && msg.subtype === "api_retry") {
+    return {
+      type: "progress",
+      data: {
+        type: "api_retry",
+        attempt: msg.attempt,
+        max_retries: msg.max_retries,
+        retry_delay_ms: msg.retry_delay_ms,
+        error_status: msg.error_status,
+        error: msg.error,
+      },
+    };
+  }
+
   if (msg.type === "system" && msg.subtype === "task_started") {
     return {
       type: "progress",
@@ -299,6 +345,7 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
         tool_use_id: msg.tool_use_id,
         description: msg.description,
         task_type: msg.task_type,
+        prompt: msg.prompt,
       },
     };
   }
@@ -313,6 +360,7 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
         description: msg.description,
         usage: msg.usage,
         last_tool_name: msg.last_tool_name,
+        summary: msg.summary,
       },
     };
   }
@@ -332,7 +380,18 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
     };
   }
 
-  if (msg.type === "rate_limit" || msg.type === "prompt_suggestion") {
+  if (msg.type === "system" && msg.subtype === "elicitation_complete") {
+    return {
+      type: "progress",
+      data: {
+        type: "elicitation_complete",
+        mcp_server_name: msg.mcp_server_name,
+        elicitation_id: msg.elicitation_id,
+      },
+    };
+  }
+
+  if (msg.type === "rate_limit_event" || msg.type === "prompt_suggestion") {
     const rest = { ...(msg as unknown as Record<string, unknown>) };
     delete rest.type;
     delete rest.uuid;
@@ -452,8 +511,10 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
       requestId,
       toolName,
       input: normalizedInput,
-      summary: summarizePermission(toolName, normalizedInput),
-      description: describeTool(toolName, params.toolCache),
+      summary: options.title ?? summarizePermission(toolName, normalizedInput),
+      title: options.title,
+      displayName: options.displayName,
+      description: options.description ?? describeTool(toolName, params.toolCache),
       decisionReason: options.decisionReason,
       blockedPath: options.blockedPath,
       toolUseID: options.toolUseID,
@@ -574,6 +635,11 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
             params.toolCache?.updateFromInit(message.tools);
             params.onInit?.(message);
             params.sessionManager.setInitTools(message.session_id, message.tools);
+            params.sessionManager.update(message.session_id, {
+              model: message.model,
+              permissionMode: message.permissionMode,
+              fastModeState: message.fast_mode_state,
+            });
 
             activeSessionId = message.session_id;
             if (!sessionIdResolved && shouldWaitForInit) {
@@ -655,6 +721,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
                 status: agentResult.isError ? "error" : "idle",
                 totalTurns: sessionTotalTurns,
                 totalCostUsd: sessionTotalCostUsd,
+                fastModeState: agentResult.fastModeState,
                 abortController: undefined,
                 queryInterrupt: undefined,
               });
@@ -662,6 +729,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
               params.sessionManager.update(sessionId, {
                 totalTurns: sessionTotalTurns,
                 totalCostUsd: sessionTotalCostUsd,
+                fastModeState: agentResult.fastModeState,
                 abortController: undefined,
                 queryInterrupt: undefined,
               });

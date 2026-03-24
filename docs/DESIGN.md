@@ -100,14 +100,14 @@
 | `disallowedTools`                     | `disallowedTools`            | `build-options.ts`  | none                             |
 | `maxTurns`                            | `maxTurns`                   | `build-options.ts`  | SDK                              |
 | `model`                               | `model`                      | `build-options.ts`  | SDK                              |
+| `effort`                              | `effort`                     | `build-options.ts`  | SDK                              |
+| `thinking`                            | `thinking`                   | `build-options.ts`  | SDK                              |
 | `systemPrompt`                        | `systemPrompt`               | `build-options.ts`  | SDK                              |
 | `permissionRequestTimeoutMs`          | (server policy)              | `query-consumer.ts` | 60000，clamp 到 300000           |
 | `advanced.tools`                      | `tools`                      | `build-options.ts`  | SDK                              |
 | `advanced.agents`                     | `agents`                     | `build-options.ts`  | SDK                              |
 | `advanced.agent`                      | `agent`                      | `build-options.ts`  | SDK                              |
 | `advanced.maxBudgetUsd`               | `maxBudgetUsd`               | `build-options.ts`  | SDK                              |
-| `advanced.effort`                     | `effort`                     | `build-options.ts`  | SDK                              |
-| `advanced.thinking`                   | `thinking`                   | `build-options.ts`  | SDK                              |
 | `advanced.betas`                      | `betas`                      | `build-options.ts`  | SDK                              |
 | `advanced.additionalDirectories`      | `additionalDirectories`      | `build-options.ts`  | SDK                              |
 | `advanced.outputFormat`               | `outputFormat`               | `build-options.ts`  | SDK                              |
@@ -116,9 +116,12 @@
 | `advanced.sandbox`                    | `sandbox`                    | `build-options.ts`  | SDK                              |
 | `advanced.fallbackModel`              | `fallbackModel`              | `build-options.ts`  | SDK                              |
 | `advanced.enableFileCheckpointing`    | `enableFileCheckpointing`    | `build-options.ts`  | SDK                              |
+| `advanced.toolConfig`                 | `toolConfig`                 | `build-options.ts`  | SDK                              |
 | `advanced.includePartialMessages`     | `includePartialMessages`     | `build-options.ts`  | SDK                              |
 | `advanced.promptSuggestions`          | `promptSuggestions`          | `build-options.ts`  | false                            |
+| `advanced.agentProgressSummaries`     | `agentProgressSummaries`     | `build-options.ts`  | false                            |
 | `advanced.strictMcpConfig`            | `strictMcpConfig`            | `build-options.ts`  | SDK                              |
+| `advanced.settings`                   | `settings`                   | `build-options.ts`  | SDK                              |
 | `advanced.settingSources`             | `settingSources`             | `build-options.ts`  | `["user","project","local"]`     |
 | `advanced.debug`                      | `debug`                      | `build-options.ts`  | false                            |
 | `advanced.debugFile`                  | `debugFile`                  | `build-options.ts`  | none                             |
@@ -148,24 +151,29 @@
 
 ### 5.1 消息映射（`query-consumer.ts`）
 
-| SDK Message                | MCP 事件类型              | 关键字段                                                                                   | 备注                            |
-| -------------------------- | ------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
-| `assistant`                | `output`                  | `message`, `parent_tool_use_id`, `error`                                                   | 主要文本输出                    |
-| `tool_use_summary`         | `progress`                | `summary`                                                                                  | 工具执行摘要                    |
-| `tool_progress`            | `progress`                | `tool_use_id`, `tool_name`, `parent_tool_use_id`, `task_id`, `elapsed_time_seconds`        | 可在 minimal 过滤               |
-| `auth_status`              | `progress`                | `isAuthenticating`, `output`, `error`                                                      | 可在 minimal 过滤               |
-| `system/status`            | `progress`                | `status`, `permissionMode`                                                                 | 系统状态                        |
-| `system/hook_started`      | `progress`                | `hook_id`, `hook_name`, `hook_event`                                                       | hook 开始                       |
-| `system/hook_progress`     | `progress`                | `hook_id`, `hook_name`, `hook_event`, `stdout`, `stderr`, `output`                         | hook 进度（可在 minimal 过滤）  |
-| `system/hook_response`     | `progress`                | `hook_id`, `hook_name`, `hook_event`, `outcome`, `exit_code`, `stdout`, `stderr`, `output` | hook 终态结果                   |
-| `system/files_persisted`   | `progress`                | `files`, `failed`, `processed_at`                                                          | 文件持久化结果                  |
-| `system/task_started`      | `progress`                | `task_id`, `tool_use_id`, `description`, `task_type`                                       | 子任务开始                      |
-| `system/task_progress`     | `progress`                | `task_id`, `tool_use_id`, `description`, `usage`, `last_tool_name`                         | 子任务进度（可在 minimal 过滤） |
-| `system/task_notification` | `progress`                | `task_id`, `tool_use_id`, `status`, `summary`, `output_file`, `usage?`                     | 子任务状态                      |
-| `rate_limit`               | `progress`                | subtype 原字段                                                                             | 保留                            |
-| `prompt_suggestion`        | `progress`                | subtype 原字段                                                                             | 需开启 promptSuggestions        |
-| `result/success`           | 顶层 `result`             | turns/cost/usage/result                                                                    | 终态成功                        |
-| `result/error_*`           | 顶层 `result` + `isError` | `errorSubtype` + 错误文本                                                                  | 终态失败                        |
+| SDK Message                   | MCP 事件类型              | 关键字段                                                                                   | 备注                                      |
+| ----------------------------- | ------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `assistant`                   | `output`                  | `message`, `parent_tool_use_id`, `error`                                                   | 主要文本输出                              |
+| `stream_event`                | `output`                  | `event`, `parent_tool_use_id`                                                              | 仅在 `includePartialMessages=true` 时出现 |
+| `system/local_command_output` | `output`                  | `content`                                                                                  | 本地 slash command 输出                   |
+| `tool_use_summary`            | `progress`                | `summary`                                                                                  | 工具执行摘要                              |
+| `tool_progress`               | `progress`                | `tool_use_id`, `tool_name`, `parent_tool_use_id`, `task_id`, `elapsed_time_seconds`        | 可在 minimal 过滤                         |
+| `auth_status`                 | `progress`                | `isAuthenticating`, `output`, `error`                                                      | 可在 minimal 过滤                         |
+| `system/status`               | `progress`                | `status`, `permissionMode`                                                                 | 系统状态                                  |
+| `system/compact_boundary`     | `progress`                | `compact_metadata`                                                                         | 会话压缩边界                              |
+| `system/hook_started`         | `progress`                | `hook_id`, `hook_name`, `hook_event`                                                       | hook 开始                                 |
+| `system/hook_progress`        | `progress`                | `hook_id`, `hook_name`, `hook_event`, `stdout`, `stderr`, `output`                         | hook 进度（可在 minimal 过滤）            |
+| `system/hook_response`        | `progress`                | `hook_id`, `hook_name`, `hook_event`, `outcome`, `exit_code`, `stdout`, `stderr`, `output` | hook 终态结果                             |
+| `system/files_persisted`      | `progress`                | `files`, `failed`, `processed_at`                                                          | 文件持久化结果                            |
+| `system/api_retry`            | `progress`                | `attempt`, `max_retries`, `retry_delay_ms`, `error_status`, `error`                        | API 重试（可在 minimal 过滤）             |
+| `system/task_started`         | `progress`                | `task_id`, `tool_use_id`, `description`, `task_type`, `prompt?`                            | 子任务开始                                |
+| `system/task_progress`        | `progress`                | `task_id`, `tool_use_id`, `description`, `usage`, `last_tool_name`, `summary?`             | 子任务进度（可在 minimal 过滤）           |
+| `system/task_notification`    | `progress`                | `task_id`, `tool_use_id`, `status`, `summary`, `output_file`, `usage?`                     | 子任务状态                                |
+| `system/elicitation_complete` | `progress`                | `mcp_server_name`, `elicitation_id`                                                        | MCP URL/form elicitation 完成             |
+| `rate_limit_event`            | `progress`                | `rate_limit_info`                                                                          | 速率限制状态                              |
+| `prompt_suggestion`           | `progress`                | subtype 原字段                                                                             | 需开启 promptSuggestions                  |
+| `result/success`              | 顶层 `result`             | turns/cost/usage/result/`fastModeState?`                                                   | 终态成功                                  |
+| `result/error_*`              | 顶层 `result` + `isError` | `errorSubtype` + 错误文本 + `fastModeState?`                                               | 终态失败                                  |
 
 ### 5.2 `responseMode` 与 `pollOptions` 裁剪语义
 
@@ -181,7 +189,7 @@
 1. 生成 pending request（含超时）
 2. 会话进入 `waiting_permission`
 3. `claude_code_check poll` 返回 `actions[]`
-4. `respond_permission` 处理 allow/deny/allow_for_session
+4. `respond_permission` 处理 allow/deny/allow_for_session（`allow_for_session` 优先采用 SDK `suggestions`，否则回退到通用 session allow rule）
 5. request 幂等收尾（respond/timeout/cancel/signal 任一路径只会完成一次）
 
 ## 6. 状态机与生命周期
@@ -217,7 +225,8 @@ running <-> waiting_permission -> idle | error | cancelled
 ### 7.2 数据与信息安全
 
 - `advanced.env` 不会出现在公开 session 信息中
-- `includeSensitive=false` 默认脱敏 `cwd/systemPrompt/agents/...`
+- `settings` 始终不出现在 session JSON 中（避免把高优先级 flag settings 当作可安全回显配置）
+- `includeSensitive=false` 默认脱敏 `cwd/systemPrompt/agents/additionalDirectories/toolConfig`
 - `resumeToken` 依赖 `CLAUDE_CODE_MCP_RESUME_SECRET` 的 HMAC 校验
 
 ## Upgrade Methodology
@@ -306,6 +315,13 @@ running <-> waiting_permission -> idle | error | cancelled
 
 工具 handler 统一返回 `{ content, isError }`，不向 MCP 层直接抛异常。
 错误消息使用 `Error [CODE]: message` 格式，`CODE` 由 `ErrorCode` 统一管理。
+
+### 10.4 OpenCode 导向用法
+
+- 把 `claude_code` + `claude_code_check` 视为一个异步 job API：启动一次、持续轮询、显式处理权限。
+- 默认优先 `claude_code_check(responseMode="delta_compact")`，减少聊天上下文噪音和 payload 体积。
+- 当同一工具会重复触发审批时，优先使用 `decision="allow_for_session"`，比每次 `allow` 更适合 OpenCode 的交互节奏；若 SDK 已提供 `suggestions`，服务端会优先沿用这些更具体的更新。
+- 默认继续保持 `includeSensitive=false`；OpenCode 如需调试会话上下文，再显式读取 `claude_code_session(includeSensitive=true)`。
 
 ## 11. 附录 A：MCP 协议要点（简版）
 

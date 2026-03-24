@@ -75,7 +75,7 @@ describe("MCP Server", () => {
     }
   });
 
-  it("should keep claude_code advanced schema at 21 low-frequency fields", async () => {
+  it("should keep claude_code advanced schema at 24 low-frequency fields", async () => {
     const server = createServer("/tmp");
     const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -101,10 +101,13 @@ describe("MCP Server", () => {
       expect(topLevelProps).not.toHaveProperty("sessionInitTimeoutMs");
       const advancedProps = claudeCode?.inputSchema?.properties?.advanced?.properties ?? {};
       const keys = Object.keys(advancedProps);
-      expect(keys).toHaveLength(21);
+      expect(keys).toHaveLength(24);
       expect(keys).not.toContain("effort");
       expect(keys).not.toContain("thinking");
       expect(keys).toContain("promptSuggestions");
+      expect(keys).toContain("toolConfig");
+      expect(keys).toContain("agentProgressSummaries");
+      expect(keys).toContain("settings");
     } finally {
       await client.close();
       await server.close();

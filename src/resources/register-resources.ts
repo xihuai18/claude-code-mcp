@@ -74,6 +74,7 @@ function buildSessionRedactions(includeSensitive: boolean): PublicSessionInfo["r
     { field: "env", reason: "secret_or_internal" },
     { field: "mcpServers", reason: "secret_or_internal" },
     { field: "sandbox", reason: "secret_or_internal" },
+    { field: "settings", reason: "secret_or_internal" },
     { field: "debugFile", reason: "secret_or_internal" },
     { field: "pathToClaudeCodeExecutable", reason: "secret_or_internal" },
   ];
@@ -82,7 +83,8 @@ function buildSessionRedactions(includeSensitive: boolean): PublicSessionInfo["r
       { field: "cwd", reason: "sensitive_by_default" },
       { field: "systemPrompt", reason: "sensitive_by_default" },
       { field: "agents", reason: "sensitive_by_default" },
-      { field: "additionalDirectories", reason: "sensitive_by_default" }
+      { field: "additionalDirectories", reason: "sensitive_by_default" },
+      { field: "toolConfig", reason: "sensitive_by_default" }
     );
   }
   return redactions;
@@ -330,6 +332,7 @@ export function registerResources(
           "Notes:",
           "- `respond_user_input` is not supported on this backend.",
           "- `allowedTools` is pre-approval by default; set `strictAllowedTools=true` for strict allowlist behavior.",
+          "- OpenCode/Codex-style clients usually work best when they store `sessionId` + `nextCursor` and answer approvals with `decision=allow_for_session`.",
           "- Prefer `responseMode='delta_compact'` for high-frequency polling.",
         ].join("\n"),
         "text/markdown"

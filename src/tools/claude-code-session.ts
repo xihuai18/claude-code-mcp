@@ -26,6 +26,7 @@ const ALWAYS_REDACTED_FIELDS = [
   "env",
   "mcpServers",
   "sandbox",
+  "settings",
   "debugFile",
   "pathToClaudeCodeExecutable",
 ] as const;
@@ -35,6 +36,7 @@ const CONDITIONAL_REDACTED_FIELDS = [
   "systemPrompt",
   "agents",
   "additionalDirectories",
+  "toolConfig",
 ] as const;
 
 function buildRedactions(includeSensitive?: boolean): PublicSessionInfo["redactions"] {

@@ -67,6 +67,22 @@ describe("buildOptions", () => {
     expect(opts.env?.ONLY_USER).toBe("x");
   });
 
+  it("passes through SDK 0.2.81 option fields", () => {
+    const opts = buildOptions({
+      cwd: "/tmp",
+      toolConfig: { askUserQuestion: { previewFormat: "html" } },
+      agentProgressSummaries: true,
+      settings: { model: "claude-sonnet-4-6", permissions: { allow: ["Read(*)"] } },
+    });
+
+    expect(opts.toolConfig).toEqual({ askUserQuestion: { previewFormat: "html" } });
+    expect(opts.agentProgressSummaries).toBe(true);
+    expect(opts.settings).toEqual({
+      model: "claude-sonnet-4-6",
+      permissions: { allow: ["Read(*)"] },
+    });
+  });
+
   it("expands ~ in path fields", () => {
     const originalPlatform = process.platform;
     const spy = vi.spyOn(os, "homedir").mockReturnValue("/home/test");

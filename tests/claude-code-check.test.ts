@@ -184,6 +184,36 @@ describe("executeClaudeCodeCheck", () => {
     expect((fullProgress.events[0]!.data as { type?: unknown } | null)?.type).toBe("task_progress");
   });
 
+  it("surfaces permission title/displayName metadata in actions", () => {
+    manager.create({ sessionId: "s1", cwd: "/tmp" });
+    manager.setPendingPermission(
+      "s1",
+      {
+        requestId: "r-meta",
+        toolName: "Read",
+        input: { file_path: "/tmp/a.txt" },
+        summary: "Claude wants to read /tmp/a.txt",
+        title: "Claude wants to read /tmp/a.txt",
+        displayName: "Read file",
+        toolUseID: "tu-meta",
+        createdAt: new Date().toISOString(),
+      },
+      vi.fn(),
+      60_000
+    );
+
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s1" },
+      manager,
+      toolCache
+    ) as CheckResult;
+    expect(polled.actions?.[0]).toMatchObject({
+      requestId: "r-meta",
+      title: "Claude wants to read /tmp/a.txt",
+      displayName: "Read file",
+    });
+  });
+
   it("supports decision=allow_for_session, preserves updates, and promotes tool to session allowlist", () => {
     manager.create({ sessionId: "s1", cwd: "/tmp" });
     const originalPath = process.platform === "win32" ? "C:\\repo\\a.txt" : "/tmp/a.txt";
@@ -232,6 +262,59 @@ describe("executeClaudeCodeCheck", () => {
         rules: [{ toolName: "Read" }],
       },
     ]);
+    expect(manager.get("s1")?.allowedTools).toContain("Read");
+  });
+
+  it("prefers SDK permission suggestions for allow_for_session and still merges caller updates", () => {
+    manager.create({ sessionId: "s1", cwd: "/tmp" });
+    const filePath = process.platform === "win32" ? "C:\\repo\\a.txt" : "/tmp/a.txt";
+    const blockedPath = process.platform === "win32" ? "C:\\external" : "/tmp/external";
+
+    const finish = vi.fn();
+    manager.setPendingPermission(
+      "s1",
+      {
+        requestId: "r-suggested",
+        toolName: "Read",
+        input: { file_path: filePath },
+        summary: "Read file",
+        blockedPath,
+        suggestions: [
+          { type: "addDirectories", directories: [blockedPath], destination: "session" },
+        ],
+        toolUseID: "tu-suggested",
+        createdAt: new Date().toISOString(),
+      },
+      finish,
+      60_000
+    );
+
+    const responded = executeClaudeCodeCheck(
+      {
+        action: "respond_permission",
+        sessionId: "s1",
+        requestId: "r-suggested",
+        decision: "allow_for_session",
+        permissionOptions: {
+          updatedPermissions: [{ type: "setMode", mode: "default", destination: "session" }],
+        },
+      },
+      manager,
+      toolCache
+    );
+
+    expect("isError" in responded).toBe(false);
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(finish.mock.calls[0]?.[0]).toMatchObject({
+      behavior: "allow",
+      updatedPermissions: [
+        { type: "setMode", mode: "default", destination: "session" },
+        { type: "addDirectories", directories: [blockedPath], destination: "session" },
+      ],
+    });
+    expect(finish.mock.calls[0]?.[0]?.updatedPermissions).not.toContainEqual(
+      expect.objectContaining({ type: "addRules" })
+    );
     expect(manager.get("s1")?.allowedTools).toContain("Read");
   });
 

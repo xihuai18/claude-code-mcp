@@ -9,12 +9,14 @@ import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AgentDefinition,
   EffortLevel,
+  Settings,
   McpServerConfig,
   OutputFormat,
   SandboxSettings,
   SettingSource,
   SystemPrompt,
   ThinkingConfig,
+  ToolConfig,
   ToolsConfig,
 } from "../types.js";
 import { DEFAULT_SETTING_SOURCES } from "../types.js";
@@ -44,9 +46,12 @@ export interface OptionSource {
   sandbox?: SandboxSettings;
   fallbackModel?: string;
   enableFileCheckpointing?: boolean;
+  toolConfig?: ToolConfig;
   includePartialMessages?: boolean;
   promptSuggestions?: boolean;
+  agentProgressSummaries?: boolean;
   strictMcpConfig?: boolean;
+  settings?: string | Settings;
   strictAllowedTools?: boolean;
   settingSources?: SettingSource[];
   debug?: boolean;
@@ -87,10 +92,14 @@ export function buildOptions(src: OptionSource): Partial<Options> {
   if (src.fallbackModel !== undefined) opts.fallbackModel = src.fallbackModel;
   if (src.enableFileCheckpointing !== undefined)
     opts.enableFileCheckpointing = src.enableFileCheckpointing;
+  if (src.toolConfig !== undefined) opts.toolConfig = src.toolConfig;
   if (src.includePartialMessages !== undefined)
     opts.includePartialMessages = src.includePartialMessages;
   if (src.promptSuggestions !== undefined) opts.promptSuggestions = src.promptSuggestions;
+  if (src.agentProgressSummaries !== undefined)
+    opts.agentProgressSummaries = src.agentProgressSummaries;
   if (src.strictMcpConfig !== undefined) opts.strictMcpConfig = src.strictMcpConfig;
+  if (src.settings !== undefined) opts.settings = src.settings;
   if (src.settingSources !== undefined) opts.settingSources = src.settingSources;
   else opts.settingSources = DEFAULT_SETTING_SOURCES;
   if (src.debug !== undefined) opts.debug = src.debug;

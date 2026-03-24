@@ -8,9 +8,11 @@ import type {
   EffortLevel,
   McpServerConfig,
   SandboxSettings,
+  Settings,
   SessionStartResult,
   SettingSource,
   ThinkingConfig,
+  ToolConfig,
 } from "../types.js";
 import { ErrorCode } from "../types.js";
 import { consumeQuery } from "./query-consumer.js";
@@ -42,9 +44,12 @@ export interface ClaudeCodeAdvancedOptions {
   sandbox?: SandboxSettings;
   fallbackModel?: string;
   enableFileCheckpointing?: boolean;
+  toolConfig?: ToolConfig;
   includePartialMessages?: boolean;
   promptSuggestions?: boolean;
+  agentProgressSummaries?: boolean;
   strictMcpConfig?: boolean;
+  settings?: string | Settings;
   strictAllowedTools?: boolean;
   settingSources?: SettingSource[];
   debug?: boolean;

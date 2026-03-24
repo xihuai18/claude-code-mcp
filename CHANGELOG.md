@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-- (TBD)
+### Improvements
+
+- Upgrade `@anthropic-ai/claude-agent-sdk` to `^0.2.81` and align exposed option passthrough with current SDK fields (`toolConfig`, `agentProgressSummaries`, `settings`).
+- Expand SDK stream/event mapping for `rate_limit_event`, `system/api_retry`, `system/local_command_output`, `system/elicitation_complete`, `system/compact_boundary`, and partial `stream_event` output.
+- Preserve newer SDK metadata in session/results, including `fastModeState` and richer permission prompt labels (`title`, `displayName`).
+- Prefer SDK permission `suggestions` for `allow_for_session` responses and sync session metadata from `system/init` (for example actual model / permission mode).
+
+### Documentation
+
+- Add OpenCode-specific setup and usage guidance, including local MCP config examples and async polling recommendations.
+- Sync README and DESIGN option/message matrices with the current SDK 0.2.81 surface.
 
 ## 2.5.0 (2026-02-27)
 

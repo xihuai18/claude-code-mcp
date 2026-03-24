@@ -351,6 +351,8 @@ describe("SessionManager", () => {
       additionalDirectories: ["/extra"],
       mcpServers: { server1: { command: "test" } },
       sandbox: { enabled: true },
+      toolConfig: { askUserQuestion: { previewFormat: "html" } },
+      settings: { model: "claude-sonnet-4-6" },
       env: { SECRET_KEY: "abc" },
       pathToClaudeCodeExecutable: "/usr/local/bin/claude",
       settingSources: ["user", "project"],
@@ -368,6 +370,8 @@ describe("SessionManager", () => {
     expect("additionalDirectories" in pub).toBe(false);
     expect("mcpServers" in pub).toBe(false);
     expect("sandbox" in pub).toBe(false);
+    expect("toolConfig" in pub).toBe(false);
+    expect("settings" in pub).toBe(false);
     expect("env" in pub).toBe(false);
     expect("pathToClaudeCodeExecutable" in pub).toBe(false);
     expect("settingSources" in pub).toBe(false);
@@ -386,6 +390,8 @@ describe("SessionManager", () => {
       additionalDirectories: ["/extra"],
       mcpServers: { server1: { command: "test" } },
       sandbox: { enabled: true },
+      toolConfig: { askUserQuestion: { previewFormat: "html" } },
+      settings: { model: "claude-sonnet-4-6" },
       env: { SECRET_KEY: "abc" },
       pathToClaudeCodeExecutable: "/usr/local/bin/claude",
       debugFile: "/tmp/debug.log",
@@ -401,8 +407,10 @@ describe("SessionManager", () => {
     expect(sens.systemPrompt).toBe("secret prompt");
     expect(sens.agents).toEqual({ reviewer: { description: "test", prompt: "test" } });
     expect(sens.additionalDirectories).toEqual(["/extra"]);
+    expect(sens.toolConfig).toEqual({ askUserQuestion: { previewFormat: "html" } });
 
     // Should still exclude secrets
+    expect("settings" in sens).toBe(false);
     expect("env" in sens).toBe(false);
     expect("mcpServers" in sens).toBe(false);
     expect("sandbox" in sens).toBe(false);

@@ -6,9 +6,12 @@
  */
 
 import type {
+  FastModeState as SDKFastModeState,
   PermissionMode as SDKPermissionMode,
   PermissionResult as SDKPermissionResult,
   PermissionUpdate as SDKPermissionUpdate,
+  Settings as SDKSettings,
+  ToolConfig as SDKToolConfig,
 } from "@anthropic-ai/claude-agent-sdk";
 
 /** Permission modes supported by Claude Agent SDK */
@@ -25,9 +28,8 @@ export type PermissionMode = SDKPermissionMode;
 export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
-/** Subagent model options */
-export const AGENT_MODELS = ["sonnet", "opus", "haiku", "inherit"] as const;
-export type AgentModel = (typeof AGENT_MODELS)[number];
+/** Subagent model identifier (alias or full model ID) */
+export type AgentModel = string;
 
 /** Session management actions */
 export const SESSION_ACTIONS = ["list", "get", "cancel", "interrupt"] as const;
@@ -46,6 +48,9 @@ export type ThinkingConfig =
   | { type: "disabled" };
 
 export type ToolsConfig = string[] | { type: "preset"; preset: "claude_code" };
+export type ToolConfig = SDKToolConfig;
+export type Settings = SDKSettings;
+export type FastModeState = SDKFastModeState;
 
 /** Subagent definition (mirrors the Zod schema in server.ts) */
 export interface AgentDefinition {
@@ -112,18 +117,26 @@ export interface SessionInfo {
   fallbackModel?: string;
   /** Enable file checkpointing to track file changes */
   enableFileCheckpointing?: boolean;
+  /** Per-tool configuration for built-in tools */
+  toolConfig?: ToolConfig;
   /** When true, includes intermediate streaming messages in the response */
   includePartialMessages?: boolean;
   /** When true, emits prompt_suggestion messages after turns */
   promptSuggestions?: boolean;
+  /** When true, emits AI-generated subagent progress summaries */
+  agentProgressSummaries?: boolean;
   /** Enforce strict validation of MCP server configurations */
   strictMcpConfig?: boolean;
+  /** Flag settings override or path to a settings file */
+  settings?: string | Settings;
   /** Control which filesystem settings are loaded */
   settingSources?: SettingSource[];
   /** Enable debug mode */
   debug?: boolean;
   /** Write debug logs to a specific file path */
   debugFile?: string;
+  /** Effective fast-mode state reported by the SDK */
+  fastModeState?: FastModeState;
   /** Environment variables passed to the Claude Code process */
   env?: Record<string, string | undefined>;
   /** Last seen tool use id (best-effort) */
@@ -162,7 +175,9 @@ export interface PublicSessionInfo {
   enableFileCheckpointing?: boolean;
   includePartialMessages?: boolean;
   promptSuggestions?: boolean;
+  agentProgressSummaries?: boolean;
   strictMcpConfig?: boolean;
+  fastModeState?: FastModeState;
   debug?: boolean;
   lastToolUseId?: string;
   pendingPermissionCount?: number;
@@ -184,6 +199,7 @@ export interface SensitiveSessionInfo extends PublicSessionInfo {
   systemPrompt?: SystemPrompt;
   agents?: Record<string, AgentDefinition>;
   additionalDirectories?: string[];
+  toolConfig?: ToolConfig;
 }
 
 /** Result returned from a claude_code or claude_code_reply call */
@@ -200,6 +216,7 @@ export interface AgentResult {
   structuredOutput?: unknown;
   stopReason?: string | null;
   errorSubtype?: string;
+  fastModeState?: FastModeState;
   usage?: Record<string, unknown>;
   modelUsage?: Record<string, unknown>;
   permissionDenials?: Array<{
@@ -270,6 +287,8 @@ export interface PermissionRequestRecord {
   toolName: string;
   input: Record<string, unknown>;
   summary: string;
+  title?: string;
+  displayName?: string;
   decisionReason?: string;
   blockedPath?: string;
   toolUseID: string;
@@ -334,6 +353,8 @@ export interface CheckResult {
     toolName: string;
     input: Record<string, unknown>;
     summary: string;
+    title?: string;
+    displayName?: string;
     decisionReason?: string;
     blockedPath?: string;
     toolUseID: string;
