@@ -174,6 +174,8 @@ Notes:
 
 - `resumeToken` is omitted by default, and is only returned when `CLAUDE_CODE_MCP_RESUME_SECRET` is set on the server.
 - On error: `{ sessionId: "", status: "error", error }`
+- `model` is optional. If omitted, Claude Code chooses the effective model from its own defaults/settings; inspect session/result metadata if you need to know what actually ran.
+- If you plan to continue with `claude_code_reply`, keep the session persistent (`advanced.persistSession=true`, which is already the default).
 
 Use `claude_code_check` to poll events and obtain the final `result`.
 
@@ -254,10 +256,12 @@ Use `claude_code_check` to poll events and obtain the final `result`.
 Gotchas:
 
 - Permission approvals have a timeout (default 60s via `permissionRequestTimeoutMs`) and will auto-deny; watch `actions[].expiresAt` / `actions[].remainingMs`.
+- `claude_code_reply` requires a persistent session or an enabled disk-resume setup; one-shot/non-persistent sessions cannot be resumed later.
 - `Read` has a per-call size cap in practice (often ~256KB); for large files use `offset`/`limit` or chunk with `Grep`.
 - `Edit` with `replace_all=true` is substring replacement; if no match is found the tool returns a clear error.
 - On Windows, this server normalizes common MSYS-style paths (e.g. `/d/...`, `/mnt/c/...`, `/cygdrive/c/...`, `//server/share/...`) for `cwd`, `additionalDirectories`, and tool inputs that include `file_path`.
 - On Windows, POSIX home paths like `/home/user/...` are **not** rewritten to drive paths; prefer absolute Windows paths under your current `cwd` to avoid out-of-bounds permission prompts.
+- On Windows, Claude Code itself needs Git Bash; set `CLAUDE_CODE_GIT_BASH_PATH` in your MCP client config if auto-detection is unreliable.
 - `TeamDelete` may require members to reach `shutdown_approved` (otherwise you may see "active member" errors); cleanup can be asynchronous during shutdown.
 - Skills may become available later in the same session (early calls may show "Unknown", later succeed after skills are loaded/registered).
 - `toolCatalogCount` and `availableTools` are different views: catalog is server-known tools, while `availableTools` comes from each session's runtime `system/init.tools`.
