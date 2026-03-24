@@ -266,7 +266,11 @@ export function createServerContext(serverCwd: string): {
     {
       description: buildInternalToolsDescription(toolCache.getTools()),
       inputSchema: {
-        prompt: z.string().describe("Prompt"),
+        prompt: z
+          .string()
+          .describe(
+            "Prompt. Long runs are normal; keep polling, adapt poll cadence to current progress, and reuse sessionId with claude_code_reply if you want to continue."
+          ),
         cwd: z.string().optional().describe("Working dir. Default: server cwd"),
         allowedTools: z.array(z.string()).optional().describe("Default: []"),
         disallowedTools: z.array(z.string()).optional().describe("Default: []"),
@@ -338,10 +342,14 @@ export function createServerContext(serverCwd: string): {
     "claude_code_reply",
     {
       description:
-        "Send a follow-up to an existing session. Returns immediately; use claude_code_check to poll.",
+        "Send a follow-up to an existing session. Reuse the same sessionId instead of starting a new claude_code session when you want to continue. Returns immediately; use claude_code_check to poll, and adjust poll cadence to current progress.",
       inputSchema: {
-        sessionId: z.string().describe("Session ID"),
-        prompt: z.string().describe("Prompt"),
+        sessionId: z
+          .string()
+          .describe(
+            "Session ID from the existing conversation you want to continue; prefer this over starting a fresh claude_code session."
+          ),
+        prompt: z.string().describe("Follow-up prompt for the existing session."),
         forkSession: z.boolean().optional().describe("Default: false"),
         effort: effortOptionSchema.describe("Default: SDK"),
         thinking: thinkingOptionSchema.describe("Default: SDK"),
@@ -453,7 +461,8 @@ export function createServerContext(serverCwd: string): {
   server.registerTool(
     "claude_code_check",
     {
-      description: "Poll session events or respond to permission requests.",
+      description:
+        "Poll session events or respond to permission requests. Long Claude Code runs are normal, especially with high/max effort; poll faster when progress is active and slower when the session is quietly thinking.",
       inputSchema: {
         action: z.enum(CHECK_ACTIONS),
         sessionId: z.string().describe("Session ID"),
@@ -461,7 +470,9 @@ export function createServerContext(serverCwd: string): {
         responseMode: z
           .enum(CHECK_RESPONSE_MODES)
           .optional()
-          .describe("Default: 'minimal'. Use 'delta_compact' for lightweight polling."),
+          .describe(
+            "Default: 'minimal'. Use 'delta_compact' for lightweight polling, especially for faster adaptive polling loops."
+          ),
         maxEvents: z
           .number()
           .int()

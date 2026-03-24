@@ -168,7 +168,10 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
 
   let desc =
     "Start a Claude Code session and return sessionId.\n" +
-    "Use claude_code_check to poll events/results and handle permissions.\n\n";
+    "Use claude_code_check to poll events/results and handle permissions.\n" +
+    "Adjust polling cadence to progress: poll faster while new events/actions are arriving, and slower when the session is quietly thinking.\n" +
+    "Long-running work is normal: Claude Code can keep working for 10+ minutes, especially with high/max effort, so wait for polling to settle before assuming it is stuck.\n" +
+    "If you want to continue after a run pauses or finishes, use claude_code_reply with the same sessionId instead of starting a brand-new claude_code session.\n\n";
   desc += "Internal tools (authoritative list: includeTools=true in claude_code_check):\n";
 
   for (const category of categories) {

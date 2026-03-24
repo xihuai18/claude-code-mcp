@@ -75,6 +75,47 @@ describe("MCP Server", () => {
     }
   });
 
+  it("should expose model-visible reminders in tool descriptions", async () => {
+    const server = createServer("/tmp");
+    const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const listed = await client.listTools();
+      const claudeCode = listed.tools.find((t) => t.name === "claude_code");
+      const claudeCodeReply = listed.tools.find((t) => t.name === "claude_code_reply");
+      const claudeCodeCheck = listed.tools.find((t) => t.name === "claude_code_check");
+      const claudeCodePrompt = claudeCode?.inputSchema?.properties?.prompt as
+        | { description?: string }
+        | undefined;
+      const claudeCodeReplySessionId = claudeCodeReply?.inputSchema?.properties?.sessionId as
+        | { description?: string }
+        | undefined;
+      const claudeCodeCheckResponseMode = claudeCodeCheck?.inputSchema?.properties?.responseMode as
+        | { description?: string }
+        | undefined;
+
+      expect(claudeCode?.description).toContain("10+ minutes");
+      expect(claudeCode?.description).toContain("Adjust polling cadence to progress");
+      expect(claudeCodePrompt?.description).toContain("reuse sessionId with claude_code_reply");
+      expect(claudeCodePrompt?.description).toContain("adapt poll cadence to current progress");
+      expect(claudeCodeReply?.description).toContain("same sessionId");
+      expect(claudeCodeReply?.description).toContain("adjust poll cadence to current progress");
+      expect(claudeCodeReplySessionId?.description).toContain(
+        "prefer this over starting a fresh claude_code session"
+      );
+      expect(claudeCodeCheck?.description).toContain("high/max effort");
+      expect(claudeCodeCheck?.description).toContain("poll faster when progress is active");
+      expect(claudeCodeCheckResponseMode?.description).toContain("faster adaptive polling loops");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("should keep claude_code advanced schema at 24 low-frequency fields", async () => {
     const server = createServer("/tmp");
     const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });

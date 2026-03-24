@@ -48,5 +48,8 @@ describe("tool-discovery", () => {
     const desc = buildInternalToolsDescription([{ name: "Read", description: "Read files." }]);
     expect(desc).toContain("claude_code_check");
     expect(desc).toContain("includeTools=true");
+    expect(desc).toContain("10+ minutes");
+    expect(desc).toContain("claude_code_reply");
+    expect(desc).toContain("Adjust polling cadence to progress");
   });
 });
