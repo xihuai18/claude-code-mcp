@@ -25,6 +25,7 @@ import {
   normalizeWindowsPathArray,
   normalizeWindowsPathLike,
 } from "../utils/normalize-windows-path.js";
+import { getDefaultClaudeExecutablePath } from "../utils/claude-executable.js";
 
 /**
  * Low-frequency / SDK-passthrough options grouped under `advanced`.
@@ -160,7 +161,7 @@ export async function executeClaudeCode(
     pathToClaudeCodeExecutable:
       flat.pathToClaudeCodeExecutable !== undefined
         ? normalizeWindowsPathLike(flat.pathToClaudeCodeExecutable)
-        : undefined,
+        : getDefaultClaudeExecutablePath(),
   };
 
   try {

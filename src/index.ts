@@ -9,6 +9,7 @@ import { createServerContext } from "./server.js";
 import { isBenignRuntimeError } from "./utils/runtime-errors.js";
 import { decideStdinShutdown } from "./utils/stdin-shutdown.js";
 import { checkWindowsBashAvailability } from "./utils/windows.js";
+import { checkDefaultClaudeExecutableAvailability } from "./utils/claude-executable.js";
 
 const STDIN_SHUTDOWN_CHECK_MS = 750;
 const STDIN_SHUTDOWN_MAX_WAIT_MS = process.platform === "win32" ? 15_000 : 10_000;
@@ -189,12 +190,13 @@ async function main(): Promise<void> {
   process.stdin.on("end", onStdinEnd);
   process.stdin.on("close", onStdinClose);
 
+  // Check Windows bash.exe availability and warn early
+  checkWindowsBashAvailability();
+  checkDefaultClaudeExecutableAvailability();
+
   await server.connect(transport);
   server.sendToolListChanged();
   server.sendResourceListChanged();
-
-  // Check Windows bash.exe availability and warn early
-  checkWindowsBashAvailability();
 
   // Log to MCP notifications (and stderr as a fallback).
   try {

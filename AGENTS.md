@@ -275,7 +275,7 @@ mcp_demo/
   - `Default: <value>`
   - `Default: SDK`
   - `Default: none`
-  - `Default: SDK-bundled` (for `pathToClaudeCodeExecutable`)
+  - `Default: auto-detect 'claude', then 'claude-internal', else SDK-bundled` (for `pathToClaudeCodeExecutable`)
 
 Formatting source of truth:
 
@@ -292,6 +292,8 @@ Formatting source of truth:
 ## Environment Variables (Server Process)
 
 - `CLAUDE_CODE_GIT_BASH_PATH`
+- `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND`
+- `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH`
 - `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME`
 - `CLAUDE_CODE_MCP_RESUME_SECRET`
 - `CLAUDE_CODE_MCP_MAX_SESSIONS`

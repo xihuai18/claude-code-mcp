@@ -1,6 +1,7 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { createHash } from "node:crypto";
+import { basename } from "node:path";
 import type { SessionManager } from "../session/manager.js";
 import { ErrorCode, type PublicSessionInfo } from "../types.js";
 import {
@@ -8,6 +9,7 @@ import {
   discoverToolsFromInit,
   type ToolDiscoveryCache,
 } from "../tools/tool-discovery.js";
+import { resolveDefaultClaudeExecutable } from "../utils/claude-executable.js";
 
 const RESOURCE_SCHEME = "claude-code-mcp";
 
@@ -195,7 +197,7 @@ export function registerResources(
   deps: { toolCache: ToolDiscoveryCache; version: string; sessionManager: SessionManager }
 ): void {
   const startedAt = new Date().toISOString();
-  const resourceSchemaVersion = "1.3";
+  const resourceSchemaVersion = "1.4";
   const mcpProtocolVersion = "2025-03-26";
   const gotchasEntries = buildGotchasEntries();
   const catalogToolNames = new Set(defaultCatalogTools().map((tool) => tool.name));
@@ -436,6 +438,7 @@ export function registerResources(
         typeof process.env.CLAUDE_CODE_MCP_RESUME_SECRET === "string" &&
         process.env.CLAUDE_CODE_MCP_RESUME_SECRET.trim() !== "";
       const runtimeToolStats = deps.sessionManager.getRuntimeToolStats();
+      const defaultClaudeExecutable = resolveDefaultClaudeExecutable();
       const toolCatalogCount = deps.toolCache.getTools().length;
       const detectedMismatches: string[] = [];
       if (
@@ -467,6 +470,14 @@ export function registerResources(
           enabled: diskResumeEnabled,
           resumeSecretConfigured,
         },
+        defaultClaudeExecutable: {
+          source: defaultClaudeExecutable.source,
+          command: defaultClaudeExecutable.command,
+          resolvedFileName: defaultClaudeExecutable.resolvedPath
+            ? basename(defaultClaudeExecutable.resolvedPath)
+            : undefined,
+          usingBundled: defaultClaudeExecutable.resolvedPath === undefined,
+        },
         features: {
           resources: true,
           resourceTemplates: true,
@@ -496,6 +507,7 @@ export function registerResources(
           "Treat tool descriptions and MCP resources as agent-visible guidance; do not assume README-level documentation is visible to the model.",
           "Use allowedTools/disallowedTools only with exact runtime tool names.",
           "Set strictAllowedTools=true when you need allowedTools to behave as a strict allowlist.",
+          "Default Claude executable selection prefers request path, then CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH, then CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND, then auto-detected 'claude'/'claude-internal', then SDK-bundled.",
           "This server assumes MCP client and server run on the same machine/platform.",
           "For high-frequency status checks, prefer responseMode='delta_compact'.",
           "respond_user_input is not supported on this backend; use poll/respond_permission flow.",

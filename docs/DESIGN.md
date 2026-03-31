@@ -45,6 +45,8 @@
 2. `src/resources/register-resources.ts` 的 quickstart / gotchas / compat guidance
 3. 然后才在 README / DESIGN 做人类文档补充
 
+补充：Claude 可执行文件默认解析也属于运行时关键行为。若 schema / resource / README 不一致，以代码实现和启动时诊断为准。
+
 ## 2. 系统概览
 
 ### 2.1 工具与职责
@@ -106,39 +108,39 @@
 
 ### 4.1 `claude_code` / `claude_code_reply` 常见映射
 
-| MCP 参数位置                          | SDK Options 字段             | 映射落点            | 默认值来源                       |
-| ------------------------------------- | ---------------------------- | ------------------- | -------------------------------- |
-| `cwd`                                 | `cwd`                        | `build-options.ts`  | Server cwd                       |
-| `allowedTools`                        | `allowedTools`               | `build-options.ts`  | none                             |
-| `disallowedTools`                     | `disallowedTools`            | `build-options.ts`  | none                             |
-| `maxTurns`                            | `maxTurns`                   | `build-options.ts`  | SDK                              |
-| `model`                               | `model`                      | `build-options.ts`  | SDK                              |
-| `effort`                              | `effort`                     | `build-options.ts`  | SDK                              |
-| `thinking`                            | `thinking`                   | `build-options.ts`  | SDK                              |
-| `systemPrompt`                        | `systemPrompt`               | `build-options.ts`  | SDK                              |
-| `permissionRequestTimeoutMs`          | (server policy)              | `query-consumer.ts` | 60000，clamp 到 300000           |
-| `advanced.tools`                      | `tools`                      | `build-options.ts`  | SDK                              |
-| `advanced.agents`                     | `agents`                     | `build-options.ts`  | SDK                              |
-| `advanced.agent`                      | `agent`                      | `build-options.ts`  | SDK                              |
-| `advanced.maxBudgetUsd`               | `maxBudgetUsd`               | `build-options.ts`  | SDK                              |
-| `advanced.betas`                      | `betas`                      | `build-options.ts`  | SDK                              |
-| `advanced.additionalDirectories`      | `additionalDirectories`      | `build-options.ts`  | SDK                              |
-| `advanced.outputFormat`               | `outputFormat`               | `build-options.ts`  | SDK                              |
-| `advanced.pathToClaudeCodeExecutable` | `pathToClaudeCodeExecutable` | `build-options.ts`  | SDK-bundled                      |
-| `advanced.mcpServers`                 | `mcpServers`                 | `build-options.ts`  | SDK                              |
-| `advanced.sandbox`                    | `sandbox`                    | `build-options.ts`  | SDK                              |
-| `advanced.fallbackModel`              | `fallbackModel`              | `build-options.ts`  | SDK                              |
-| `advanced.enableFileCheckpointing`    | `enableFileCheckpointing`    | `build-options.ts`  | SDK                              |
-| `advanced.toolConfig`                 | `toolConfig`                 | `build-options.ts`  | SDK                              |
-| `advanced.includePartialMessages`     | `includePartialMessages`     | `build-options.ts`  | SDK                              |
-| `advanced.promptSuggestions`          | `promptSuggestions`          | `build-options.ts`  | false                            |
-| `advanced.agentProgressSummaries`     | `agentProgressSummaries`     | `build-options.ts`  | false                            |
-| `advanced.strictMcpConfig`            | `strictMcpConfig`            | `build-options.ts`  | SDK                              |
-| `advanced.settings`                   | `settings`                   | `build-options.ts`  | SDK                              |
-| `advanced.settingSources`             | `settingSources`             | `build-options.ts`  | `["user","project","local"]`     |
-| `advanced.debug`                      | `debug`                      | `build-options.ts`  | false                            |
-| `advanced.debugFile`                  | `debugFile`                  | `build-options.ts`  | none                             |
-| `advanced.env`                        | `env`                        | `build-options.ts`  | `{...process.env, ...input.env}` |
+| MCP 参数位置                          | SDK Options 字段             | 映射落点            | 默认值来源                                                                                |
+| ------------------------------------- | ---------------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| `cwd`                                 | `cwd`                        | `build-options.ts`  | Server cwd                                                                                |
+| `allowedTools`                        | `allowedTools`               | `build-options.ts`  | none                                                                                      |
+| `disallowedTools`                     | `disallowedTools`            | `build-options.ts`  | none                                                                                      |
+| `maxTurns`                            | `maxTurns`                   | `build-options.ts`  | SDK                                                                                       |
+| `model`                               | `model`                      | `build-options.ts`  | SDK                                                                                       |
+| `effort`                              | `effort`                     | `build-options.ts`  | SDK                                                                                       |
+| `thinking`                            | `thinking`                   | `build-options.ts`  | SDK                                                                                       |
+| `systemPrompt`                        | `systemPrompt`               | `build-options.ts`  | SDK                                                                                       |
+| `permissionRequestTimeoutMs`          | (server policy)              | `query-consumer.ts` | 60000，clamp 到 300000                                                                    |
+| `advanced.tools`                      | `tools`                      | `build-options.ts`  | SDK                                                                                       |
+| `advanced.agents`                     | `agents`                     | `build-options.ts`  | SDK                                                                                       |
+| `advanced.agent`                      | `agent`                      | `build-options.ts`  | SDK                                                                                       |
+| `advanced.maxBudgetUsd`               | `maxBudgetUsd`               | `build-options.ts`  | SDK                                                                                       |
+| `advanced.betas`                      | `betas`                      | `build-options.ts`  | SDK                                                                                       |
+| `advanced.additionalDirectories`      | `additionalDirectories`      | `build-options.ts`  | SDK                                                                                       |
+| `advanced.outputFormat`               | `outputFormat`               | `build-options.ts`  | SDK                                                                                       |
+| `advanced.pathToClaudeCodeExecutable` | `pathToClaudeCodeExecutable` | `build-options.ts`  | request override > env path > env command > auto `claude`/`claude-internal` > SDK-bundled |
+| `advanced.mcpServers`                 | `mcpServers`                 | `build-options.ts`  | SDK                                                                                       |
+| `advanced.sandbox`                    | `sandbox`                    | `build-options.ts`  | SDK                                                                                       |
+| `advanced.fallbackModel`              | `fallbackModel`              | `build-options.ts`  | SDK                                                                                       |
+| `advanced.enableFileCheckpointing`    | `enableFileCheckpointing`    | `build-options.ts`  | SDK                                                                                       |
+| `advanced.toolConfig`                 | `toolConfig`                 | `build-options.ts`  | SDK                                                                                       |
+| `advanced.includePartialMessages`     | `includePartialMessages`     | `build-options.ts`  | SDK                                                                                       |
+| `advanced.promptSuggestions`          | `promptSuggestions`          | `build-options.ts`  | false                                                                                     |
+| `advanced.agentProgressSummaries`     | `agentProgressSummaries`     | `build-options.ts`  | false                                                                                     |
+| `advanced.strictMcpConfig`            | `strictMcpConfig`            | `build-options.ts`  | SDK                                                                                       |
+| `advanced.settings`                   | `settings`                   | `build-options.ts`  | SDK                                                                                       |
+| `advanced.settingSources`             | `settingSources`             | `build-options.ts`  | `["user","project","local"]`                                                              |
+| `advanced.debug`                      | `debug`                      | `build-options.ts`  | false                                                                                     |
+| `advanced.debugFile`                  | `debugFile`                  | `build-options.ts`  | none                                                                                      |
+| `advanced.env`                        | `env`                        | `build-options.ts`  | `{...process.env, ...input.env}`                                                          |
 
 ### 4.2 `claude_code_reply.diskResumeConfig` 映射
 

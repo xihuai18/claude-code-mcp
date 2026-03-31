@@ -1,8 +1,15 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServerContext } from "../src/server.js";
 import { ErrorCode } from "../src/types.js";
+import {
+  DEFAULT_CLAUDE_COMMAND_ENV,
+  DEFAULT_CLAUDE_PATH_ENV,
+} from "../src/utils/claude-executable.js";
 
 async function withClientServer<T>(
   fn: (client: Client, ctx: ReturnType<typeof createServerContext>) => Promise<T>
@@ -39,6 +46,15 @@ async function safeListTemplates(client: Client): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+function createExecutableFixture(commandName: string): { dir: string; filePath: string } {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "claude-resource-exec-"));
+  const fileName = process.platform === "win32" ? `${commandName}.cmd` : commandName;
+  const filePath = path.join(dir, fileName);
+  writeFileSync(filePath, process.platform === "win32" ? "@echo off\r\n" : "#!/bin/sh\n", "utf8");
+  if (process.platform !== "win32") chmodSync(filePath, 0o755);
+  return { dir, filePath };
 }
 
 describe("Resources", () => {
@@ -84,7 +100,7 @@ describe("Resources", () => {
       };
       expect(info.name).toBe("claude-code-mcp");
       expect(typeof info.version).toBe("string");
-      expect(info.schemaVersion).toBe("1.3");
+      expect(info.schemaVersion).toBe("1.4");
       expect(typeof info.etag).toBe("string");
       expect(typeof info.updatedAt).toBe("string");
       expect(info.capabilities?.resources).toBe(true);
@@ -191,6 +207,12 @@ describe("Resources", () => {
         transport?: unknown;
         schemaVersion?: unknown;
         guidance?: unknown[];
+        defaultClaudeExecutable?: {
+          source?: unknown;
+          command?: unknown;
+          resolvedFileName?: unknown;
+          usingBundled?: unknown;
+        };
         limits?: {
           maxSessions?: unknown;
           maxPendingPermissionsPerSession?: unknown;
@@ -212,10 +234,12 @@ describe("Resources", () => {
       };
       expect(compat.samePlatformRequired).toBe(true);
       expect(compat.transport).toBe("stdio");
-      expect(compat.schemaVersion).toBe("1.3");
+      expect(compat.schemaVersion).toBe("1.4");
       expect(typeof compat.packageVersion).toBe("string");
       expect(typeof compat.limits?.eventBuffer?.maxSize).toBe("number");
       expect(typeof compat.limits?.eventBuffer?.hardMaxSize).toBe("number");
+      expect(typeof compat.defaultClaudeExecutable?.source).toBe("string");
+      expect(typeof compat.defaultClaudeExecutable?.usingBundled).toBe("boolean");
       expect(typeof compat.diskResume?.enabled).toBe("boolean");
       expect(typeof compat.diskResume?.resumeSecretConfigured).toBe("boolean");
       expect(typeof compat.toolCounts?.catalogCount).toBe("number");
@@ -371,5 +395,40 @@ describe("Resources", () => {
         listChangedSpy.mockRestore();
       }
     });
+  });
+
+  it("should report the resolved default Claude executable in compat-report", async () => {
+    const fixture = createExecutableFixture("claude-internal");
+    vi.stubEnv("PATH", fixture.dir);
+    vi.stubEnv(DEFAULT_CLAUDE_COMMAND_ENV, "claude-internal");
+    vi.stubEnv(DEFAULT_CLAUDE_PATH_ENV, "");
+    try {
+      await withClientServer(async (client) => {
+        const compatRes = await client.readResource({ uri: "claude-code-mcp:///compat-report" });
+        const compatContent = compatRes.contents[0];
+        const compatText =
+          compatContent && "text" in compatContent && typeof compatContent.text === "string"
+            ? compatContent.text
+            : "{}";
+        const compat = JSON.parse(compatText) as {
+          defaultClaudeExecutable?: {
+            source?: unknown;
+            command?: unknown;
+            resolvedFileName?: unknown;
+            usingBundled?: unknown;
+          };
+        };
+
+        expect(compat.defaultClaudeExecutable?.source).toBe("env_command");
+        expect(compat.defaultClaudeExecutable?.command).toBe("claude-internal");
+        expect(compat.defaultClaudeExecutable?.resolvedFileName).toBe(
+          path.basename(fixture.filePath)
+        );
+        expect(compat.defaultClaudeExecutable?.usingBundled).toBe(false);
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
   });
 });

@@ -40,9 +40,10 @@ See `CHANGELOG.md` for release history.
 - **Node.js >= 18** is required.
 - **Same-platform deployment** — this MCP server is designed to run on the same machine as the MCP client. It communicates via stdio (child process), reads local Claude configuration files from `~/.claude/`, and accesses the local file system directly. Remote deployment is not supported.
 
-This MCP server uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) package, which **bundles its own Claude Code CLI** (`cli.js`). It does not use the `claude` binary from your system PATH.
+This MCP server uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) package, which **bundles its own Claude Code CLI** (`cli.js`). When no explicit `pathToClaudeCodeExecutable` is provided, this server now prefers a detected local `claude` command, then `claude-internal`, and falls back to the SDK-bundled CLI if neither is found.
 
 - The SDK bundles a Claude Code CLI; its version generally tracks the SDK package version, but the exact scheme is not guaranteed
+- Default executable resolution order is: request-level `pathToClaudeCodeExecutable` -> `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH` -> `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND` -> auto-detected `claude` -> auto-detected `claude-internal` -> SDK-bundled CLI
 - **Configuration is shared** — the bundled CLI reads API keys and settings from `~/.claude/`, same as the system-installed `claude`
 - **All local settings are loaded by default** — unlike the raw SDK (which defaults to isolation mode), this MCP server loads `user`, `project`, and `local` settings automatically, including `CLAUDE.md` project context. Pass `advanced.settingSources: []` to opt out
 - You must have Claude Code configured (API key set up) before using this MCP server: see [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code/overview)
@@ -163,7 +164,7 @@ Important protocol note: this call starts background work and returns quickly wi
 | `advanced.betas`                      | string[]           | Beta features (e.g. `["context-1m-2025-08-07"]`). Default: none                                                                                                                                                                         |
 | `advanced.additionalDirectories`      | string[]           | Additional directories the agent can access beyond cwd. Default: none                                                                                                                                                                   |
 | `advanced.outputFormat`               | object             | Structured output config: `{ type: "json_schema", schema: {...} }`. Default: omitted (plain text)                                                                                                                                       |
-| `advanced.pathToClaudeCodeExecutable` | string             | Path to the Claude Code executable. Default: SDK-bundled Claude Code (cli.js)                                                                                                                                                           |
+| `advanced.pathToClaudeCodeExecutable` | string             | Path to the Claude Code executable. Default: auto-detect `claude`, then `claude-internal`, else SDK-bundled Claude Code (cli.js).                                                                                                       |
 | `advanced.mcpServers`                 | object             | MCP server configurations keyed by server name. Default: none                                                                                                                                                                           |
 | `advanced.sandbox`                    | object             | Sandbox behavior config object. This controls sandbox behavior, not the actual Read/Edit/WebFetch permission rules. Default: SDK/Claude Code default                                                                                    |
 | `advanced.fallbackModel`              | string             | Fallback model if the primary model fails or is unavailable. Default: none                                                                                                                                                              |
@@ -241,7 +242,7 @@ Important protocol note: prefer `claude_code_reply` over starting a fresh `claud
 | `diskResumeConfig.outputFormat`               | object             | Structured output config. Default: omitted (plain text)                                                                                              |
 | `diskResumeConfig.thinking`                   | object             | Thinking config object: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens?: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default |
 | `diskResumeConfig.resumeSessionAt`            | string             | Resume only up to and including a specific message UUID. Default: omitted                                                                            |
-| `diskResumeConfig.pathToClaudeCodeExecutable` | string             | Path to Claude Code executable. Default: SDK-bundled Claude Code (cli.js)                                                                            |
+| `diskResumeConfig.pathToClaudeCodeExecutable` | string             | Path to Claude Code executable. Default: auto-detect `claude`, then `claude-internal`, else SDK-bundled Claude Code (cli.js)                         |
 | `diskResumeConfig.mcpServers`                 | object             | MCP server configurations keyed by server name. Default: none                                                                                        |
 | `diskResumeConfig.sandbox`                    | object             | Sandbox behavior config object. Default: SDK/Claude Code default                                                                                     |
 | `diskResumeConfig.fallbackModel`              | string             | Fallback model. Default: none                                                                                                                        |
@@ -519,15 +520,24 @@ setx CLAUDE_CODE_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"
 
 All environment variables are optional. They are set on the MCP server process (not on the Claude Code child process — for that, use the `env` tool parameter).
 
-| Variable                                     | Description                                                                                                      | Default        |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
-| `CLAUDE_CODE_GIT_BASH_PATH`                  | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                          | Auto-detected  |
-| `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME`          | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing | `0` (disabled) |
-| `CLAUDE_CODE_MCP_RESUME_SECRET`              | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)      | _(unset)_      |
-| `CLAUDE_CODE_MCP_MAX_SESSIONS`               | Maximum number of in-memory sessions (set `0` to disable the limit)                                              | `128`          |
-| `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS`    | Maximum number of outstanding permission requests per session (set `0` to disable the limit)                     | `64`           |
-| `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE`      | Soft limit for in-memory event buffer per session (`0` is not supported)                                         | `1000`         |
-| `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE` | Hard limit for in-memory event buffer per session (clamped to be `>= max`; `0` is not supported)                 | `2000`         |
+| Variable                                     | Description                                                                                                                                                                           | Default        |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `CLAUDE_CODE_GIT_BASH_PATH`                  | Path to `bash.exe` on Windows (see [Windows Support](#windows-support))                                                                                                               | Auto-detected  |
+| `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND`     | Exact command name to resolve from `PATH` as the default Claude executable (for example `claude` or `claude-internal`). Mutually exclusive with `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH` | _(unset)_      |
+| `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH`        | Explicit filesystem path to use as the default Claude executable. Mutually exclusive with `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND`                                                    | _(unset)_      |
+| `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME`          | Set to `1` to allow `claude_code_reply` to resume from on-disk transcripts when the in-memory session is missing                                                                      | `0` (disabled) |
+| `CLAUDE_CODE_MCP_RESUME_SECRET`              | HMAC secret used to validate `resumeToken` for disk resume fallback (recommended if disk resume is enabled)                                                                           | _(unset)_      |
+| `CLAUDE_CODE_MCP_MAX_SESSIONS`               | Maximum number of in-memory sessions (set `0` to disable the limit)                                                                                                                   | `128`          |
+| `CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS`    | Maximum number of outstanding permission requests per session (set `0` to disable the limit)                                                                                          | `64`           |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE`      | Soft limit for in-memory event buffer per session (`0` is not supported)                                                                                                              | `1000`         |
+| `CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE` | Hard limit for in-memory event buffer per session (clamped to be `>= max`; `0` is not supported)                                                                                      | `2000`         |
+
+### Choosing the default Claude executable
+
+- `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH` and `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND` are mutually exclusive.
+- If neither is set, the server auto-detects `claude`, then `claude-internal`, then falls back to the SDK-bundled CLI.
+- Request-level `pathToClaudeCodeExecutable` still overrides these server defaults.
+- Invalid values for these env vars are treated as startup misconfiguration and will fail the server fast.
 
 ### How to configure
 

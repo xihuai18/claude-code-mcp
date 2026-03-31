@@ -8,6 +8,7 @@
 - Expand SDK stream/event mapping for `rate_limit_event`, `system/api_retry`, `system/local_command_output`, `system/elicitation_complete`, `system/compact_boundary`, and partial `stream_event` output.
 - Preserve newer SDK metadata in session/results, including `fastModeState` and richer permission prompt labels (`title`, `displayName`).
 - Prefer SDK permission `suggestions` for `allow_for_session` responses and sync session metadata from `system/init` (for example actual model / permission mode).
+- Add default Claude executable resolution with explicit env overrides (`CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH` / `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND`) and auto-detection order `claude` -> `claude-internal` -> SDK-bundled.
 
 ### Documentation
 

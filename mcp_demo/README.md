@@ -27,6 +27,52 @@ claude mcp add --transport stdio claude-code -- npx -y @leo000001/claude-code-mc
 codex mcp add claude-code -- npx -y @leo000001/claude-code-mcp
 ```
 
+## Choosing the Claude executable
+
+By default, the server resolves the Claude executable in this order:
+
+1. Request-level `pathToClaudeCodeExecutable`
+2. `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH`
+3. `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND`
+4. Auto-detected `claude`
+5. Auto-detected `claude-internal`
+6. SDK-bundled Claude Code CLI
+
+`CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH` and `CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND` are mutually exclusive.
+Invalid values are treated as startup misconfiguration and fail fast.
+
+Use command-name resolution when the executable is already on `PATH`:
+
+```json
+{
+  "mcpServers": {
+    "claude-code": {
+      "command": "npx",
+      "args": ["-y", "@leo000001/claude-code-mcp"],
+      "env": {
+        "CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND": "claude-internal"
+      }
+    }
+  }
+}
+```
+
+Use an explicit path when you want a fixed binary regardless of `PATH`:
+
+```json
+{
+  "mcpServers": {
+    "claude-code": {
+      "command": "npx",
+      "args": ["-y", "@leo000001/claude-code-mcp"],
+      "env": {
+        "CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH": "C:\\Tools\\claude-internal.cmd"
+      }
+    }
+  }
+}
+```
+
 ## Polling + permissions (v2 async)
 
 `claude_code` / `claude_code_reply` start sessions asynchronously and return `{ sessionId, status: "running", pollInterval }`.

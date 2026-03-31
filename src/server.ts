@@ -144,7 +144,12 @@ export function createServerContext(serverCwd: string): {
     outputFormat: outputFormatSchema
       .optional()
       .describe("Structured output config: {type:'json_schema', schema:{...}}. Default: none"),
-    pathToClaudeCodeExecutable: z.string().optional().describe("Default: SDK-bundled"),
+    pathToClaudeCodeExecutable: z
+      .string()
+      .optional()
+      .describe(
+        "Explicit Claude executable path. Default: auto-detect 'claude', then 'claude-internal', else SDK-bundled. Server env vars can override the default."
+      ),
     mcpServers: z
       .record(z.string(), z.record(z.string(), z.unknown()))
       .optional()

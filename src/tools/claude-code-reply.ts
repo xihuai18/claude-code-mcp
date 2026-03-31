@@ -33,6 +33,7 @@ import { buildOptions } from "../utils/build-options.js";
 import type { OptionSource } from "../utils/build-options.js";
 import { toSessionCreateParams } from "../utils/session-create.js";
 import { normalizeWindowsPathLike } from "../utils/normalize-windows-path.js";
+import { getDefaultClaudeExecutablePath } from "../utils/claude-executable.js";
 
 /** Disk resume fallback configuration — only used when the in-memory session is missing. */
 export interface DiskResumeConfig {
@@ -167,10 +168,14 @@ function buildOptionsFromDiskResume(dr: DiskResumeConfig): ReturnType<typeof bui
     throw new Error(`Error [${ErrorCode.INVALID_ARGUMENT}]: cwd must be provided for disk resume.`);
   }
   const normalizedCwd = normalizeAndAssertCwd(dr.cwd, "disk resume cwd");
-  return buildOptions({
+  const options = buildOptions({
     ...dr,
     cwd: normalizedCwd,
   } as Parameters<typeof buildOptions>[0]);
+  if (options.pathToClaudeCodeExecutable === undefined) {
+    options.pathToClaudeCodeExecutable = getDefaultClaudeExecutablePath();
+  }
+  return options;
 }
 
 export async function executeClaudeCodeReply(
@@ -361,6 +366,11 @@ export async function executeClaudeCodeReply(
   const normalizedCwd = normalizeAndAssertCwd(session.cwd, "session cwd");
   const options = buildOptions(session);
   options.cwd = normalizedCwd;
+  const resolvedDefaultExecutable =
+    options.pathToClaudeCodeExecutable ?? getDefaultClaudeExecutablePath();
+  if (resolvedDefaultExecutable !== undefined) {
+    options.pathToClaudeCodeExecutable = resolvedDefaultExecutable;
+  }
   if (input.forkSession) options.forkSession = true;
 
   if (input.forkSession && !sessionManager.hasCapacityFor(1)) {
@@ -372,10 +382,18 @@ export async function executeClaudeCodeReply(
     };
   }
 
-  const sourceOverrides: Pick<OptionSource, "effort" | "thinking"> = {
-    effort: input.effort ?? session.effort,
-    thinking: input.thinking ?? session.thinking,
-  };
+  const sourceOverrides: Pick<OptionSource, "effort" | "thinking" | "pathToClaudeCodeExecutable"> =
+    {
+      effort: input.effort ?? session.effort,
+      thinking: input.thinking ?? session.thinking,
+      pathToClaudeCodeExecutable:
+        session.pathToClaudeCodeExecutable ?? resolvedDefaultExecutable ?? undefined,
+    };
+  if (session.pathToClaudeCodeExecutable === undefined && resolvedDefaultExecutable !== undefined) {
+    sessionManager.update(input.sessionId, {
+      pathToClaudeCodeExecutable: resolvedDefaultExecutable,
+    });
+  }
   if (input.effort !== undefined) options.effort = input.effort;
   if (input.thinking !== undefined) options.thinking = input.thinking;
   if (!input.forkSession && (input.effort !== undefined || input.thinking !== undefined)) {
