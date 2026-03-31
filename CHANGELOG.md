@@ -14,6 +14,11 @@
 - Add OpenCode-specific setup and usage guidance, including local MCP config examples and async polling recommendations.
 - Sync README and DESIGN option/message matrices with the current SDK 0.2.81 surface.
 - Add usage reminders in model-visible guidance: long Claude Code runs are normal, and follow-up questions should use `claude_code_reply` with the existing session.
+- Separate agent-visible MCP guidance from repo-only documentation, and move more protocol-critical rules into tool descriptions and resources.
+
+### Tests
+
+- Add a reusable stdio metadata smoke script to verify agent-visible tool/resource guidance through a real MCP client transport.
 
 ## 2.5.0 (2026-02-27)
 

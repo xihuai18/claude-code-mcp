@@ -23,6 +23,7 @@
     "e2e:stdio:cancel:wp": "node scripts/e2e/stdio-cancel-regression.mjs --mode waiting-permission-cancel --iterations 20",
     "e2e:stdio:interrupt": "node scripts/e2e/stdio-cancel-regression.mjs --mode fast-interrupt --iterations 20",
     "e2e:stdio:interrupt:wp": "node scripts/e2e/stdio-cancel-regression.mjs --mode waiting-permission-interrupt --iterations 20",
+    "e2e:stdio:metadata": "npm run build && node scripts/e2e/stdio-metadata-smoke.mjs",
     "e2e:stdio:reply-race": "node scripts/e2e/stdio-reply-race-regression.mjs",
     "e2e:stdio:runner": "node scripts/e2e/stdio-runner.mjs --iterations 20",
     "e2e": "npm run build && vitest run --config e2e/vitest.config.ts",

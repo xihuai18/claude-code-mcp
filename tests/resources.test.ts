@@ -129,6 +129,9 @@ describe("Resources", () => {
           ? gotchasContent.text
           : "";
       expect(gotchasText).toContain("gotchas");
+      expect(gotchasText).toContain("Severity:");
+      expect(gotchasText).toContain("Detection:");
+      expect(gotchasText).toContain("Remedy:");
 
       const quickstartRes = await client.readResource({ uri: "claude-code-mcp:///quickstart" });
       expect(quickstartRes.contents[0]?.mimeType).toBe("text/markdown");
@@ -140,12 +143,15 @@ describe("Resources", () => {
           ? quickstartContent.text
           : "";
       expect(quickstartText).toContain("quickstart");
+      expect(quickstartText).toContain("## Required state");
+      expect(quickstartText).toContain("Persist these client-side");
       expect(quickstartText).toContain("claude_code_check(action='poll')");
       expect(quickstartText).toContain("respond_permission");
       expect(quickstartText).toContain("allow_for_session");
       expect(quickstartText).toContain("10+ minutes");
       expect(quickstartText).toContain("Adjust poll intervals to the current progress");
       expect(quickstartText).toContain("existing `sessionId`");
+      expect(quickstartText).toContain("final result arrives later via polling");
       expect(quickstartText).toContain("`respond_user_input` is not supported");
 
       const errorsRes = await client.readResource({ uri: "claude-code-mcp:///errors" });
@@ -184,6 +190,7 @@ describe("Resources", () => {
         samePlatformRequired?: unknown;
         transport?: unknown;
         schemaVersion?: unknown;
+        guidance?: unknown[];
         limits?: {
           maxSessions?: unknown;
           maxPendingPermissionsPerSession?: unknown;
@@ -219,6 +226,7 @@ describe("Resources", () => {
       expect(compat.features?.sessionInterrupt).toBe(true);
       expect(compat.features?.allowForSessionDecision).toBe(true);
       expect(compat.features?.respondUserInput).toBe(false);
+      expect(Array.isArray(compat.guidance)).toBe(true);
       expect(Array.isArray(compat.resourceTemplates)).toBe(true);
 
       ctx.sessionManager.create({ sessionId: "s-template", cwd: "/tmp" });

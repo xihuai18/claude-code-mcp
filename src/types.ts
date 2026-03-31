@@ -44,7 +44,7 @@ export type OutputFormat = { type: "json_schema"; schema: Record<string, unknown
 
 export type ThinkingConfig =
   | { type: "adaptive" }
-  | { type: "enabled"; budgetTokens: number }
+  | { type: "enabled"; budgetTokens?: number }
   | { type: "disabled" };
 
 export type ToolsConfig = string[] | { type: "preset"; preset: "claude_code" };
@@ -58,7 +58,6 @@ export interface AgentDefinition {
   prompt: string;
   tools?: string[];
   disallowedTools?: string[];
-  strictAllowedTools?: boolean;
   model?: AgentModel;
   maxTurns?: number;
   mcpServers?: (string | Record<string, unknown>)[];

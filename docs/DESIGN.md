@@ -32,6 +32,19 @@
 - 本文件维护所有详细映射与语义边界。
 - 两份文档允许少量摘要重复，但详细内容只能在一个地方出现。
 
+### 1.4 Agent 可见性边界
+
+对于“通过 MCP 接入的 code agent”，不要假设它能看到仓库文档：
+
+- 通常可见：tool name / description、input schema 字段描述、client 主动读取的 MCP resources
+- 不应假设可见：`README.md`、`docs/DESIGN.md`、`AGENTS.md`、`CHANGELOG.md`
+
+因此，容易误用的运行时规则必须先落在：
+
+1. `src/server.ts` 的 tool description 与字段 `.describe()`
+2. `src/resources/register-resources.ts` 的 quickstart / gotchas / compat guidance
+3. 然后才在 README / DESIGN 做人类文档补充
+
 ## 2. 系统概览
 
 ### 2.1 工具与职责

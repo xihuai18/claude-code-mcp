@@ -23,6 +23,12 @@ Non-negotiable dedupe rule:
 - Keep long parameter tables, message mapping, and protocol deep dives in `docs/DESIGN.md`.
 - If details are needed, link to DESIGN anchors instead of duplicating.
 
+Visibility rule for MCP-facing guidance:
+
+- Do not assume MCP-connected coding agents can read `README.md`, `AGENTS.md`, or `docs/DESIGN.md`.
+- Put protocol-critical runtime guidance first in MCP tool descriptions and MCP resources.
+- Treat repo docs as human/maintainer guidance unless a client explicitly injects them into model context.
+
 ## Design Snapshot (Summary Only)
 
 Project direction:

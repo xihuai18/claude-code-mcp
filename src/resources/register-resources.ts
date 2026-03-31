@@ -291,7 +291,7 @@ export function registerResources(
     gotchasUri.toString(),
     {
       title: "Gotchas",
-      description: "Practical limits and gotchas when using Claude Code via this MCP server.",
+      description: "High-signal failure modes, symptoms, and remedies for this MCP workflow.",
       mimeType: "text/markdown",
     },
     () =>
@@ -300,7 +300,18 @@ export function registerResources(
         [
           "# claude-code-mcp: gotchas",
           "",
-          ...gotchasEntries.map((entry) => `- ${entry.title}. ${entry.remedy}`),
+          "Check these before assuming the session is broken.",
+          "",
+          ...gotchasEntries.flatMap((entry) => [
+            `## ${entry.title}`,
+            `- Severity: ${entry.severity}`,
+            `- Applies to: ${entry.appliesTo.join(", ")}`,
+            `- Symptom: ${entry.symptom}`,
+            `- Detection: ${entry.detection}`,
+            `- Remedy: ${entry.remedy}`,
+            ...(entry.example ? [`- Example: ${entry.example}`] : []),
+            "",
+          ]),
           "",
         ].join("\n"),
         "text/markdown"
@@ -315,7 +326,7 @@ export function registerResources(
     quickstartUri.toString(),
     {
       title: "Quickstart",
-      description: "Minimal async polling flow for claude_code / claude_code_check.",
+      description: "Canonical async start, poll, permission, and continue flow for MCP callers.",
       mimeType: "text/markdown",
     },
     () =>
@@ -324,26 +335,43 @@ export function registerResources(
         [
           "# claude-code-mcp quickstart",
           "",
-          "1. Call `claude_code` with `{ prompt }` and keep `sessionId`.",
-          "2. Poll with `claude_code_check(action='poll')` using `nextCursor`.",
-          "3. If actions are returned, respond with `claude_code_check(action='respond_permission')`.",
-          "4. Continue polling until status becomes `idle` / `error` / `cancelled`.",
+          "## Required state",
           "",
-          "Usage reminders:",
+          "Persist these client-side:",
+          "- `sessionId`: returned by `claude_code` / `claude_code_reply`.",
+          "- `nextCursor`: returned by each `claude_code_check(action='poll')` call.",
+          "",
+          "## Main loop",
+          "",
+          "1. Call `claude_code` with `{ prompt }`.",
+          "2. Store `sessionId` from the start response.",
+          "3. Poll with `claude_code_check(action='poll')`, passing the previous `nextCursor` back as `cursor`.",
+          "4. If `actions[]` contains a permission request, answer it with `claude_code_check(action='respond_permission')`.",
+          "5. Continue polling until `status` becomes `idle`, `error`, or `cancelled`.",
+          "",
+          "## Continue an existing run",
+          "",
+          "- If Claude Code stops and you want to keep going, call `claude_code_reply` with the existing `sessionId` instead of starting a fresh `claude_code` session.",
+          "- `claude_code_reply` requires a persistent session, or `diskResumeConfig` when disk resume fallback is enabled and the in-memory session is missing.",
+          "",
+          "## Reminders",
+          "",
+          "- This backend is asynchronous: `claude_code` and `claude_code_reply` start work, and the final result arrives later via polling.",
           "- Claude Code may keep working for 10+ minutes on larger tasks, especially with `effort='high'` or `effort='max'`; keep polling and be patient before treating it as stuck.",
           "- Adjust poll intervals to the current progress: poll faster while new events or permission actions are arriving, and slower while the session is quietly thinking with no new output.",
-          "- If Claude Code stops and you want to keep going, call `claude_code_reply` with the existing `sessionId` instead of starting a fresh `claude_code` session.",
-          "",
-          "Common mistakes:",
-          "- Do not call `claude_code_reply` on a non-persistent session; if you plan to continue later, start with `advanced.persistSession=true`.",
           "- `model` is optional. If omitted, Claude Code chooses the effective model from its own defaults/settings.",
+          "- `allowedTools` is pre-approval by default; set `strictAllowedTools=true` when you need a strict allowlist.",
+          "- `allow_for_session` usually works best when the same tool will be used repeatedly in one session.",
+          "",
+          "## Common mistakes",
+          "",
+          "- Do not call `claude_code_reply` on a non-persistent session if you expect to continue later; keep `advanced.persistSession=true`.",
           "- Store `nextCursor` and feed it back into the next `claude_code_check(action='poll')`; otherwise you will keep replaying old events.",
           "- On Windows, set `CLAUDE_CODE_GIT_BASH_PATH` or Claude Code may fail before the session starts.",
           "- If `decision='allow_for_session'` still shows a permission request, inspect `actions[].suggestions` / `blockedPath`; directory access may need a more specific permission update.",
           "",
           "Notes:",
-          "- `respond_user_input` is not supported on this backend.",
-          "- `allowedTools` is pre-approval by default; set `strictAllowedTools=true` for strict allowlist behavior.",
+          "- `respond_user_input` is not supported. Use only `respond_permission` for approvals.",
           "- OpenCode/Codex-style clients usually work best when they store `sessionId` + `nextCursor` and answer approvals with `decision=allow_for_session`.",
           "- Prefer `responseMode='delta_compact'` for high-frequency polling.",
         ].join("\n"),
@@ -465,6 +493,7 @@ export function registerResources(
         },
         guidance: [
           "Some clients cache tool descriptions at connect time. Prefer claude_code_check(pollOptions.includeTools=true) for runtime-authoritative tool lists.",
+          "Treat tool descriptions and MCP resources as agent-visible guidance; do not assume README-level documentation is visible to the model.",
           "Use allowedTools/disallowedTools only with exact runtime tool names.",
           "Set strictAllowedTools=true when you need allowedTools to behave as a strict allowlist.",
           "This server assumes MCP client and server run on the same machine/platform.",
@@ -652,6 +681,7 @@ export function registerResources(
             recommendations: [
               "Prefer responseMode='delta_compact' for fast status loops.",
               "Enable pollOptions.includeTools=true when exact runtime tool names are required.",
+              "Do not assume human-facing README guidance is visible to the agent; keep critical calling rules in tool descriptions or MCP resources.",
             ],
           };
         }
@@ -663,6 +693,7 @@ export function registerResources(
               "Use resources and resource templates for low-latency diagnostics.",
               "Use allowedTools/disallowedTools with exact runtime names.",
               "Enable strictAllowedTools when running in locked-down governance mode.",
+              "Keep protocol-critical calling rules in tool descriptions or resources, not only in README-like docs.",
             ],
           };
         }
@@ -684,6 +715,7 @@ export function registerResources(
           recommendations: [
             "Persist nextCursor and de-duplicate by event.id.",
             "Use responseMode='delta_compact' for high-frequency polling, full mode only for diagnostics.",
+            "Do not assume repository docs are model-visible; tool descriptions and resources are safer places for runtime guidance.",
           ],
         };
       })();

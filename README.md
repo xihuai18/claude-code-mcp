@@ -10,6 +10,16 @@ Inspired by the [Codex MCP](https://developers.openai.com/codex/guides/agents-sd
 
 This package is **CLI-first**: it is intended to run as an MCP server process (`npx @leo000001/claude-code-mcp`), not as a stable programmatic library API.
 
+## Visibility Boundary
+
+Not every piece of documentation below is visible to an MCP-connected coding agent.
+
+- **Usually visible to the agent:** MCP tool names, tool descriptions, input field descriptions, and MCP resources that the client explicitly reads.
+- **Not safe to assume visible:** this `README.md`, `docs/DESIGN.md`, `AGENTS.md`, and other repository files unless the client or orchestrator copies that content into the model context.
+- **Authoring rule:** keep protocol-critical calling rules in tool descriptions and MCP resources first; mirror them in README for humans, but do not rely on README alone.
+
+In practice, the most important runtime rules are duplicated in the `claude_code*` tool descriptions and the `quickstart` / `gotchas` / `compat-report` resources so async polling clients can succeed even when they never read this file.
+
 ## Features
 
 - **4 tools** covering the full agent lifecycle: start, continue, check/poll, manage
@@ -122,16 +132,19 @@ npm start
 
 Start a new Claude Code session. The agent autonomously performs coding tasks: reading/writing files, running shell commands, searching code, managing git, and interacting with APIs.
 
+Important protocol note: this call starts background work and returns quickly with `sessionId`; it does not return the final result. Callers must poll `claude_code_check(action="poll")`, persist `nextCursor`, and use `claude_code_reply` to continue the same session later.
+
 | Parameter                    | Type             | Required | Description                                                                                                                                                                                                   |
 | ---------------------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `prompt`                     | string           | Yes      | Task or question for Claude Code                                                                                                                                                                              |
 | `cwd`                        | string           | No       | Working directory (defaults to server cwd)                                                                                                                                                                    |
-| `allowedTools`               | string[]         | No       | Auto-approved tool names. Default: `[]` (none). Tools not in `allowedTools`/`disallowedTools` may surface permission requests via `claude_code_check`. Example: `["Bash", "Read", "Write", "Edit"]`           |
+| `allowedTools`               | string[]         | No       | Auto-approved tool names. Default: `[]` (none). This is not a strict allowlist unless `strictAllowedTools=true`. Example: `["Bash", "Read", "Write", "Edit"]`                                                 |
+| `strictAllowedTools`         | boolean          | No       | Server-side strict allowlist toggle. When `true`, tools outside `allowedTools` are denied. Default: `false`                                                                                                   |
 | `disallowedTools`            | string[]         | No       | Forbidden tool names. Default: `[]` (none). SDK behavior: disallowed tools are removed from the model's context. Takes precedence over `allowedTools` and will be denied even if later approved interactively |
 | `maxTurns`                   | number           | No       | Maximum number of agent reasoning steps. Each step may involve one or more tool calls. Default: SDK/Claude Code default                                                                                       |
 | `model`                      | string           | No       | Model to use (e.g. `"claude-sonnet-4-5-20250929"`). Default: SDK/Claude Code default                                                                                                                          |
-| `effort`                     | string           | No       | Effort level: `"low"`, `"medium"`, `"high"`, `"max"`. Default: SDK/Claude Code default                                                                                                                        |
-| `thinking`                   | object           | No       | Thinking mode: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default                                                                    |
+| `effort`                     | string           | No       | Effort string: `"low"`, `"medium"`, `"high"`, `"max"`. Default: SDK/Claude Code default                                                                                                                       |
+| `thinking`                   | object           | No       | Thinking config object, not a string: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens?: N }`, or `{ type: "disabled" }`. Do not pass `"low"`/`"high"` here. Default: SDK/Claude Code default         |
 | `systemPrompt`               | string \| object | No       | Override the agent's system prompt. Default: SDK/Claude Code default. Pass a string for full replacement, or `{ type: "preset", preset: "claude_code", append?: "..." }` to extend the default prompt         |
 | `permissionRequestTimeoutMs` | number           | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min)                                                                                      |
 | `advanced`                   | object           | No       | Advanced/low-frequency parameters (see below)                                                                                                                                                                 |
@@ -139,32 +152,32 @@ Start a new Claude Code session. The agent autonomously performs coding tasks: r
 <details>
 <summary><code>advanced</code> object parameters (24 low-frequency parameters)</summary>
 
-| Parameter                             | Type               | Description                                                                                                                                                                                                                            |
-| ------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `advanced.tools`                      | string[] \| object | Define the base tool set. Default: SDK/Claude Code default toolset. Array of tool name strings, or `{ type: "preset", preset: "claude_code" }` for the default toolset. `allowedTools`/`disallowedTools` further filter on top of this |
-| `advanced.persistSession`             | boolean            | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                                                                                                      |
-| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`.                                                                                                                                                      |
-| `advanced.agents`                     | object             | Define custom sub-agents the main agent can delegate tasks to. Default: none. SDK default: if a sub-agent omits `tools`, it inherits all tools from the parent.                                                                        |
-| `advanced.agent`                      | string             | Name of a custom agent (defined in `agents`) to use as the primary agent. Default: omitted                                                                                                                                             |
-| `advanced.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                                                                                                                |
-| `advanced.betas`                      | string[]           | Beta features (e.g. `["context-1m-2025-08-07"]`). Default: none                                                                                                                                                                        |
-| `advanced.additionalDirectories`      | string[]           | Additional directories the agent can access beyond cwd. Default: none                                                                                                                                                                  |
-| `advanced.outputFormat`               | object             | Structured output: `{ type: "json_schema", schema: {...} }`. Default: omitted (plain text)                                                                                                                                             |
-| `advanced.pathToClaudeCodeExecutable` | string             | Path to the Claude Code executable. Default: SDK-bundled Claude Code (cli.js)                                                                                                                                                          |
-| `advanced.mcpServers`                 | object             | MCP server configurations (key: server name, value: server config). Default: none                                                                                                                                                      |
-| `advanced.sandbox`                    | object             | Sandbox configuration for isolating shell command execution (e.g., Docker container settings). Default: SDK/Claude Code default                                                                                                        |
-| `advanced.fallbackModel`              | string             | Fallback model if the primary model fails or is unavailable. Default: none                                                                                                                                                             |
-| `advanced.enableFileCheckpointing`    | boolean            | Enable file checkpointing to track file changes during the session. Default: `false`                                                                                                                                                   |
-| `advanced.toolConfig`                 | object             | Per-tool built-in configuration. Example: `{ askUserQuestion: { previewFormat: "html" } }`. Default: none                                                                                                                              |
-| `advanced.includePartialMessages`     | boolean            | When true, includes intermediate streaming messages in the response. Useful for real-time progress monitoring. Default: false                                                                                                          |
-| `advanced.promptSuggestions`          | boolean            | When true, emits post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                                                                                                                                            |
-| `advanced.agentProgressSummaries`     | boolean            | When true, emits AI-generated summaries on `system/task_progress` events for running subagents. Default: `false`                                                                                                                       |
-| `advanced.strictMcpConfig`            | boolean            | Enforce strict validation of MCP server configurations. Default: `false`                                                                                                                                                               |
-| `advanced.settings`                   | string \| object   | Extra Claude Code flag settings. Pass either a path to a settings JSON file or an inline settings object. Default: none                                                                                                                |
-| `advanced.settingSources`             | string[]           | Which filesystem settings to load. Defaults to `["user", "project", "local"]` (loads all settings and CLAUDE.md). Pass `[]` for SDK isolation mode                                                                                     |
-| `advanced.debug`                      | boolean            | Enable debug mode for verbose logging. Default: `false`                                                                                                                                                                                |
-| `advanced.debugFile`                  | string             | Write debug logs to a specific file path (implicitly enables debug mode). Default: omitted                                                                                                                                             |
-| `advanced.env`                        | object             | Environment variables to merge with process.env and pass to the Claude Code process (user values take precedence). Default: inherit process.env                                                                                        |
+| Parameter                             | Type               | Description                                                                                                                                                                                                                             |
+| ------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `advanced.tools`                      | string[] \| object | Visible built-in tool set. Array of exact tool names, `[]` to disable built-ins, or `{ type: "preset", preset: "claude_code" }` for the default set. This controls what Claude can see/call; `allowedTools` only controls pre-approval. |
+| `advanced.persistSession`             | boolean            | Persist session history to disk (`~/.claude/projects/`). Default: `true`. Set `false` to disable.                                                                                                                                       |
+| `advanced.sessionInitTimeoutMs`       | number             | Session init timeout in milliseconds waiting for `system/init`. Default: `10000`.                                                                                                                                                       |
+| `advanced.agents`                     | object             | Define custom sub-agents the main agent can delegate tasks to. Default: none. SDK default: if a sub-agent omits `tools`, it inherits all tools from the parent.                                                                         |
+| `advanced.agent`                      | string             | Name of a custom agent (defined in `agents`) to use as the primary agent. Default: omitted                                                                                                                                              |
+| `advanced.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                                                                                                                 |
+| `advanced.betas`                      | string[]           | Beta features (e.g. `["context-1m-2025-08-07"]`). Default: none                                                                                                                                                                         |
+| `advanced.additionalDirectories`      | string[]           | Additional directories the agent can access beyond cwd. Default: none                                                                                                                                                                   |
+| `advanced.outputFormat`               | object             | Structured output config: `{ type: "json_schema", schema: {...} }`. Default: omitted (plain text)                                                                                                                                       |
+| `advanced.pathToClaudeCodeExecutable` | string             | Path to the Claude Code executable. Default: SDK-bundled Claude Code (cli.js)                                                                                                                                                           |
+| `advanced.mcpServers`                 | object             | MCP server configurations keyed by server name. Default: none                                                                                                                                                                           |
+| `advanced.sandbox`                    | object             | Sandbox behavior config object. This controls sandbox behavior, not the actual Read/Edit/WebFetch permission rules. Default: SDK/Claude Code default                                                                                    |
+| `advanced.fallbackModel`              | string             | Fallback model if the primary model fails or is unavailable. Default: none                                                                                                                                                              |
+| `advanced.enableFileCheckpointing`    | boolean            | Enable file checkpointing to track file changes during the session. Default: `false`                                                                                                                                                    |
+| `advanced.toolConfig`                 | object             | Per-tool built-in configuration. Example: `{ askUserQuestion: { previewFormat: "html" } }`. Default: none                                                                                                                               |
+| `advanced.includePartialMessages`     | boolean            | When true, includes intermediate streaming messages in the response. Useful for real-time progress monitoring. Default: false                                                                                                           |
+| `advanced.promptSuggestions`          | boolean            | When true, emits post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                                                                                                                                             |
+| `advanced.agentProgressSummaries`     | boolean            | When true, emits AI-generated summaries on `system/task_progress` events for running subagents. Default: `false`                                                                                                                        |
+| `advanced.strictMcpConfig`            | boolean            | Enforce strict validation of MCP server configurations. Default: `false`                                                                                                                                                                |
+| `advanced.settings`                   | string \| object   | Extra Claude Code flag settings. Pass either a path to a settings JSON file or an inline settings object. These load at the highest-priority flag-settings layer. Default: none                                                         |
+| `advanced.settingSources`             | string[]           | Which filesystem settings to load. Defaults to `["user", "project", "local"]` (loads all settings and CLAUDE.md). Pass `[]` for SDK isolation mode                                                                                      |
+| `advanced.debug`                      | boolean            | Enable debug mode for verbose logging. Default: `false`                                                                                                                                                                                 |
+| `advanced.debugFile`                  | string             | Write debug logs to a specific file path (implicitly enables debug mode). Default: omitted                                                                                                                                              |
+| `advanced.env`                        | object             | Environment variables merged over `process.env` before launching Claude Code (user values take precedence). Default: inherit `process.env`                                                                                              |
 
 </details>
 
@@ -191,56 +204,58 @@ Use `claude_code_check` to poll events and obtain the final `result`.
 
 Continue an existing session by sending a follow-up message. The agent retains full context from previous turns including files read, code analysis, and conversation history.
 
-| Parameter                    | Type    | Required | Description                                                                                                              |
-| ---------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `sessionId`                  | string  | Yes      | Session ID from a previous `claude_code` call                                                                            |
-| `prompt`                     | string  | Yes      | Follow-up prompt                                                                                                         |
-| `forkSession`                | boolean | No       | Create a branched copy of this session. Default: `false`                                                                 |
-| `effort`                     | string  | No       | Effort level override for this run (and for future replies when not forking). Default: SDK/Claude Code default           |
-| `thinking`                   | object  | No       | Thinking mode override for this run (and for future replies when not forking). Default: SDK/Claude Code default          |
-| `permissionRequestTimeoutMs` | number  | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min) |
-| `sessionInitTimeoutMs`       | number  | No       | Fork init timeout in milliseconds (only when `forkSession=true`). Default: `10000`                                       |
-| `diskResumeConfig`           | object  | No       | Disk resume parameters (see below). Used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` and in-memory session is missing     |
+Important protocol note: prefer `claude_code_reply` over starting a fresh `claude_code` session when you want to continue the same work. This requires a persistent in-memory session, or `diskResumeConfig` when disk resume fallback is enabled.
+
+| Parameter                    | Type    | Required | Description                                                                                                                                                                                                          |
+| ---------------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sessionId`                  | string  | Yes      | Session ID from a previous `claude_code` call                                                                                                                                                                        |
+| `prompt`                     | string  | Yes      | Follow-up prompt                                                                                                                                                                                                     |
+| `forkSession`                | boolean | No       | Create a branched copy of this session. Default: `false`                                                                                                                                                             |
+| `effort`                     | string  | No       | Effort string override for this run (and for future replies when not forking): `"low"`, `"medium"`, `"high"`, `"max"`. Default: SDK/Claude Code default                                                              |
+| `thinking`                   | object  | No       | Thinking config object override for this run (and for future replies when not forking): `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens?: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default |
+| `permissionRequestTimeoutMs` | number  | No       | Timeout in milliseconds waiting for permission decisions, auto-deny on expiry. Default: `60000` (server-clamped to 5min)                                                                                             |
+| `sessionInitTimeoutMs`       | number  | No       | Fork init timeout in milliseconds (only when `forkSession=true`). Default: `10000`                                                                                                                                   |
+| `diskResumeConfig`           | object  | No       | Disk resume parameters (see below). Used when `CLAUDE_CODE_MCP_ALLOW_DISK_RESUME=1` and in-memory session is missing                                                                                                 |
 
 <details>
 <summary><code>diskResumeConfig</code> object parameters (34 disk-resume-only parameters)</summary>
 
-| Parameter                                     | Type               | Description                                                                                     |
-| --------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
-| `diskResumeConfig.resumeToken`                | string             | Resume token returned by `claude_code` / `claude_code_reply`. Required for disk resume fallback |
-| `diskResumeConfig.cwd`                        | string             | Working directory. Required for disk resume.                                                    |
-| `diskResumeConfig.allowedTools`               | string[]           | Auto-approved tool names (see `claude_code`). Default: `[]`                                     |
-| `diskResumeConfig.disallowedTools`            | string[]           | Forbidden tool names (see `claude_code`). Default: `[]`                                         |
-| `diskResumeConfig.strictAllowedTools`         | boolean            | Enforce strict allow-list behavior for `allowedTools`. Default: `false`                         |
-| `diskResumeConfig.tools`                      | string[] \| object | Base tool set (see `claude_code`). Default: SDK/Claude Code default                             |
-| `diskResumeConfig.persistSession`             | boolean            | Persist session history to disk. Default: `true`                                                |
-| `diskResumeConfig.maxTurns`                   | number             | Maximum number of agent reasoning steps. Default: SDK/Claude Code default                       |
-| `diskResumeConfig.model`                      | string             | Model to use. Default: SDK/Claude Code default                                                  |
-| `diskResumeConfig.systemPrompt`               | string \| object   | Override the agent's system prompt. Default: SDK/Claude Code default                            |
-| `diskResumeConfig.agents`                     | object             | Custom sub-agent definitions (see `claude_code`). Default: none                                 |
-| `diskResumeConfig.agent`                      | string             | Primary agent name (see `claude_code` tool). Default: omitted                                   |
-| `diskResumeConfig.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                         |
-| `diskResumeConfig.effort`                     | string             | Effort level. Default: SDK/Claude Code default                                                  |
-| `diskResumeConfig.betas`                      | string[]           | Beta features. Default: none                                                                    |
-| `diskResumeConfig.additionalDirectories`      | string[]           | Additional directories. Default: none                                                           |
-| `diskResumeConfig.outputFormat`               | object             | Structured output format. Default: omitted (plain text)                                         |
-| `diskResumeConfig.thinking`                   | object             | Thinking mode. Default: SDK/Claude Code default                                                 |
-| `diskResumeConfig.resumeSessionAt`            | string             | Resume only up to and including a specific message UUID. Default: omitted                       |
-| `diskResumeConfig.pathToClaudeCodeExecutable` | string             | Path to Claude Code executable. Default: SDK-bundled Claude Code (cli.js)                       |
-| `diskResumeConfig.mcpServers`                 | object             | MCP server configurations. Default: none                                                        |
-| `diskResumeConfig.sandbox`                    | object             | Sandbox config for command isolation. Default: SDK/Claude Code default                          |
-| `diskResumeConfig.fallbackModel`              | string             | Fallback model. Default: none                                                                   |
-| `diskResumeConfig.enableFileCheckpointing`    | boolean            | Enable file checkpointing. Default: `false`                                                     |
-| `diskResumeConfig.toolConfig`                 | object             | Per-tool built-in configuration. Default: none                                                  |
-| `diskResumeConfig.includePartialMessages`     | boolean            | Include intermediate streaming messages. Default: `false`                                       |
-| `diskResumeConfig.promptSuggestions`          | boolean            | Emit post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                 |
-| `diskResumeConfig.agentProgressSummaries`     | boolean            | Emit AI-generated subagent progress summaries. Default: `false`                                 |
-| `diskResumeConfig.strictMcpConfig`            | boolean            | Strict MCP config validation. Default: `false`                                                  |
-| `diskResumeConfig.settings`                   | string \| object   | Extra Claude Code flag settings (path or inline object). Default: none                          |
-| `diskResumeConfig.settingSources`             | string[]           | Which filesystem settings to load. Default: `["user", "project", "local"]`                      |
-| `diskResumeConfig.debug`                      | boolean            | Debug mode. Default: `false`                                                                    |
-| `diskResumeConfig.debugFile`                  | string             | Debug log file path. Default: omitted                                                           |
-| `diskResumeConfig.env`                        | object             | Environment variables. Default: inherit process.env (user values override)                      |
+| Parameter                                     | Type               | Description                                                                                                                                          |
+| --------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `diskResumeConfig.resumeToken`                | string             | Resume token returned by `claude_code` / `claude_code_reply`. Required for disk resume fallback                                                      |
+| `diskResumeConfig.cwd`                        | string             | Working directory. Required for disk resume.                                                                                                         |
+| `diskResumeConfig.allowedTools`               | string[]           | Auto-approved tool names (see `claude_code`). Default: `[]`                                                                                          |
+| `diskResumeConfig.disallowedTools`            | string[]           | Forbidden tool names (see `claude_code`). Default: `[]`                                                                                              |
+| `diskResumeConfig.strictAllowedTools`         | boolean            | Server-side strict allow-list behavior for `allowedTools`. Default: `false`                                                                          |
+| `diskResumeConfig.tools`                      | string[] \| object | Base tool set (see `claude_code`). Default: SDK/Claude Code default                                                                                  |
+| `diskResumeConfig.persistSession`             | boolean            | Persist session history to disk. Default: `true`                                                                                                     |
+| `diskResumeConfig.maxTurns`                   | number             | Maximum number of agent reasoning steps. Default: SDK/Claude Code default                                                                            |
+| `diskResumeConfig.model`                      | string             | Model to use. Default: SDK/Claude Code default                                                                                                       |
+| `diskResumeConfig.systemPrompt`               | string \| object   | Override the agent's system prompt. Default: SDK/Claude Code default                                                                                 |
+| `diskResumeConfig.agents`                     | object             | Custom sub-agent definitions (see `claude_code`). Default: none                                                                                      |
+| `diskResumeConfig.agent`                      | string             | Primary agent name (see `claude_code` tool). Default: omitted                                                                                        |
+| `diskResumeConfig.maxBudgetUsd`               | number             | Maximum budget in USD. Default: SDK/Claude Code default                                                                                              |
+| `diskResumeConfig.effort`                     | string             | Effort level. Default: SDK/Claude Code default                                                                                                       |
+| `diskResumeConfig.betas`                      | string[]           | Beta features. Default: none                                                                                                                         |
+| `diskResumeConfig.additionalDirectories`      | string[]           | Additional directories. Default: none                                                                                                                |
+| `diskResumeConfig.outputFormat`               | object             | Structured output config. Default: omitted (plain text)                                                                                              |
+| `diskResumeConfig.thinking`                   | object             | Thinking config object: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens?: N }`, or `{ type: "disabled" }`. Default: SDK/Claude Code default |
+| `diskResumeConfig.resumeSessionAt`            | string             | Resume only up to and including a specific message UUID. Default: omitted                                                                            |
+| `diskResumeConfig.pathToClaudeCodeExecutable` | string             | Path to Claude Code executable. Default: SDK-bundled Claude Code (cli.js)                                                                            |
+| `diskResumeConfig.mcpServers`                 | object             | MCP server configurations keyed by server name. Default: none                                                                                        |
+| `diskResumeConfig.sandbox`                    | object             | Sandbox behavior config object. Default: SDK/Claude Code default                                                                                     |
+| `diskResumeConfig.fallbackModel`              | string             | Fallback model. Default: none                                                                                                                        |
+| `diskResumeConfig.enableFileCheckpointing`    | boolean            | Enable file checkpointing. Default: `false`                                                                                                          |
+| `diskResumeConfig.toolConfig`                 | object             | Per-tool built-in configuration. Default: none                                                                                                       |
+| `diskResumeConfig.includePartialMessages`     | boolean            | Include intermediate streaming messages. Default: `false`                                                                                            |
+| `diskResumeConfig.promptSuggestions`          | boolean            | Emit post-turn prompt suggestion events (`prompt_suggestion`). Default: `false`                                                                      |
+| `diskResumeConfig.agentProgressSummaries`     | boolean            | Emit AI-generated subagent progress summaries. Default: `false`                                                                                      |
+| `diskResumeConfig.strictMcpConfig`            | boolean            | Strict MCP config validation. Default: `false`                                                                                                       |
+| `diskResumeConfig.settings`                   | string \| object   | Extra Claude Code flag settings (path or inline object), loaded at the highest-priority flag-settings layer. Default: none                           |
+| `diskResumeConfig.settingSources`             | string[]           | Which filesystem settings to load. Default: `["user", "project", "local"]`                                                                           |
+| `diskResumeConfig.debug`                      | boolean            | Debug mode. Default: `false`                                                                                                                         |
+| `diskResumeConfig.debugFile`                  | string             | Debug log file path (implicitly enables debug). Default: omitted                                                                                     |
+| `diskResumeConfig.env`                        | object             | Environment variables merged over `process.env` (user values override). Default: inherit process.env                                                 |
 
 </details>
 
@@ -303,6 +318,8 @@ List, inspect, cancel, or interrupt sessions.
 ### `claude_code_check` — Poll events and respond to permission requests
 
 Poll session events/results and approve/deny pending permission requests.
+
+Important protocol note: `action="poll"` is the main loop, and `action="respond_permission"` is the only interactive approval flow on this backend. `respond_user_input` is not supported.
 
 | Parameter           | Type    | Required               | Description                                                                                                               |
 | ------------------- | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |

@@ -94,22 +94,68 @@ describe("MCP Server", () => {
       const claudeCodeReplySessionId = claudeCodeReply?.inputSchema?.properties?.sessionId as
         | { description?: string }
         | undefined;
+      const claudeCodeEffort = claudeCode?.inputSchema?.properties?.effort as
+        | { description?: string }
+        | undefined;
+      const claudeCodeThinking = claudeCode?.inputSchema?.properties?.thinking as
+        | { description?: string }
+        | undefined;
+      const claudeCodeAllowedTools = claudeCode?.inputSchema?.properties?.allowedTools as
+        | { description?: string }
+        | undefined;
+      const claudeCodeStrictAllowedTools = claudeCode?.inputSchema?.properties
+        ?.strictAllowedTools as { description?: string } | undefined;
+      const claudeCodeCheckAction = claudeCodeCheck?.inputSchema?.properties?.action as
+        | { description?: string }
+        | undefined;
       const claudeCodeCheckResponseMode = claudeCodeCheck?.inputSchema?.properties?.responseMode as
         | { description?: string }
         | undefined;
+      const claudeCodeAdvanced = claudeCode?.inputSchema?.properties?.advanced as
+        | { properties?: Record<string, { description?: string }> }
+        | undefined;
+      const replyDiskResumeConfig = claudeCodeReply?.inputSchema?.properties?.diskResumeConfig as
+        | { properties?: Record<string, { description?: string }> }
+        | undefined;
 
       expect(claudeCode?.description).toContain("10+ minutes");
-      expect(claudeCode?.description).toContain("Adjust polling cadence to progress");
-      expect(claudeCodePrompt?.description).toContain("reuse sessionId with claude_code_reply");
-      expect(claudeCodePrompt?.description).toContain("adapt poll cadence to current progress");
-      expect(claudeCodeReply?.description).toContain("same sessionId");
-      expect(claudeCodeReply?.description).toContain("adjust poll cadence to current progress");
-      expect(claudeCodeReplySessionId?.description).toContain(
-        "prefer this over starting a fresh claude_code session"
+      expect(claudeCode?.description).toContain("No final result is returned here");
+      expect(claudeCode?.description).toContain("respond_user_input is not supported");
+      expect(claudeCodePrompt?.description).toContain(
+        "final result arrives later via claude_code_check"
       );
-      expect(claudeCodeCheck?.description).toContain("high/max effort");
-      expect(claudeCodeCheck?.description).toContain("poll faster when progress is active");
-      expect(claudeCodeCheckResponseMode?.description).toContain("faster adaptive polling loops");
+      expect(claudeCodePrompt?.description).toContain("Store nextCursor");
+      expect(claudeCodeReply?.description).toContain("same sessionId");
+      expect(claudeCodeReply?.description).toContain(
+        "Use diskResumeConfig only when the in-memory session is missing"
+      );
+      expect(claudeCodeReplySessionId?.description).toContain("persistent sessions");
+      expect(claudeCodeEffort?.description).toContain("Effort string");
+      expect(claudeCodeThinking?.description).toContain("Thinking config object, not a string");
+      expect(claudeCodeThinking?.description).toContain("budgetTokens?:N");
+      expect(claudeCodeAllowedTools?.description).toContain("not a strict allowlist");
+      expect(claudeCodeStrictAllowedTools?.description).toContain(
+        "tools outside allowedTools are denied"
+      );
+      expect(claudeCodeAdvanced?.properties?.tools?.description).toContain(
+        "Visible built-in tool set"
+      );
+      expect(claudeCodeAdvanced?.properties?.settings?.description).toContain(
+        "highest-priority flag settings"
+      );
+      expect(claudeCodeAdvanced?.properties?.sandbox?.description).toContain(
+        "not the actual allow/deny permission rules"
+      );
+      expect(claudeCodeAdvanced?.properties?.toolConfig?.description).toContain("askUserQuestion");
+      expect(replyDiskResumeConfig?.properties?.thinking?.description).toContain(
+        "Thinking config object, not a string"
+      );
+      expect(claudeCodeCheck?.description).toContain("persist nextCursor");
+      expect(claudeCodeCheck?.description).toContain("respond_user_input is not supported");
+      expect(claudeCodeCheckAction?.description).toContain(
+        "'poll' fetches new events/actions/result"
+      );
+      expect(claudeCodeCheckResponseMode?.description).toContain("high-frequency polling");
     } finally {
       await client.close();
       await server.close();
@@ -394,6 +440,85 @@ describe("MCP Server", () => {
       expect(data.error).toBeUndefined();
       expect(data.status).toBe("running");
       expect(data.sessionId).toBe("sess-mcp-call");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("should accept thinking={type:'enabled'} without budgetTokens via MCP schema", async () => {
+    type QueryReturn = ReturnType<typeof query>;
+    mockQuery.mockClear();
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-thinking-enabled",
+          uuid: "u-init-thinking-enabled",
+          cwd: "/tmp",
+          tools: ["Read"],
+          claude_code_version: "x",
+          model: "m",
+          permissionMode: "default",
+          apiKeySource: "env",
+          mcp_servers: [],
+          slash_commands: [],
+          output_style: "",
+          skills: [],
+          plugins: [],
+        };
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          duration_ms: 1,
+          num_turns: 1,
+          total_cost_usd: 0,
+          is_error: false,
+          uuid: "u-res-thinking-enabled",
+          session_id: "sess-thinking-enabled",
+          duration_api_ms: 1,
+          stop_reason: null,
+          usage: {},
+          modelUsage: {},
+          permission_denials: [],
+        };
+      })() as unknown as QueryReturn
+    );
+
+    const server = createServer("/tmp");
+    const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const res = await client.callTool({
+        name: "claude_code",
+        arguments: { prompt: "say hi", thinking: { type: "enabled" } },
+      });
+
+      const normalized = res as {
+        structuredContent?: unknown;
+        content?: Array<{ text?: unknown }>;
+      };
+      const payload =
+        normalized.structuredContent && typeof normalized.structuredContent === "object"
+          ? (normalized.structuredContent as { status?: string; sessionId?: string })
+          : (JSON.parse(String(normalized.content?.[0]?.text ?? "{}")) as {
+              status?: string;
+              sessionId?: string;
+            });
+
+      expect(payload.status).toBe("running");
+      expect(payload.sessionId).toBe("sess-thinking-enabled");
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const call = mockQuery.mock.calls[mockQuery.mock.calls.length - 1]?.[0] as {
+        options?: { thinking?: unknown };
+      };
+      expect(call.options?.thinking).toEqual({ type: "enabled" });
     } finally {
       await client.close();
       await server.close();

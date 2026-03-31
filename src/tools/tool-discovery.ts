@@ -167,12 +167,14 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   const categories = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
 
   let desc =
-    "Start a Claude Code session and return sessionId.\n" +
-    "Use claude_code_check to poll events/results and handle permissions.\n" +
+    "Start a background Claude Code run and return sessionId immediately. No final result is returned here.\n" +
+    "Main loop: call claude_code_check(action='poll'), store nextCursor, and keep polling until status becomes idle, error, or cancelled.\n" +
+    "If actions[] contains permission requests, answer them with claude_code_check(action='respond_permission'). respond_user_input is not supported.\n" +
     "Adjust polling cadence to progress: poll faster while new events/actions are arriving, and slower when the session is quietly thinking.\n" +
     "Long-running work is normal: Claude Code can keep working for 10+ minutes, especially with high/max effort, so wait for polling to settle before assuming it is stuck.\n" +
-    "If you want to continue after a run pauses or finishes, use claude_code_reply with the same sessionId instead of starting a brand-new claude_code session.\n\n";
-  desc += "Internal tools (authoritative list: includeTools=true in claude_code_check):\n";
+    "If you want to continue after a run pauses or finishes, use claude_code_reply with the same sessionId instead of starting a new claude_code session.\n" +
+    "For runtime-authoritative tool names, call claude_code_check with pollOptions.includeTools=true.\n\n";
+  desc += "Internal tools (runtime list when includeTools=true):\n";
 
   for (const category of categories) {
     desc += `\n[${category}]\n`;
@@ -182,6 +184,6 @@ export function buildInternalToolsDescription(tools: ToolInfo[]): string {
   }
 
   desc +=
-    "\nPermission control: allowedTools auto-approves; disallowedTools always denies; others require approval.\n";
+    "\nPermission control: allowedTools pre-approves tools but is not a strict allowlist unless strictAllowedTools=true; disallowedTools always denies; other tools may require approval.\n";
   return desc;
 }

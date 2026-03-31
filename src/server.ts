@@ -34,7 +34,7 @@ export function createServerContext(serverCwd: string): {
       version: SERVER_VERSION,
       title: "Claude Code MCP",
       description:
-        "MCP server that runs Claude Code via the Claude Agent SDK with async polling and interactive permissions.",
+        "MCP server that runs Claude Code via the Claude Agent SDK. Starts and replies return quickly; callers poll with claude_code_check and answer permission requests explicitly.",
       websiteUrl: "https://github.com/xihuai18/claude-code-mcp",
       icons: [],
     },
@@ -75,14 +75,19 @@ export function createServerContext(serverCwd: string): {
   const agentDefinitionSchema = z.object({
     description: z.string(),
     prompt: z.string(),
-    tools: z.array(z.string()).optional().describe("Default: inherit"),
+    tools: z
+      .array(z.string())
+      .optional()
+      .describe("Allowed tool names for this subagent. Default: inherit"),
     disallowedTools: z.array(z.string()).optional().describe("Default: none"),
     model: z.string().optional().describe("Default: inherit"),
     maxTurns: z.number().int().positive().optional().describe("Default: none"),
     mcpServers: z
       .array(z.union([z.string(), z.record(z.string(), z.unknown())]))
       .optional()
-      .describe("Default: inherit"),
+      .describe(
+        "Additional MCP server names or inline process-transport specs for this subagent. Default: inherit"
+      ),
     skills: z.array(z.string()).optional().describe("Default: none"),
     criticalSystemReminder_EXPERIMENTAL: z.string().optional().describe("Default: none"),
   });
@@ -108,7 +113,7 @@ export function createServerContext(serverCwd: string): {
     z.object({ type: z.literal("adaptive") }),
     z.object({
       type: z.literal("enabled"),
-      budgetTokens: z.number().int().positive(),
+      budgetTokens: z.number().int().positive().optional(),
     }),
     z.object({ type: z.literal("disabled") }),
   ]);
@@ -122,23 +127,42 @@ export function createServerContext(serverCwd: string): {
   });
 
   const sharedOptionFieldsSchemaShape = {
-    tools: toolsConfigSchema.optional().describe("Tool set. Default: SDK"),
+    tools: toolsConfigSchema
+      .optional()
+      .describe(
+        "Visible built-in tool set. Use this to restrict what Claude can see/call: string[] of exact tool names, [] to disable built-ins, or {type:'preset',preset:'claude_code'}. Default: SDK"
+      ),
     persistSession: z.boolean().optional().describe("Default: true"),
-    agents: z.record(z.string(), agentDefinitionSchema).optional().describe("Default: none"),
+    agents: z
+      .record(z.string(), agentDefinitionSchema)
+      .optional()
+      .describe("Custom subagents keyed by agent name. Default: none"),
     agent: z.string().optional().describe("Default: none"),
     maxBudgetUsd: z.number().positive().optional().describe("Default: none"),
     betas: z.array(z.string()).optional().describe("Default: none"),
     additionalDirectories: z.array(z.string()).optional().describe("Default: none"),
-    outputFormat: outputFormatSchema.optional().describe("Default: none"),
+    outputFormat: outputFormatSchema
+      .optional()
+      .describe("Structured output config: {type:'json_schema', schema:{...}}. Default: none"),
     pathToClaudeCodeExecutable: z.string().optional().describe("Default: SDK-bundled"),
     mcpServers: z
       .record(z.string(), z.record(z.string(), z.unknown()))
       .optional()
-      .describe("Default: none"),
-    sandbox: z.record(z.string(), z.unknown()).optional().describe("Default: none"),
+      .describe("MCP server configs keyed by server name. Default: none"),
+    sandbox: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "Sandbox behavior config object. This controls sandbox behavior, not the actual allow/deny permission rules. Default: none"
+      ),
     fallbackModel: z.string().optional().describe("Default: none"),
     enableFileCheckpointing: z.boolean().optional().describe("Default: false"),
-    toolConfig: z.record(z.string(), z.unknown()).optional().describe("Default: none"),
+    toolConfig: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "Per-tool built-in config object, e.g. {askUserQuestion:{previewFormat:'markdown'|'html'}}. Default: none"
+      ),
     includePartialMessages: z.boolean().optional().describe("Default: false"),
     promptSuggestions: z.boolean().optional().describe("Default: false"),
     agentProgressSummaries: z.boolean().optional().describe("Default: false"),
@@ -146,14 +170,24 @@ export function createServerContext(serverCwd: string): {
     settings: z
       .union([z.string(), z.record(z.string(), z.unknown())])
       .optional()
-      .describe("Default: none"),
+      .describe(
+        "Path to a settings JSON file or an inline settings object. Loaded as highest-priority flag settings. Default: none"
+      ),
     settingSources: z
       .array(z.enum(["user", "project", "local"]))
       .optional()
       .describe("Default: ['user','project','local']. []=isolation"),
     debug: z.boolean().optional().describe("Default: false"),
-    debugFile: z.string().optional().describe("Default: none"),
-    env: z.record(z.string(), z.string().optional()).optional().describe("Default: none"),
+    debugFile: z
+      .string()
+      .optional()
+      .describe("Write debug logs to this file and implicitly enable debug. Default: none"),
+    env: z
+      .record(z.string(), z.string().optional())
+      .optional()
+      .describe(
+        "Environment variables merged over process.env before launching Claude Code. Default: none"
+      ),
   } as const;
 
   const advancedOptionFieldsSchemaShape = {
@@ -162,15 +196,24 @@ export function createServerContext(serverCwd: string): {
 
   const diskResumeOptionFieldsSchemaShape = {
     ...sharedOptionFieldsSchemaShape,
-    effort: effortOptionSchema.describe("Default: SDK"),
-    thinking: thinkingOptionSchema.describe("Default: SDK"),
+    effort: effortOptionSchema.describe(
+      "Effort string: 'low' | 'medium' | 'high' | 'max'. Default: SDK"
+    ),
+    thinking: thinkingOptionSchema.describe(
+      "Thinking config object, not a string. Use {type:'adaptive'} | {type:'enabled', budgetTokens?:N} | {type:'disabled'}. Default: SDK"
+    ),
   } as const;
 
   /** Advanced options shared by claude_code (and reused in diskResumeConfig). */
   const advancedOptionsSchema = z
     .object({
       ...advancedOptionFieldsSchemaShape,
-      sessionInitTimeoutMs: z.number().int().positive().optional().describe("Default: 10000"),
+      sessionInitTimeoutMs: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Server init wait timeout in ms; not forwarded to SDK Options. Default: 10000"),
     })
     .optional()
     .describe("Default: none");
@@ -179,12 +222,27 @@ export function createServerContext(serverCwd: string): {
     .object({
       resumeToken: z.string(),
       cwd: z.string(),
-      allowedTools: z.array(z.string()).optional().describe("Default: []"),
-      disallowedTools: z.array(z.string()).optional().describe("Default: []"),
-      strictAllowedTools: z.boolean().optional().describe("Default: false"),
+      allowedTools: z
+        .array(z.string())
+        .optional()
+        .describe("Pre-approved tool names for resumed execution. Default: []"),
+      disallowedTools: z
+        .array(z.string())
+        .optional()
+        .describe("Always-denied tool names. Default: []"),
+      strictAllowedTools: z
+        .boolean()
+        .optional()
+        .describe(
+          "Server-side strict allowlist toggle; not forwarded to SDK Options. Default: false"
+        ),
       maxTurns: z.number().int().positive().optional().describe("Default: SDK"),
       model: z.string().optional().describe("Default: SDK"),
-      systemPrompt: systemPromptSchema.optional().describe("Default: SDK"),
+      systemPrompt: systemPromptSchema
+        .optional()
+        .describe(
+          "System prompt config: string, {type:'preset',preset:'claude_code'}, or {type:'preset',preset:'claude_code',append:'...'}. Default: SDK"
+        ),
       resumeSessionAt: z.string().optional().describe("Default: none"),
       ...diskResumeOptionFieldsSchemaShape,
     })
@@ -269,23 +327,44 @@ export function createServerContext(serverCwd: string): {
         prompt: z
           .string()
           .describe(
-            "Prompt. Long runs are normal; keep polling, adapt poll cadence to current progress, and reuse sessionId with claude_code_reply if you want to continue."
+            "Prompt for a new background run. The final result arrives later via claude_code_check, not this call. Store nextCursor from polls and reuse sessionId with claude_code_reply if you want to continue later."
           ),
         cwd: z.string().optional().describe("Working dir. Default: server cwd"),
-        allowedTools: z.array(z.string()).optional().describe("Default: []"),
-        disallowedTools: z.array(z.string()).optional().describe("Default: []"),
-        strictAllowedTools: z.boolean().optional().describe("Default: false"),
+        allowedTools: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Pre-approved tool names. Default: []. This is not a strict allowlist unless strictAllowedTools=true."
+          ),
+        disallowedTools: z
+          .array(z.string())
+          .optional()
+          .describe("Always-denied tool names. Default: []"),
+        strictAllowedTools: z
+          .boolean()
+          .optional()
+          .describe("Default: false. When true, tools outside allowedTools are denied."),
         maxTurns: z.number().int().positive().optional().describe("Default: SDK"),
         model: z.string().optional().describe("Default: SDK"),
-        effort: effortOptionSchema.describe("Default: SDK"),
-        thinking: thinkingOptionSchema.describe("Default: SDK"),
-        systemPrompt: systemPromptSchema.optional().describe("Default: SDK"),
+        effort: effortOptionSchema.describe(
+          "Effort string: 'low' | 'medium' | 'high' | 'max'. Default: SDK"
+        ),
+        thinking: thinkingOptionSchema.describe(
+          "Thinking config object, not a string. Use {type:'adaptive'} | {type:'enabled', budgetTokens?:N} | {type:'disabled'}. Default: SDK"
+        ),
+        systemPrompt: systemPromptSchema
+          .optional()
+          .describe(
+            "System prompt config: string, {type:'preset',preset:'claude_code'}, or {type:'preset',preset:'claude_code',append:'...'}. Default: SDK"
+          ),
         permissionRequestTimeoutMs: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Default: 60000, clamped to 300000"),
+          .describe(
+            "Server permission wait timeout in ms; not forwarded to SDK Options. Default: 60000, clamped to 300000"
+          ),
         advanced: advancedOptionsSchema,
       },
       outputSchema: startResultSchema,
@@ -342,25 +421,38 @@ export function createServerContext(serverCwd: string): {
     "claude_code_reply",
     {
       description:
-        "Send a follow-up to an existing session. Reuse the same sessionId instead of starting a new claude_code session when you want to continue. Returns immediately; use claude_code_check to poll, and adjust poll cadence to current progress.",
+        "Send a follow-up to an existing session. Reuse the same sessionId instead of starting a new claude_code session when you want to continue. Returns immediately; poll with claude_code_check. Use diskResumeConfig only when the in-memory session is missing and disk resume is enabled.",
       inputSchema: {
         sessionId: z
           .string()
           .describe(
-            "Session ID from the existing conversation you want to continue; prefer this over starting a fresh claude_code session."
+            "Session ID from claude_code or an earlier claude_code_reply. Prefer this over starting a fresh claude_code session. Reply works only for persistent sessions, or with diskResumeConfig when disk resume fallback is enabled."
           ),
         prompt: z.string().describe("Follow-up prompt for the existing session."),
         forkSession: z.boolean().optional().describe("Default: false"),
-        effort: effortOptionSchema.describe("Default: SDK"),
-        thinking: thinkingOptionSchema.describe("Default: SDK"),
-        sessionInitTimeoutMs: z.number().int().positive().optional().describe("Default: 10000"),
+        effort: effortOptionSchema.describe(
+          "Effort string: 'low' | 'medium' | 'high' | 'max'. Default: SDK"
+        ),
+        thinking: thinkingOptionSchema.describe(
+          "Thinking config object, not a string. Use {type:'adaptive'} | {type:'enabled', budgetTokens?:N} | {type:'disabled'}. Default: SDK"
+        ),
+        sessionInitTimeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Default: 10000. Applies when forkSession=true."),
         permissionRequestTimeoutMs: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Default: 60000, clamped to 300000"),
-        diskResumeConfig: diskResumeConfigSchema,
+          .describe(
+            "Server permission wait timeout in ms; not forwarded to SDK Options. Default: 60000, clamped to 300000"
+          ),
+        diskResumeConfig: diskResumeConfigSchema.describe(
+          "Default: none. Use only when the in-memory session is missing and the server allows disk resume."
+        ),
       },
       outputSchema: startResultSchema,
       annotations: {
@@ -411,9 +503,16 @@ export function createServerContext(serverCwd: string): {
     {
       description: "List, inspect, cancel, or interrupt sessions.",
       inputSchema: {
-        action: z.enum(SESSION_ACTIONS),
-        sessionId: z.string().optional().describe("Required for get/cancel/interrupt"),
-        includeSensitive: z.boolean().optional().describe("Default: false"),
+        action: z
+          .enum(SESSION_ACTIONS)
+          .describe("Session operation: list, get, cancel, or interrupt."),
+        sessionId: z.string().optional().describe("Required for get/cancel/interrupt."),
+        includeSensitive: z
+          .boolean()
+          .optional()
+          .describe(
+            "Default: false. Exposes more session fields, but some secrets remain redacted."
+          ),
       },
       outputSchema: sessionResultSchema,
       annotations: {
@@ -462,16 +561,27 @@ export function createServerContext(serverCwd: string): {
     "claude_code_check",
     {
       description:
-        "Poll session events or respond to permission requests. Long Claude Code runs are normal, especially with high/max effort; poll faster when progress is active and slower when the session is quietly thinking.",
+        "Poll session state or answer a pending permission request. Main loop: call action='poll', persist nextCursor, and use action='respond_permission' for approvals. respond_user_input is not supported.",
       inputSchema: {
-        action: z.enum(CHECK_ACTIONS),
-        sessionId: z.string().describe("Session ID"),
-        cursor: z.number().int().nonnegative().optional().describe("Default: 0"),
+        action: z
+          .enum(CHECK_ACTIONS)
+          .describe(
+            "'poll' fetches new events/actions/result; 'respond_permission' answers one pending permission request."
+          ),
+        sessionId: z.string().describe("Session ID returned by claude_code or claude_code_reply."),
+        cursor: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            "Default: 0. Pass the previous nextCursor to avoid replaying old buffered events."
+          ),
         responseMode: z
           .enum(CHECK_RESPONSE_MODES)
           .optional()
           .describe(
-            "Default: 'minimal'. Use 'delta_compact' for lightweight polling, especially for faster adaptive polling loops."
+            "Default: 'minimal'. Use 'delta_compact' for lightweight high-frequency polling; use 'full' mainly for diagnostics."
           ),
         maxEvents: z
           .number()
@@ -480,17 +590,35 @@ export function createServerContext(serverCwd: string): {
           .optional()
           .describe("Default: 200 (minimal), unlimited (full/delta_compact)"),
 
-        requestId: z.string().optional().describe("Default: none"),
+        requestId: z
+          .string()
+          .optional()
+          .describe("Default: none. Required for action='respond_permission'."),
         decision: z
           .enum(["allow", "deny", "allow_for_session"])
           .optional()
-          .describe("Default: none"),
-        denyMessage: z.string().optional().describe("Default: 'Permission denied by caller'"),
-        interrupt: z.boolean().optional().describe("Default: false"),
+          .describe(
+            "Default: none. Required for action='respond_permission'. 'allow_for_session' reduces repeated prompts in the same session."
+          ),
+        denyMessage: z
+          .string()
+          .optional()
+          .describe("Default: 'Permission denied by caller'. Used only with decision='deny'."),
+        interrupt: z
+          .boolean()
+          .optional()
+          .describe(
+            "Default: false. When true, a deny decision also interrupts the whole session."
+          ),
 
         pollOptions: z
           .object({
-            includeTools: z.boolean().optional().describe("Default: false"),
+            includeTools: z
+              .boolean()
+              .optional()
+              .describe(
+                "Default: false. When true, include runtime-discovered availableTools; use this when exact tool names matter."
+              ),
             includeEvents: z.boolean().optional().describe("Default: true"),
             includeActions: z.boolean().optional().describe("Default: true"),
             includeResult: z.boolean().optional().describe("Default: true"),
@@ -517,7 +645,7 @@ export function createServerContext(serverCwd: string): {
             maxBytes: z.number().int().positive().optional().describe("Default: unlimited"),
           })
           .optional()
-          .describe("Default: none"),
+          .describe("Default: none. Advanced polling payload controls for action='poll'."),
 
         permissionOptions: z
           .object({
@@ -528,7 +656,9 @@ export function createServerContext(serverCwd: string): {
               .describe("Default: none"),
           })
           .optional()
-          .describe("Default: none"),
+          .describe(
+            "Default: none. Advanced permission response overrides for action='respond_permission'."
+          ),
       },
       outputSchema: checkResultSchema,
       annotations: {
