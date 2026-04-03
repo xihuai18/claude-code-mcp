@@ -14,7 +14,7 @@ import type {
   ThinkingConfig,
   ToolConfig,
 } from "../types.js";
-import { ErrorCode } from "../types.js";
+import { ErrorCode, DEFAULT_POLL_INTERVAL_RUNNING_MS } from "../types.js";
 import { consumeQuery } from "./query-consumer.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 import { computeResumeToken, getResumeSecret } from "../utils/resume-token.js";
@@ -199,7 +199,7 @@ export async function executeClaudeCode(
     return {
       sessionId,
       status: "running",
-      pollInterval: 3000,
+      pollInterval: DEFAULT_POLL_INTERVAL_RUNNING_MS,
       resumeToken: resumeSecret ? computeResumeToken(sessionId, resumeSecret) : undefined,
     };
   } catch (err: unknown) {

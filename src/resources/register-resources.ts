@@ -3,7 +3,12 @@ import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import type { SessionManager } from "../session/manager.js";
-import { ErrorCode, type PublicSessionInfo } from "../types.js";
+import {
+  ErrorCode,
+  DEFAULT_POLL_INTERVAL_RUNNING_MS,
+  DEFAULT_POLL_INTERVAL_WAITING_MS,
+  type PublicSessionInfo,
+} from "../types.js";
 import {
   defaultCatalogTools,
   discoverToolsFromInit,
@@ -243,8 +248,8 @@ export function registerResources(
               ),
               eventBuffer: deps.sessionManager.getEventBufferConfig(),
               pollDefaults: {
-                runningMs: 3000,
-                waitingPermissionMs: 1000,
+                runningMs: DEFAULT_POLL_INTERVAL_RUNNING_MS,
+                waitingPermissionMs: DEFAULT_POLL_INTERVAL_WAITING_MS,
               },
             },
           };
@@ -360,7 +365,7 @@ export function registerResources(
           "",
           "- This backend is asynchronous: `claude_code` and `claude_code_reply` start work, and the final result arrives later via polling.",
           "- Claude Code may keep working for 10+ minutes on larger tasks, especially with `effort='high'` or `effort='max'`; keep polling and be patient before treating it as stuck.",
-          "- Adjust poll intervals to the current progress: poll faster while new events or permission actions are arriving, and slower while the session is quietly thinking with no new output.",
+          "- **Poll frequency**: For `running` sessions, sleep at least 2 minutes between polls; increase for complex tasks. Do NOT high-frequency poll — it wastes tokens. Only poll frequently (~1s) when `waiting_permission`. Adapt interval based on task complexity and whether the previous poll returned new events.",
           "- `model` is optional. If omitted, Claude Code chooses the effective model from its own defaults/settings.",
           "- `allowedTools` is pre-approval by default; set `strictAllowedTools=true` when you need a strict allowlist.",
           "- `allow_for_session` usually works best when the same tool will be used repeatedly in one session.",
@@ -492,9 +497,10 @@ export function registerResources(
         recommendedSettings: {
           responseMode: "delta_compact",
           poll: {
-            runningMs: 3000,
-            waitingPermissionMs: 1000,
-            cursorStrategy: "Persist nextCursor and de-duplicate by event.id.",
+            runningMs: DEFAULT_POLL_INTERVAL_RUNNING_MS,
+            waitingPermissionMs: DEFAULT_POLL_INTERVAL_WAITING_MS,
+            cursorStrategy:
+              "Persist nextCursor and de-duplicate by event.id. Do NOT high-frequency poll running sessions.",
           },
           timeouts: {
             sessionInitTimeoutMs: 10000,
@@ -743,9 +749,10 @@ export function registerResources(
             recommendedSettings: {
               responseMode: "delta_compact",
               poll: {
-                runningMs: 3000,
-                waitingPermissionMs: 1000,
-                cursorStrategy: "Persist nextCursor and de-duplicate by event.id.",
+                runningMs: DEFAULT_POLL_INTERVAL_RUNNING_MS,
+                waitingPermissionMs: DEFAULT_POLL_INTERVAL_WAITING_MS,
+                cursorStrategy:
+                  "Persist nextCursor and de-duplicate by event.id. Do NOT high-frequency poll running sessions.",
               },
             },
           },

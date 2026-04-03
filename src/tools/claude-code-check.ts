@@ -15,7 +15,11 @@ import type {
   SessionEventType,
   SessionStatus,
 } from "../types.js";
-import { ErrorCode } from "../types.js";
+import {
+  ErrorCode,
+  DEFAULT_POLL_INTERVAL_RUNNING_MS,
+  DEFAULT_POLL_INTERVAL_WAITING_MS,
+} from "../types.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 import { discoverToolsFromInit } from "./tool-discovery.js";
 
@@ -70,8 +74,8 @@ export type ClaudeCodeCheckResult =
   | { sessionId: string; error: string; isError: true };
 
 function pollIntervalForStatus(status: SessionStatus): number | undefined {
-  if (status === "waiting_permission") return 1000;
-  if (status === "running") return 3000;
+  if (status === "waiting_permission") return DEFAULT_POLL_INTERVAL_WAITING_MS;
+  if (status === "running") return DEFAULT_POLL_INTERVAL_RUNNING_MS;
   return undefined;
 }
 

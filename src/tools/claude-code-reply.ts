@@ -19,7 +19,7 @@ import type {
   ToolConfig,
   ToolsConfig,
 } from "../types.js";
-import { ErrorCode } from "../types.js";
+import { ErrorCode, DEFAULT_POLL_INTERVAL_RUNNING_MS } from "../types.js";
 import { consumeQuery } from "./query-consumer.js";
 import type { ToolDiscoveryCache } from "./tool-discovery.js";
 import {
@@ -302,7 +302,7 @@ export async function executeClaudeCodeReply(
       return {
         sessionId: input.sessionId,
         status: "running",
-        pollInterval: 3000,
+        pollInterval: DEFAULT_POLL_INTERVAL_RUNNING_MS,
         resumeToken: computeResumeToken(input.sessionId, resumeSecret),
       };
     } catch (err: unknown) {
@@ -467,7 +467,7 @@ export async function executeClaudeCodeReply(
     return {
       sessionId,
       status: "running",
-      pollInterval: 3000,
+      pollInterval: DEFAULT_POLL_INTERVAL_RUNNING_MS,
       resumeToken: resumeSecret ? computeResumeToken(sessionId, resumeSecret) : undefined,
     };
   } catch (err: unknown) {

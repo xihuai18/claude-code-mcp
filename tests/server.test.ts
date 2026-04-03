@@ -151,11 +151,11 @@ describe("MCP Server", () => {
         "Thinking config object, not a string"
       );
       expect(claudeCodeCheck?.description).toContain("persist nextCursor");
-      expect(claudeCodeCheck?.description).toContain("respond_user_input is not supported");
+      expect(claudeCodeCheck?.description).toContain("Do NOT high-frequency poll");
       expect(claudeCodeCheckAction?.description).toContain(
         "'poll' fetches new events/actions/result"
       );
-      expect(claudeCodeCheckResponseMode?.description).toContain("high-frequency polling");
+      expect(claudeCodeCheckResponseMode?.description).toContain("delta_compact");
     } finally {
       await client.close();
       await server.close();

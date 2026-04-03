@@ -141,7 +141,7 @@ describe("executeClaudeCode (async)", () => {
     expect(start.status).toBe("running");
     expect(start.sessionId).toBe("sess-123");
     if (start.status === "running") {
-      expect(start.pollInterval).toBe(3000);
+      expect(start.pollInterval).toBe(120000);
     }
 
     await waitUntil(() => manager.get("sess-123")?.status === "idle");

@@ -225,6 +225,18 @@ export interface AgentResult {
   }>;
 }
 
+/**
+ * Minimum recommended polling interval (ms) when session status is "running".
+ * MCP callers should treat this as a floor and can wait longer for complex tasks.
+ * Do NOT poll faster — it wastes tokens and provides no benefit.
+ */
+export const DEFAULT_POLL_INTERVAL_RUNNING_MS = 120_000;
+/**
+ * Polling interval (ms) while waiting for permission actions.
+ * Kept short so callers can unblock pending actions before permission timeout.
+ */
+export const DEFAULT_POLL_INTERVAL_WAITING_MS = 1_000;
+
 export const CHECK_ACTIONS = ["poll", "respond_permission"] as const;
 export type CheckAction = (typeof CHECK_ACTIONS)[number];
 

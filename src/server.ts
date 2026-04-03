@@ -566,7 +566,7 @@ export function createServerContext(serverCwd: string): {
     "claude_code_check",
     {
       description:
-        "Poll session state or answer a pending permission request. Main loop: call action='poll', persist nextCursor, and use action='respond_permission' for approvals. respond_user_input is not supported.",
+        'Poll session state or answer a pending permission request.\n\nPOLLING FREQUENCY: Do NOT poll every turn. Claude Code tasks take minutes, not seconds.\n- "running": sleep at least 2 minutes between polls; increase for complex tasks. Do NOT high-frequency poll — it wastes tokens.\n- "waiting_permission": poll ~1s and respond quickly.\n- "idle"/"error"/"cancelled": stop polling.\n- Adapt interval based on task complexity and whether the previous poll returned new events.\n\nMain loop: call action=\'poll\', persist nextCursor, and use action=\'respond_permission\' for approvals.',
       inputSchema: {
         action: z
           .enum(CHECK_ACTIONS)
@@ -586,7 +586,7 @@ export function createServerContext(serverCwd: string): {
           .enum(CHECK_RESPONSE_MODES)
           .optional()
           .describe(
-            "Default: 'minimal'. Use 'delta_compact' for lightweight high-frequency polling; use 'full' mainly for diagnostics."
+            "Default: 'minimal'. Use 'delta_compact' for compact event payloads; use 'full' mainly for diagnostics."
           ),
         maxEvents: z
           .number()

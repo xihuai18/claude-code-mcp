@@ -165,7 +165,7 @@ describe("Resources", () => {
       expect(quickstartText).toContain("respond_permission");
       expect(quickstartText).toContain("allow_for_session");
       expect(quickstartText).toContain("10+ minutes");
-      expect(quickstartText).toContain("Adjust poll intervals to the current progress");
+      expect(quickstartText).toContain("Poll frequency");
       expect(quickstartText).toContain("existing `sessionId`");
       expect(quickstartText).toContain("final result arrives later via polling");
       expect(quickstartText).toContain("`respond_user_input` is not supported");
