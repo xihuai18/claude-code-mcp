@@ -383,7 +383,7 @@ Notes:
 - `permission_result` event data is `{ requestId, toolName, behavior, source, message?, interrupt? }` (denial details only present for `deny`).
 - `result.fastModeState` may be present when the SDK reports fast-mode state, and `claude_code_session` surfaces the latest known `fastModeState` for each session.
 - In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy SDK progress subtypes (`tool_progress`, `auth_status`, `system/api_retry`, `system/task_progress`, `system/hook_progress`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
-- In `"delta_compact"` mode: defaults are optimized for high-frequency polling (`events` and top-level `result` omitted unless explicitly enabled via `pollOptions`), while still returning session status/actions/cursors.
+- In `"delta_compact"` mode: defaults minimize per-poll payload size (`events` and top-level `result` omitted unless explicitly enabled via `pollOptions`), while still returning session status/actions/cursors. Note: this does not change the recommended poll interval — `running` sessions should still be polled at >=2 minute intervals.
 
 ## Usage Example
 

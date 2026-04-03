@@ -380,7 +380,7 @@ export function registerResources(
           "Notes:",
           "- `respond_user_input` is not supported. Use only `respond_permission` for approvals.",
           "- OpenCode/Codex-style clients usually work best when they store `sessionId` + `nextCursor` and answer approvals with `decision=allow_for_session`.",
-          "- Prefer `responseMode='delta_compact'` for high-frequency polling.",
+          "- Prefer `responseMode='delta_compact'` to reduce per-poll payload size (does not change recommended poll interval).",
         ].join("\n"),
         "text/markdown"
       )
@@ -515,7 +515,7 @@ export function registerResources(
           "Set strictAllowedTools=true when you need allowedTools to behave as a strict allowlist.",
           "Default Claude executable selection prefers request path, then CLAUDE_CODE_MCP_DEFAULT_CLAUDE_PATH, then CLAUDE_CODE_MCP_DEFAULT_CLAUDE_COMMAND, then auto-detected 'claude'/'claude-internal', then SDK-bundled.",
           "This server assumes MCP client and server run on the same machine/platform.",
-          "For high-frequency status checks, prefer responseMode='delta_compact'.",
+          "Prefer responseMode='delta_compact' to reduce per-poll payload size. Running sessions should still poll at >=2 minute intervals.",
           "respond_user_input is not supported on this backend; use poll/respond_permission flow.",
         ],
         toolCounts: {
@@ -697,7 +697,7 @@ export function registerResources(
             clientFamily: "codex",
             detectedMismatches: [] as string[],
             recommendations: [
-              "Prefer responseMode='delta_compact' for fast status loops.",
+              "Prefer responseMode='delta_compact' to reduce per-poll payload size. Poll running sessions at >=2 minute intervals.",
               "Enable pollOptions.includeTools=true when exact runtime tool names are required.",
               "Do not assume human-facing README guidance is visible to the agent; keep critical calling rules in tool descriptions or MCP resources.",
             ],
@@ -732,7 +732,7 @@ export function registerResources(
           detectedMismatches: [] as string[],
           recommendations: [
             "Persist nextCursor and de-duplicate by event.id.",
-            "Use responseMode='delta_compact' for high-frequency polling, full mode only for diagnostics.",
+            "Use responseMode='delta_compact' to reduce payload size; use 'full' only for diagnostics. Poll running sessions at >=2 minute intervals.",
             "Do not assume repository docs are model-visible; tool descriptions and resources are safer places for runtime guidance.",
           ],
         };
