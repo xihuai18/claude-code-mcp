@@ -80,7 +80,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.3",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.3.2",
     "eslint": "^9.39.3",
     "husky": "^9.1.7",
