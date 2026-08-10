@@ -907,4 +907,85 @@ describe("executeClaudeCodeCheck", () => {
     expect(second.events.length).toBeGreaterThanOrEqual(0);
     expect(second.events.some((e) => (e.data as { idx?: number }).idx === 0)).toBe(false);
   });
+
+  it("advances the cursor past a single event that alone exceeds maxBytes (no infinite poll loop)", () => {
+    manager.create({ sessionId: "s-oversized", cwd: "/tmp" });
+    manager.pushEvent("s-oversized", {
+      type: "progress",
+      data: { type: "status", idx: 0, payload: "x".repeat(500) },
+      timestamp: new Date().toISOString(),
+    });
+    manager.pushEvent("s-oversized", {
+      type: "progress",
+      data: { type: "status", idx: 1, payload: "y".repeat(500) },
+      timestamp: new Date().toISOString(),
+    });
+
+    // maxBytes is smaller than even a single (shaped) event, so capEventsByBytes keeps zero events.
+    const polled = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-oversized", cursor: 0, pollOptions: { maxBytes: 50 } },
+      manager,
+      toolCache
+    ) as CheckResult;
+
+    expect(polled.truncated).toBe(true);
+    expect(polled.truncatedFields).toContain("events_bytes");
+    expect(polled.events).toHaveLength(0);
+
+    // The first event alone exceeds maxBytes. The cursor must still advance past it;
+    // otherwise a client polling again with the same cursor/maxBytes would be stuck
+    // retrying the same oversized event forever.
+    expect(polled.nextCursor).not.toBe(0);
+    expect(polled.nextCursor).toBeGreaterThan(0);
+
+    // Re-polling with the returned cursor must make forward progress (not repeat idx 0).
+    const second = executeClaudeCodeCheck(
+      {
+        action: "poll",
+        sessionId: "s-oversized",
+        cursor: polled.nextCursor,
+        pollOptions: { maxBytes: 50 },
+      },
+      manager,
+      toolCache
+    ) as CheckResult;
+    expect(second.nextCursor).not.toBe(polled.nextCursor);
+  });
+
+  it("reports filteredEventCount when noisy progress events are filtered out in minimal mode", () => {
+    manager.create({ sessionId: "s-filtered", cwd: "/tmp" });
+    manager.pushEvent("s-filtered", {
+      type: "progress",
+      data: { type: "task_progress", task_id: "t1" },
+      timestamp: new Date().toISOString(),
+    });
+    manager.pushEvent("s-filtered", {
+      type: "progress",
+      data: { type: "status", message: "not filtered" },
+      timestamp: new Date().toISOString(),
+    });
+
+    const minimal = executeClaudeCodeCheck(
+      { action: "poll", sessionId: "s-filtered", cursor: 0 },
+      manager,
+      toolCache
+    ) as CheckResult;
+    // Only the task_progress event is filtered; the plain "status" event is kept.
+    expect(minimal.events).toHaveLength(1);
+    expect(minimal.filteredEventCount).toBe(1);
+
+    const full = executeClaudeCodeCheck(
+      {
+        action: "poll",
+        sessionId: "s-filtered",
+        cursor: 0,
+        pollOptions: { includeProgressEvents: true },
+      },
+      manager,
+      toolCache
+    ) as CheckResult;
+    // Nothing filtered when includeProgressEvents=true.
+    expect(full.events).toHaveLength(2);
+    expect(full.filteredEventCount).toBeUndefined();
+  });
 });

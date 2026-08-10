@@ -1,5 +1,9 @@
 # claude-code-mcp
 
+> **This is a fork of [`xihuai18/claude-code-mcp`](https://github.com/xihuai18/claude-code-mcp)** with two small, test-covered fixes to `claude_code_check` polling (stuck cursor on oversized events under `maxBytes`, plus a new `filteredEventCount` field for transparency). See [`FORK_CHANGES.md`](./FORK_CHANGES.md) for full details in English and Spanish.
+>
+> **Este es un fork de [`xihuai18/claude-code-mcp`](https://github.com/xihuai18/claude-code-mcp)** con dos arreglos pequeños, cubiertos por tests, al polling de `claude_code_check` (cursor atascado con eventos sobredimensionados bajo `maxBytes`, más un campo nuevo `filteredEventCount` para transparencia). Ver [`FORK_CHANGES.md`](./FORK_CHANGES.md) para el detalle completo en inglés y español.
+
 [![npm version](https://img.shields.io/npm/v/@leo000001/claude-code-mcp.svg)](https://www.npmjs.com/package/@leo000001/claude-code-mcp)
 [![license](https://img.shields.io/npm/l/@leo000001/claude-code-mcp.svg)](https://github.com/xihuai18/claude-code-mcp/blob/HEAD/LICENSE)
 [![node](https://img.shields.io/node/v/@leo000001/claude-code-mcp.svg)](https://nodejs.org)
@@ -364,7 +368,7 @@ Important protocol note: `action="poll"` is the main loop, and `action="respond_
 
 </details>
 
-**Returns (poll and respond_permission):** `{ sessionId, status, pollInterval?, cursorResetTo?, truncated?, truncatedFields?, events, nextCursor?, availableTools?, toolValidation?, compatWarnings?, actions?, result?, cancelledAt?, cancelledReason?, cancelledSource?, lastEventId?, lastToolUseId? }`
+**Returns (poll and respond_permission):** `{ sessionId, status, pollInterval?, cursorResetTo?, truncated?, truncatedFields?, filteredEventCount?, events, nextCursor?, availableTools?, toolValidation?, compatWarnings?, actions?, result?, cancelledAt?, cancelledReason?, cancelledSource?, lastEventId?, lastToolUseId? }`
 
 Notes:
 
@@ -383,6 +387,7 @@ Notes:
 - `permission_result` event data is `{ requestId, toolName, behavior, source, message?, interrupt? }` (denial details only present for `deny`).
 - `result.fastModeState` may be present when the SDK reports fast-mode state, and `claude_code_session` surfaces the latest known `fastModeState` for each session.
 - In `"minimal"` mode (default): assistant message events are slimmed (strips `usage`, `model`, `id`, `cache_control` from content blocks); noisy SDK progress subtypes (`tool_progress`, `auth_status`, `system/api_retry`, `system/task_progress`, `system/hook_progress`) are filtered out; `lastEventId`/`lastToolUseId` are omitted; `AgentResult` omits `durationApiMs`/`sessionTotalTurns`/`sessionTotalCostUsd`. Use `responseMode: "full"` or individual `include*` flags to restore any of these.
+- `filteredEventCount` (present only when > 0) tells you how many events in the current window were dropped by minimal/delta_compact-mode type filtering (noisy progress subtypes, or terminal `result`/`error` events already surfaced via top-level `result`) rather than by `maxEvents`/`maxBytes` pagination. These events still count toward `nextCursor` advancement and `claude_code_session`'s `eventCount` — this field just makes that gap visible instead of it looking like a pagination bug.
 - In `"delta_compact"` mode: defaults minimize per-poll payload size (`events` and top-level `result` omitted unless explicitly enabled via `pollOptions`), while still returning session status/actions/cursors. Note: this does not change the recommended poll interval — `running` sessions should still be polled at >=2 minute intervals.
 
 ## Usage Example

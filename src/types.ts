@@ -344,6 +344,15 @@ export interface CheckResult {
   cursorResetTo?: number;
   truncated?: boolean;
   truncatedFields?: string[];
+  /**
+   * Count of events in the current window (post-cursor/maxEvents pagination) that were
+   * excluded from `events` by minimal/delta_compact-mode type filtering (noisy progress
+   * subtypes, or terminal result/error events already surfaced via top-level `result`).
+   * Only present when > 0. These events still count toward `nextCursor` advancement and
+   * `claude_code_session`'s `eventCount` — this field just makes the gap visible instead
+   * of looking like an unexplained pagination shortfall.
+   */
+  filteredEventCount?: number;
   events: Array<{
     id: number;
     type: SessionEventType;

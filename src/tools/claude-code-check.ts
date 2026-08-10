@@ -446,6 +446,10 @@ function buildResult(
 
     return filtered;
   })();
+  // Events dropped by the type filtering above (not by maxEvents/maxBytes pagination).
+  // These still count toward eventCount/nextCursor; surface the count so it doesn't
+  // look like a pagination bug when `events` comes back shorter than the window.
+  const filteredEventCount = includeEvents ? windowEvents.length - outputEvents.length : 0;
 
   const pending =
     status === "waiting_permission" ? sessionManager.listPendingPermissions(sessionId) : [];
@@ -473,10 +477,19 @@ function buildResult(
   if (cappedEvents.truncated) {
     truncated = true;
     truncatedFields.push("events_bytes");
-    nextCursor =
-      cappedEvents.events.length > 0
-        ? cappedEvents.events[cappedEvents.events.length - 1].id + 1
-        : (cursorResetTo ?? input.cursor ?? 0);
+    if (cappedEvents.events.length > 0) {
+      nextCursor = cappedEvents.events[cappedEvents.events.length - 1].id + 1;
+    } else {
+      // A single event alone exceeded maxBytes, so capEventsByBytes kept zero events.
+      // We can't return the event's data under the caller's byte budget, but we must
+      // still advance nextCursor past it (rather than falling back to cursorResetTo/
+      // input.cursor, which would reproduce the same cursor). Otherwise a client that
+      // re-polls with the same cursor and maxBytes would retry the same oversized
+      // event forever and never make progress. We surface the data loss explicitly
+      // via truncatedFields so callers can tell an event was dropped, not just paginated.
+      truncatedFields.push("event_dropped_oversized");
+      nextCursor = shapedEvents[0]!.id + 1;
+    }
   }
 
   return {
@@ -486,6 +499,7 @@ function buildResult(
     cursorResetTo,
     truncated: truncated ? true : undefined,
     truncatedFields: truncatedFields.length > 0 ? truncatedFields : undefined,
+    filteredEventCount: filteredEventCount > 0 ? filteredEventCount : undefined,
     events: cappedEvents.events,
     nextCursor,
     availableTools,
